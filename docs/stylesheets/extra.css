@@ -1,0 +1,10 @@
+.md-typeset__table {
+  display: block !important;
+  width: 100%;
+  padding: 0 !important;
+}
+
+.md-typeset table:not([class]) {
+  display: table !important;
+  width: 100%;
+}

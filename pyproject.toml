@@ -1,0 +1,188 @@
+[tool.poetry]
+name = "shomer"
+version = "0.0.0"
+description = "OIDC/OAuth2 authentication service."
+authors = ["Chris <goabonga@pm.me>"]
+license = "MIT"
+readme = "README.md"
+packages = [
+  { include = "shomer", from = "src" }
+]
+include = [
+  "src/shomer/py.typed"
+]
+exclude = [
+  "tests",
+  "scripts",
+  "docs",
+  "Makefile"
+]
+keywords = [
+  "oidc",
+  "oauth2",
+  "authentication",
+  "authorization",
+  "identity",
+  "openid-connect",
+  "jwt",
+  "token",
+  "sso",
+  "security"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Internet :: WWW/HTTP :: Session",
+  "Topic :: System :: Systems Administration :: Authentication/Directory",
+  "Typing :: Typed"
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10"
+pydantic-settings = "*"
+fastapi = {version = "*", optional = true}
+uvicorn = {extras = ["standard"], version = "*", optional = true}
+jinja2 = {version = "*", optional = true}
+sqlalchemy = {extras = ["asyncio"], version = "*", optional = true}
+asyncpg = {version = "*", optional = true}
+alembic = {version = "*", optional = true}
+celery = {extras = ["redis"], version = "*", optional = true}
+
+[tool.poetry.extras]
+server = ["fastapi", "uvicorn", "jinja2", "sqlalchemy", "asyncpg", "alembic"]
+worker = ["celery"]
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+commitizen = "*"
+pytest = "*"
+pytest-cov = "*"
+ruff = "*"
+isort = "*"
+mypy = "*"
+
+[tool.poetry.group.test]
+optional = true
+
+[tool.poetry.group.test.dependencies]
+behave = "*"
+playwright = "*"
+
+[tool.poetry.group.favicon]
+optional = true
+
+[tool.poetry.group.favicon.dependencies]
+cairosvg = "*"
+Pillow = "*"
+
+[tool.poetry.group.docs]
+optional = true
+
+[tool.poetry.group.docs.dependencies]
+mkdocs = "*"
+mkdocs-material = "*"
+mkdocs-gen-files = "*"
+mkdocs-autorefs = "*"
+mkdocstrings = {extras = ["python"], version = "*"}
+mkdocs-macros-plugin = "*"
+
+[tool.poetry.scripts]
+shomer = "shomer.cli:main"
+
+[tool.behave]
+paths = ["features"]
+
+[[tool.poetry-auto-export.exports]]
+output = "requirements.txt"
+without_hashes = true
+
+[[tool.poetry-auto-export.exports]]
+output = "requirements-server.txt"
+without_hashes = true
+extras = ["server"]
+
+[[tool.poetry-auto-export.exports]]
+output = "requirements-worker.txt"
+without_hashes = true
+extras = ["worker"]
+
+[[tool.poetry-auto-export.exports]]
+output = "requirements-dev.txt"
+without_hashes = true
+with = ["dev", "docs", "test"]
+extras = ["server", "worker"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.0.0"
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_file = "CHANGELOG.md"
+changelog_incremental = true
+major_version_zero = true
+version_files = [
+  "pyproject.toml:version",
+  "src/shomer/__init__.py",
+  "tests/test_version.py:__expected_version__",
+  "features/steps/ui_steps.py:__expected_version__",
+  "chart/shomer/Chart.yaml:version",
+  "chart/shomer/Chart.yaml:appVersion",
+  "README.md:--version",
+  "mkdocs.yml:version"
+]
+gpg_sign = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "--cov=src/shomer --cov-report=term --cov-report=xml --cov-report=html --junitxml=junit.xml -o junit_family=legacy"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = [
+    "tests/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "pass  # abstract",
+    "\\.\\.\\.",
+    "except ImportError",
+]
+
+[tool.isort]
+profile = "black"
+src_paths = ["src", "tests"]
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests"]
+exclude = ["__pycache__"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["celery", "celery.*"]
+ignore_missing_imports = true

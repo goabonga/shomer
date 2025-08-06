@@ -1,0 +1,258 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Chris <goabonga@pm.me>
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+env:
+  POETRY_VERSION: "2.1.1"
+
+jobs:
+
+  # ============================================
+  # Stage 1: Quality checks (parallel)
+  # ============================================
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 🛠️ Install Poetry
+        uses: abatilo/actions-poetry@v4
+        with:
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: 📦 Install dependencies
+        run: poetry install --with dev --extras server --extras worker
+
+      - name: 🧹 Check import sorting with isort
+        run: poetry run isort . --check-only --diff
+
+      - name: 🔍 Lint with Ruff
+        run: poetry run ruff check .
+
+  license:
+    name: License Headers
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 🛠️ Install Poetry
+        uses: abatilo/actions-poetry@v4
+        with:
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: 📦 Install dependencies
+        run: poetry install --with dev --extras server --extras worker
+
+      - name: 🔐 Check SPDX license headers
+        run: |
+          poetry run python ./scripts/add_license_header.py --path src --types py --check
+          poetry run python ./scripts/add_license_header.py --path tests --types py --check
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 🛠️ Install Poetry
+        uses: abatilo/actions-poetry@v4
+        with:
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: 📦 Install dependencies
+        run: poetry install --with dev --extras server --extras worker
+
+      - name: 🔎 Type check with MyPy
+        run: poetry run mypy src/ tests/
+
+  # ============================================
+  # Stage 2: Unit tests (after quality checks)
+  # ============================================
+
+  test:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: [lint, license, typecheck]
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 🛠️ Install Poetry
+        uses: abatilo/actions-poetry@v4
+        with:
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: 📦 Install dependencies
+        run: poetry install --with dev --extras server --extras worker
+
+      - name: 🧪 Run tests
+        id: run_tests
+        run: poetry run pytest --cov
+
+      - name: 📤 Upload coverage reports to Codecov
+        if: matrix.python-version == '3.13' && steps.run_tests.outcome == 'success'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: 📤 Upload test results to Codecov
+        if: matrix.python-version == '3.13' && steps.run_tests.outcome == 'success'
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ============================================
+  # Stage 3: Integration tests (after unit tests)
+  # ============================================
+
+  bdd:
+    name: BDD Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 🛠️ Install Poetry
+        uses: abatilo/actions-poetry@v4
+        with:
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: 📦 Install dependencies
+        run: poetry install --with test
+
+      - name: 🐳 Build and start app
+        run: docker compose up -d --build --wait
+
+      - name: 🎭 Install Playwright browsers
+        run: poetry run playwright install --with-deps chromium
+
+      - name: 🥒 Run BDD tests
+        run: poetry run behave
+
+      - name: 🧹 Stop app
+        if: always()
+        run: docker compose down
+
+  helm:
+    name: Helm Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 🛠️ Install Poetry
+        uses: abatilo/actions-poetry@v4
+        with:
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: 📦 Install dependencies
+        run: poetry install --with test
+
+      - name: 🎭 Install Playwright browsers
+        run: poetry run playwright install --with-deps chromium
+
+      - name: ☸️ Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          config: kind-config.yaml
+          cluster_name: shomer
+
+      - name: ☸️ Install ingress-nginx
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+          kubectl wait --namespace ingress-nginx \
+            --for=condition=ready pod \
+            --selector=app.kubernetes.io/component=controller \
+            --timeout=120s
+
+      - name: 🐳 Build Docker images
+        run: |
+          docker build -f Dockerfile.server -t shomer-server:test .
+          docker build -f Dockerfile.worker -t shomer-worker:test .
+
+      - name: 📦 Load images into kind
+        run: |
+          docker save shomer-server:test | kind load image-archive /dev/stdin --name shomer
+          docker save shomer-worker:test | kind load image-archive /dev/stdin --name shomer
+
+      - name: 🔧 Install Helm chart
+        run: |
+          helm install shomer chart/shomer \
+            --set image.repository=shomer-server \
+            --set image.tag=test \
+            --set image.pullPolicy=Never \
+            --set worker.image.repository=shomer-worker \
+            --set worker.image.tag=test \
+            --set worker.image.pullPolicy=Never \
+            --set beat.image.repository=shomer-worker \
+            --set beat.image.tag=test \
+            --set beat.image.pullPolicy=Never \
+            --set ingress.enabled=true \
+            --set ingress.className=nginx \
+            --set "ingress.hosts[0].host=shomer.localhost" \
+            --set "ingress.hosts[0].paths[0].path=/" \
+            --set "ingress.hosts[0].paths[0].pathType=Prefix" \
+            --wait --timeout 300s
+
+      - name: 🥒 Run BDD tests against Helm
+        env:
+          BASE_URL: http://shomer.localhost
+        run: poetry run behave
+
+      - name: 🔍 Debug on failure
+        if: failure()
+        run: |
+          kubectl get pods -o wide
+          kubectl describe pods
+          kubectl logs -l app.kubernetes.io/instance=shomer --all-containers --tail=50
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: helm uninstall shomer --ignore-not-found

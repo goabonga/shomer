@@ -1,0 +1,12 @@
+apiVersion: v2
+name: shomer
+description: Helm chart for the Shomer OIDC/OAuth2 authentication service
+type: application
+version: "0.0.0"
+appVersion: "0.0.0"
+home: https://github.com/goabonga/shomer
+sources:
+  - https://github.com/goabonga/shomer
+maintainers:
+  - name: Chris
+    email: goabonga@pm.me

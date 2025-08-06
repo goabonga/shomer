@@ -1,0 +1,78 @@
+site_name: shomer
+site_url: https://goabonga.github.io/shomer
+repo_url: https://github.com/goabonga/shomer
+repo_name: goabonga/shomer
+
+theme:
+  name: material
+  logo: img/shomer.svg
+  favicon: img/favicon.ico
+  custom_dir: docs/overrides
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+  features:
+    - navigation.indexes
+    - toc.integrate
+    - content.code.copy
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - macros
+  - gen-files:
+      scripts:
+        - docs/gen_pages.py
+  - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["src"]
+          options:
+            show_root_heading: false
+            show_root_full_path: false
+            show_source: true
+            separate_signature: true
+            show_signature_annotations: true
+            group_by_category: true
+            members_order: "source"
+            filters: []
+            docstring_style: "numpy"
+            merge_init_into_class: true
+            show_submodules: true
+
+watch:
+  - src/shomer
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  version: "0.0.0"
+
+nav:
+  - Home: index.md
+  - Installation: install.md
+  - API Reference: mkdocstrings.md
+  - Contributing: contributing.md
+  - Code of Conduct: code_of_conduct.md
+  - Release: release.md
+  - License: license.md
+  - Changelog: changelog.md

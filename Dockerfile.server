@@ -1,0 +1,21 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY requirements.txt requirements-server.txt requirements-worker.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-server.txt -r requirements-worker.txt
+
+COPY src/ src/
+COPY alembic/ alembic/
+COPY alembic.ini .
+
+ENV PYTHONPATH=/app/src
+ENV SHOMER_HOST=0.0.0.0
+ENV SHOMER_PORT=8000
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/liveness')" || exit 1
+
+CMD ["uvicorn", "shomer.app:app", "--host", "0.0.0.0", "--port", "8000"]

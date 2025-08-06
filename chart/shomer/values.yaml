@@ -1,0 +1,111 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/goabonga/shomer-server
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: shomer.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+env:
+  SHOMER_HOST: "0.0.0.0"
+  SHOMER_PORT: "8000"
+  SHOMER_DATABASE_URL: "postgresql+asyncpg://shomer:shomer@shomer-postgres:5432/shomer"
+  SHOMER_CELERY_BROKER_URL: "redis://shomer-redis:6379/0"
+
+resources: {}
+
+worker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/goabonga/shomer-worker
+    pullPolicy: IfNotPresent
+    tag: ""
+  resources: {}
+
+beat:
+  enabled: true
+  image:
+    repository: ghcr.io/goabonga/shomer-worker
+    pullPolicy: IfNotPresent
+    tag: ""
+  resources: {}
+
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  resources: {}
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    username: shomer
+    password: shomer
+    database: shomer
+  resources: {}
+
+livenessProbe:
+  httpGet:
+    path: /liveness
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readiness
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

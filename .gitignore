@@ -1,0 +1,55 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Poetry
+.cache/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Test / coverage reports
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.cache/
+.pytest_cache/
+junit.xml
+
+# Mypy / Ruff / Pyright / others
+.mypy_cache/
+.ruff_cache/
+.pyright/
+
+# Editor / OS metadata
+*.swp
+*.swo
+*.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json
+*.log
+
+
+# MkDocs build output
+site/
+
+# Env files
+.env
+.env.*
+
+# Playwright screenshots
+screenshots/
+docs/img/screenshots/
+
+# Generated reports
+docs/pytest-report.md
+docs/behave-report.md
+
+# Virtual environments (just in case)
+.venv/
+venv/
