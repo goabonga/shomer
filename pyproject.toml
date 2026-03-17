@@ -57,9 +57,11 @@ sqlalchemy = {extras = ["asyncio"], version = "*", optional = true}
 asyncpg = {version = "*", optional = true}
 alembic = {version = "*", optional = true}
 celery = {extras = ["redis"], version = "*", optional = true}
+argon2-cffi = {version = "*", optional = true}
+cryptography = {version = "*", optional = true}
 
 [tool.poetry.extras]
-server = ["fastapi", "uvicorn", "jinja2", "sqlalchemy", "asyncpg", "alembic"]
+server = ["fastapi", "uvicorn", "jinja2", "sqlalchemy", "asyncpg", "alembic", "argon2-cffi", "cryptography"]
 worker = ["celery"]
 
 [tool.poetry.group.dev]
