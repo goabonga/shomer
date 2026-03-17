@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+import base64
+import os
 from dataclasses import dataclass
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 @dataclass(frozen=True)
@@ -69,3 +72,50 @@ def check_needs_rehash(
     """Check if a hash needs to be re-hashed with current parameters."""
     h = hasher or _password_hasher
     return h.check_needs_rehash(password_hash)
+
+
+# ---------------------------------------------------------------------------
+# AES-256-GCM symmetric encryption
+# ---------------------------------------------------------------------------
+
+
+class AESEncryption:
+    """AES-256-GCM authenticated encryption.
+
+    Ciphertext layout: ``nonce (12 bytes) || ciphertext+tag``.
+    """
+
+    NONCE_SIZE = 12  # 96 bits, recommended for GCM
+    KEY_SIZE = 32  # 256 bits
+
+    def __init__(self, key: bytes) -> None:
+        if len(key) != self.KEY_SIZE:
+            raise ValueError(f"Key must be {self.KEY_SIZE} bytes, got {len(key)}")
+        self._aesgcm = AESGCM(key)
+
+    @classmethod
+    def from_base64(cls, key_b64: str) -> AESEncryption:
+        """Create an instance from a base64-encoded key."""
+        return cls(base64.b64decode(key_b64))
+
+    @staticmethod
+    def generate_key() -> bytes:
+        """Generate a random 256-bit key."""
+        return os.urandom(AESEncryption.KEY_SIZE)
+
+    @staticmethod
+    def generate_key_b64() -> str:
+        """Generate a random 256-bit key as a base64 string."""
+        return base64.b64encode(AESEncryption.generate_key()).decode("ascii")
+
+    def encrypt(self, plaintext: bytes) -> bytes:
+        """Encrypt *plaintext* and return ``nonce || ciphertext``."""
+        nonce = os.urandom(self.NONCE_SIZE)
+        ciphertext = self._aesgcm.encrypt(nonce, plaintext, None)
+        return nonce + ciphertext
+
+    def decrypt(self, data: bytes) -> bytes:
+        """Decrypt ``nonce || ciphertext`` and return plaintext."""
+        nonce = data[: self.NONCE_SIZE]
+        ciphertext = data[self.NONCE_SIZE :]
+        return self._aesgcm.decrypt(nonce, ciphertext, None)
