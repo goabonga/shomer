@@ -14,7 +14,7 @@ help: ## Show this help
 env: ## Set up virtual environment
 	@if ! test -x $(VENV)/bin/python; then \
 		echo "🔧 Installing dependencies with Poetry..."; \
-		poetry install --with dev --with docs --with test --extras server; \
+		poetry install --with dev --with docs --with test --extras server --extras worker; \
 	fi
 
 install: env ## Install dependencies with Poetry
