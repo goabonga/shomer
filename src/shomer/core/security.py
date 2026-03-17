@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+import hmac
 import os
 from dataclasses import dataclass
 
@@ -119,3 +120,15 @@ class AESEncryption:
         nonce = data[: self.NONCE_SIZE]
         ciphertext = data[self.NONCE_SIZE :]
         return self._aesgcm.decrypt(nonce, ciphertext, None)
+
+
+# ---------------------------------------------------------------------------
+# Constant-time comparison
+# ---------------------------------------------------------------------------
+
+
+def constant_time_compare(a: str | bytes, b: str | bytes) -> bool:
+    """Compare two values in constant time to prevent timing attacks."""
+    a_bytes = a.encode("utf-8") if isinstance(a, str) else a
+    b_bytes = b.encode("utf-8") if isinstance(b, str) else b
+    return hmac.compare_digest(a_bytes, b_bytes)
