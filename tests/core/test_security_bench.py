@@ -4,6 +4,7 @@
 """Benchmark tests for Argon2id timing targets."""
 
 import time
+from typing import Any, Callable, Tuple
 
 import pytest
 
@@ -19,7 +20,7 @@ MIN_HASH_MS = 50
 MAX_HASH_MS = 2000
 
 
-def _time_ms(fn):  # type: ignore[no-untyped-def]
+def _time_ms(fn: Callable[[], Any]) -> Tuple[Any, float]:
     start = time.perf_counter()
     result = fn()
     elapsed = (time.perf_counter() - start) * 1000
