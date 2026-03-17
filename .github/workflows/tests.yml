@@ -24,6 +24,7 @@ jobs:
 
   changes:
     name: Detect changes
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       chart: ${{ steps.filter.outputs.chart }}
