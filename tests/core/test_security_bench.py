@@ -39,12 +39,8 @@ class TestArgon2idBenchmark:
     def test_verify_timing_default_params(self) -> None:
         h = hash_password("benchmark-password")
         _, elapsed = _time_ms(lambda: verify_password("benchmark-password", h))
-        assert elapsed >= MIN_HASH_MS, (
-            f"Verify too fast ({elapsed:.1f}ms)"
-        )
-        assert elapsed <= MAX_HASH_MS, (
-            f"Verify too slow ({elapsed:.1f}ms)"
-        )
+        assert elapsed >= MIN_HASH_MS, f"Verify too fast ({elapsed:.1f}ms)"
+        assert elapsed <= MAX_HASH_MS, f"Verify too slow ({elapsed:.1f}ms)"
 
     def test_weak_params_are_faster(self) -> None:
         weak = make_hasher(Argon2Params(time_cost=1, memory_cost=16384))

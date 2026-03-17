@@ -16,7 +16,6 @@ from shomer.core.security import (
     verify_password,
 )
 
-
 # ---- Argon2id ---------------------------------------------------------
 
 
