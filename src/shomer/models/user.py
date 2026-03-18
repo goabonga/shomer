@@ -11,6 +11,7 @@ from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
+    from shomer.models.session import Session
     from shomer.models.user_email import UserEmail
     from shomer.models.user_password import UserPassword
     from shomer.models.user_profile import UserProfile
@@ -62,6 +63,10 @@ class User(Base, UUIDMixin, TimestampMixin):
         back_populates="user",
         cascade="all, delete-orphan",
         uselist=False,
+    )
+    sessions: Mapped[list[Session]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
