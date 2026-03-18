@@ -117,6 +117,8 @@ class Settings(BaseSettings):
         Access token lifetime in seconds (default 3600).
     jwt_id_token_exp : int
         ID token lifetime in seconds (default 3600).
+    jwt_clock_skew : int
+        Allowed clock skew in seconds for token validation.
     celery_backend_password : str
         Celery result backend Redis password (loaded via ``get_credential``).
     """
@@ -158,6 +160,7 @@ class Settings(BaseSettings):
     jwt_issuer: str = "https://auth.shomer.local"
     jwt_access_token_exp: int = 3600
     jwt_id_token_exp: int = 3600
+    jwt_clock_skew: int = 30
 
     # Email / SMTP
     smtp_host: str = "localhost"
