@@ -81,6 +81,7 @@ optional = true
 [tool.poetry.group.test.dependencies]
 behave = "*"
 playwright = "*"
+aiosqlite = "^0.22.1"
 
 [tool.poetry.group.favicon]
 optional = true
