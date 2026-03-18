@@ -1,3 +1,10 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Chris <goabonga@pm.me>
+
+"""Alembic migration environment with async SQLAlchemy support."""
+
+from __future__ import annotations
+
 import asyncio
 from logging.config import fileConfig
 
