@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-from shomer.core.settings import Settings, get_settings
+from pathlib import Path
+
+import pytest
+
+from shomer.core.settings import Settings, get_credential, get_settings
 
 
 def test_default_settings() -> None:
@@ -74,3 +78,49 @@ def test_get_settings_cached() -> None:
     s1 = get_settings()
     s2 = get_settings()
     assert s1 is s2
+
+
+# ---- get_credential ----------------------------------------------------
+
+
+def test_get_credential_from_file(
+    tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    secret_file = tmp_path / "MY_SECRET"
+    secret_file.write_text("  file-value  \n")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    assert get_credential("MY_SECRET") == "file-value"
+
+
+def test_get_credential_env_fallback(
+    monkeypatch: "pytest.MonkeyPatch",
+) -> None:
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
+    monkeypatch.setenv("MY_SECRET", "env-value")
+    assert get_credential("MY_SECRET") == "env-value"
+
+
+def test_get_credential_file_takes_priority(
+    tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    secret_file = tmp_path / "MY_SECRET"
+    secret_file.write_text("from-file")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    monkeypatch.setenv("MY_SECRET", "from-env")
+    assert get_credential("MY_SECRET") == "from-file"
+
+
+def test_get_credential_default(
+    monkeypatch: "pytest.MonkeyPatch",
+) -> None:
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
+    monkeypatch.delenv("NONEXISTENT", raising=False)
+    assert get_credential("NONEXISTENT", "fallback") == "fallback"
+
+
+def test_get_credential_missing_file_falls_to_env(
+    tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    monkeypatch.setenv("MY_SECRET", "env-value")
+    assert get_credential("MY_SECRET") == "env-value"
