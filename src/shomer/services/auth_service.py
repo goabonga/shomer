@@ -1,20 +1,24 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""User registration and email verification service."""
+"""User registration, email verification, and login service."""
 
 from __future__ import annotations
 
+import hashlib
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shomer.core.security import hash_password
-from shomer.models.queries import create_user
+from shomer.core.security import hash_password, verify_password
+from shomer.models.queries import create_user, get_user_by_email
+from shomer.models.session import Session
 from shomer.models.user import User
 from shomer.models.user_email import UserEmail
+from shomer.models.user_password import UserPassword
 from shomer.models.verification_code import VerificationCode
 
 #: Default lifetime for a verification code.
@@ -37,8 +41,22 @@ class RateLimitError(Exception):
     """Raised when resend is called too frequently."""
 
 
+class InvalidCredentialsError(Exception):
+    """Raised when email or password is incorrect."""
+
+
+class EmailNotVerifiedError(Exception):
+    """Raised when the email has not been verified yet."""
+
+
 #: Minimum interval between resend requests.
 RESEND_COOLDOWN = timedelta(minutes=1)
+
+#: Max failed login attempts before lockout.
+MAX_LOGIN_ATTEMPTS = 5
+
+#: Lockout duration after max failed attempts.
+LOGIN_LOCKOUT_DURATION = timedelta(minutes=15)
 
 
 class AuthService:
@@ -207,6 +225,98 @@ class AuthService:
         self.session.add(verification)
         await self.session.flush()
         return code
+
+    async def login(
+        self,
+        *,
+        email: str,
+        password: str,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> tuple[User, Session]:
+        """Authenticate a user and create a session.
+
+        Parameters
+        ----------
+        email : str
+            User email address.
+        password : str
+            Plain-text password.
+        user_agent : str or None
+            Browser User-Agent string.
+        ip_address : str or None
+            Client IP address.
+
+        Returns
+        -------
+        tuple[User, Session]
+            The authenticated user and the new session.
+
+        Raises
+        ------
+        InvalidCredentialsError
+            If the email or password is incorrect.
+        EmailNotVerifiedError
+            If the email has not been verified.
+        """
+        user = await get_user_by_email(self.session, email)
+        if user is None:
+            # Perform a dummy hash to prevent timing-based user enumeration
+            hash_password("dummy-password")
+            raise InvalidCredentialsError("Invalid email or password")
+
+        # Verify password against current hash (always runs Argon2id)
+        current_pw = await self._get_current_password(user.id)
+        if current_pw is None or not verify_password(
+            password, current_pw.password_hash
+        ):
+            raise InvalidCredentialsError("Invalid email or password")
+
+        # Check email is verified (only after password is confirmed valid
+        # to avoid leaking account existence via different error codes)
+        primary_email = next((e for e in user.emails if e.is_primary), None)
+        if primary_email is None or not primary_email.is_verified:
+            raise EmailNotVerifiedError("Email not verified")
+
+        # Create session
+        session_token = uuid.uuid4().hex
+        token_hash = hashlib.sha256(session_token.encode()).hexdigest()
+        csrf_token = uuid.uuid4().hex
+        now = datetime.now(timezone.utc)
+
+        session = Session(
+            user_id=user.id,
+            token_hash=token_hash,
+            csrf_token=csrf_token,
+            user_agent=user_agent,
+            ip_address=ip_address,
+            last_activity=now,
+            expires_at=now + timedelta(hours=24),
+        )
+        self.session.add(session)
+        await self.session.flush()
+
+        return user, session
+
+    async def _get_current_password(self, user_id: uuid.UUID) -> UserPassword | None:
+        """Get the current password for a user.
+
+        Parameters
+        ----------
+        user_id : uuid.UUID
+            User primary key.
+
+        Returns
+        -------
+        UserPassword or None
+            The current password record, or ``None``.
+        """
+        stmt = select(UserPassword).where(
+            UserPassword.user_id == user_id,
+            UserPassword.is_current == True,  # noqa: E712
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def _email_exists(self, email: str) -> bool:
         """Check if an email is already registered.

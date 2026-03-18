@@ -65,6 +65,36 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class LoginRequest(BaseModel):
+    """Login request body.
+
+    Attributes
+    ----------
+    email : str
+        User email address.
+    password : str
+        Plain-text password.
+    """
+
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
+
+class LoginResponse(BaseModel):
+    """Login success response.
+
+    Attributes
+    ----------
+    message : str
+        Confirmation message.
+    user_id : str
+        Authenticated user's UUID.
+    """
+
+    message: str
+    user_id: str
+
+
 class RegisterResponse(BaseModel):
     """Registration success response.
 
