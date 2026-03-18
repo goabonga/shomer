@@ -37,11 +37,7 @@ ingress:
           pathType: Prefix
   tls: []
 
-env:
-  SHOMER_HOST: "0.0.0.0"
-  SHOMER_PORT: "8000"
-  SHOMER_DATABASE_URL: "postgresql+asyncpg://shomer:shomer@shomer-postgres:5432/shomer"
-  SHOMER_CELERY_BROKER_URL: "redis://shomer-redis:6379/0"
+env: {}
 
 resources: {}
 
@@ -68,6 +64,8 @@ redis:
     repository: redis
     tag: "7-alpine"
     pullPolicy: IfNotPresent
+  auth:
+    password: ""
   resources: {}
 
 postgres:

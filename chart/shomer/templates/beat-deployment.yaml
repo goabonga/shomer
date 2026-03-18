@@ -35,16 +35,15 @@ spec:
           imagePullPolicy: {{ .Values.beat.image.pullPolicy }}
           command: ["celery", "-A", "shomer.worker", "beat", "--loglevel=info"]
           env:
-            - name: PYTHONPATH
-              value: /app/src
-            {{- range $key, $value := .Values.env }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
+            {{- include "shomer.commonEnv" . | nindent 12 }}
+          volumeMounts:
+            {{- include "shomer.credentialsVolumeMount" . | nindent 12 }}
           {{- with .Values.beat.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+      volumes:
+        {{- include "shomer.credentialsVolume" . | nindent 8 }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

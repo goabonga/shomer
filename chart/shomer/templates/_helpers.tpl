@@ -60,6 +60,46 @@ Create the name of the service account to use.
 {{- end }}
 
 {{/*
+Credentials volume (K8s Secret mounted as files).
+*/}}
+{{- define "shomer.credentialsVolume" -}}
+- name: credentials
+  secret:
+    secretName: {{ include "shomer.fullname" . }}-credentials
+{{- end }}
+
+{{/*
+Credentials volumeMount.
+*/}}
+{{- define "shomer.credentialsVolumeMount" -}}
+- name: credentials
+  mountPath: /run/credentials
+  readOnly: true
+{{- end }}
+
+{{/*
+Common env vars for shomer containers (database + redis components).
+*/}}
+{{- define "shomer.commonEnv" -}}
+- name: PYTHONPATH
+  value: /app/src
+- name: CREDENTIALS_DIRECTORY
+  value: /run/credentials
+- name: SHOMER_DATABASE_HOST
+  value: {{ printf "%s-postgres" (include "shomer.fullname" .) | quote }}
+- name: SHOMER_DATABASE_USER
+  value: {{ .Values.postgres.auth.username | quote }}
+- name: SHOMER_DATABASE_NAME
+  value: {{ .Values.postgres.auth.database | quote }}
+- name: SHOMER_REDIS_HOST
+  value: {{ printf "%s-redis" (include "shomer.fullname" .) | quote }}
+{{- range $key, $value := .Values.env }}
+- name: {{ $key }}
+  value: {{ $value | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
 Init container that waits for postgres to be ready.
 */}}
 {{- define "shomer.waitForPostgres" -}}
