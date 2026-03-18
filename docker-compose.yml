@@ -7,8 +7,14 @@ services:
       - "8000:8000"
     environment:
       - PYTHONPATH=/app/src
-      - SHOMER_DATABASE_URL=postgresql+asyncpg://shomer:shomer@postgres:5432/shomer
-      - SHOMER_CELERY_BROKER_URL=redis://redis:6379/0
+      - CREDENTIALS_DIRECTORY=/run/secrets
+      - SHOMER_DATABASE_HOST=postgres
+      - SHOMER_DATABASE_USER=shomer
+      - SHOMER_DATABASE_NAME=shomer
+      - SHOMER_REDIS_HOST=redis
+    secrets:
+      - DATABASE_PASSWORD
+      - REDIS_PASSWORD
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -26,7 +32,10 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     environment:
-      - SHOMER_CELERY_BROKER_URL=redis://redis:6379/0
+      - CREDENTIALS_DIRECTORY=/run/secrets
+      - SHOMER_REDIS_HOST=redis
+    secrets:
+      - REDIS_PASSWORD
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -39,7 +48,10 @@ services:
       dockerfile: Dockerfile.worker
     command: celery -A shomer.worker beat --loglevel=info
     environment:
-      - SHOMER_CELERY_BROKER_URL=redis://redis:6379/0
+      - CREDENTIALS_DIRECTORY=/run/secrets
+      - SHOMER_REDIS_HOST=redis
+    secrets:
+      - REDIS_PASSWORD
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -53,7 +65,12 @@ services:
     command: alembic upgrade head
     environment:
       - PYTHONPATH=/app/src
-      - SHOMER_DATABASE_URL=postgresql+asyncpg://shomer:shomer@postgres:5432/shomer
+      - CREDENTIALS_DIRECTORY=/run/secrets
+      - SHOMER_DATABASE_HOST=postgres
+      - SHOMER_DATABASE_USER=shomer
+      - SHOMER_DATABASE_NAME=shomer
+    secrets:
+      - DATABASE_PASSWORD
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,12 +79,14 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=shomer
-      - POSTGRES_PASSWORD=shomer
+      - POSTGRES_PASSWORD_FILE=/run/secrets/DATABASE_PASSWORD
       - POSTGRES_DB=shomer
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    secrets:
+      - DATABASE_PASSWORD
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U shomer"]
       interval: 10s
@@ -76,13 +95,27 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: >
+      sh -c 'if [ -f /run/secrets/REDIS_PASSWORD ]; then
+        redis-server --requirepass "$$(cat /run/secrets/REDIS_PASSWORD)"
+      else
+        redis-server
+      fi'
     ports:
       - "6379:6379"
+    secrets:
+      - REDIS_PASSWORD
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "shomer", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
+
+secrets:
+  DATABASE_PASSWORD:
+    file: ./docker-compose-database-secret.txt
+  REDIS_PASSWORD:
+    file: ./docker-compose-redis-secret.txt
 
 volumes:
   pgdata:
