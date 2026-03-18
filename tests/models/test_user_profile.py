@@ -123,7 +123,6 @@ class TestUserProfileRelationship:
         assert rel.back_populates == "profile"
 
     def test_user_model_has_profile_relationship(self) -> None:
-
         rel = User.__mapper__.relationships["profile"]
         assert rel.back_populates == "user"
         assert rel.uselist is False
