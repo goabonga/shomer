@@ -6,11 +6,39 @@ from shomer.core.settings import Settings, get_settings
 
 def test_default_settings() -> None:
     s = Settings()
-    assert s.host == "0.0.0.0"
-    assert s.port == 8000
     assert s.startup_delay == 1.0
-    assert "postgresql+asyncpg" in s.database_url
-    assert "redis" in s.celery_broker_url
+    assert s.database_host == "localhost"
+    assert s.database_port == 5432
+    assert s.database_name == "shomer"
+    assert s.database_user == "shomer"
+    assert s.redis_host == "localhost"
+    assert s.redis_port == 6379
+
+
+def test_database_url_without_password() -> None:
+    s = Settings()
+    assert s.database_url == "postgresql+asyncpg://shomer@localhost:5432/shomer"
+
+
+def test_database_url_with_password() -> None:
+    s = Settings(database_password="secret")
+    assert s.database_url == "postgresql+asyncpg://shomer:secret@localhost:5432/shomer"
+
+
+def test_database_url_sync() -> None:
+    s = Settings()
+    assert "+asyncpg" not in s.database_url_sync
+    assert "postgresql://" in s.database_url_sync
+
+
+def test_celery_broker_url_without_password() -> None:
+    s = Settings()
+    assert s.celery_broker_url == "redis://localhost:6379/0"
+
+
+def test_celery_broker_url_with_password() -> None:
+    s = Settings(redis_password="redispass")
+    assert s.celery_broker_url == "redis://:redispass@localhost:6379/0"
 
 
 def test_celery_backend_defaults_to_broker() -> None:
@@ -18,15 +46,28 @@ def test_celery_backend_defaults_to_broker() -> None:
     assert s.celery_backend == s.celery_broker_url
 
 
-def test_celery_backend_explicit() -> None:
-    s = Settings(celery_result_backend="redis://other:6379/1")
-    assert s.celery_backend == "redis://other:6379/1"
+def test_celery_backend_separate_host() -> None:
+    s = Settings(celery_backend_host="backend-redis", celery_backend_port=6380)
+    assert s.celery_backend == "redis://backend-redis:6380/0"
 
 
-def test_database_url_sync() -> None:
-    s = Settings()
-    assert "+asyncpg" not in s.database_url_sync
-    assert "postgresql://" in s.database_url_sync
+def test_celery_backend_with_password() -> None:
+    s = Settings(
+        celery_backend_host="backend-redis",
+        celery_backend_password="backendpass",
+    )
+    assert s.celery_backend == "redis://:backendpass@backend-redis:6379/0"
+
+
+def test_celery_backend_inherits_redis_password() -> None:
+    s = Settings(redis_password="sharedpass")
+    assert s.celery_backend == "redis://:sharedpass@localhost:6379/0"
+
+
+def test_celery_backend_own_password_overrides_redis() -> None:
+    s = Settings(redis_password="shared", celery_backend_password="own")
+    assert "own" in s.celery_backend
+    assert "shared" not in s.celery_backend
 
 
 def test_get_settings_cached() -> None:
