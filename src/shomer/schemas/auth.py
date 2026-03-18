@@ -26,6 +26,45 @@ class RegisterRequest(BaseModel):
     username: str | None = Field(default=None, max_length=255)
 
 
+class VerifyRequest(BaseModel):
+    """Email verification request body.
+
+    Attributes
+    ----------
+    email : str
+        Email address to verify.
+    code : str
+        Six-digit verification code.
+    """
+
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+
+
+class ResendRequest(BaseModel):
+    """Resend verification code request body.
+
+    Attributes
+    ----------
+    email : str
+        Email address to resend the code to.
+    """
+
+    email: EmailStr
+
+
+class MessageResponse(BaseModel):
+    """Generic message response.
+
+    Attributes
+    ----------
+    message : str
+        Human-readable message.
+    """
+
+    message: str
+
+
 class RegisterResponse(BaseModel):
     """Registration success response.
 
