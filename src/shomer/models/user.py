@@ -5,8 +5,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Boolean, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from shomer.models.user_email import UserEmail
+    from shomer.models.user_password import UserPassword
 
 from shomer.core.database import Base, TimestampMixin, UUIDMixin
 
@@ -38,6 +44,16 @@ class User(Base, UUIDMixin, TimestampMixin):
         Boolean,
         default=True,
         nullable=False,
+    )
+
+    # Relationships
+    emails: Mapped[list[UserEmail]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    passwords: Mapped[list[UserPassword]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

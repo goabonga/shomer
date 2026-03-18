@@ -7,9 +7,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from shomer.models.user import User
 
 from shomer.core.database import Base, TimestampMixin, UUIDMixin
 
@@ -60,6 +64,9 @@ class UserEmail(Base, UUIDMixin, TimestampMixin):
         DateTime(timezone=True),
         nullable=True,
     )
+
+    # Relationships
+    user: Mapped[User] = relationship(back_populates="emails")
 
     def __repr__(self) -> str:
         return f"<UserEmail email={self.email} verified={self.is_verified}>"
