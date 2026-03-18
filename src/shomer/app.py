@@ -49,9 +49,12 @@ def create_app() -> FastAPI:
         name="static",
     )
 
+    from shomer.middleware.cors import setup_cors
     from shomer.routes.docs import router as docs_router
     from shomer.routes.health import router as health_router
     from shomer.routes.views import router as views_router
+
+    setup_cors(application, settings)
 
     application.include_router(health_router)
     application.include_router(docs_router)
