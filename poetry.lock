@@ -2248,6 +2248,28 @@ files = [
 windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
+name = "pyjwt"
+version = "2.12.1"
+description = "JSON Web Token implementation in Python"
+optional = true
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "extra == \"server\""
+files = [
+    {file = "pyjwt-2.12.1-py3-none-any.whl", hash = "sha256:28ca37c070cad8ba8cd9790cd940535d40274d22f80ab87f3ac6a713e6e8454c"},
+    {file = "pyjwt-2.12.1.tar.gz", hash = "sha256:c74a7a2adf861c04d002db713dd85f84beb242228e671280bf709d765b03672b"},
+]
+
+[package.dependencies]
+typing_extensions = {version = ">=4.0", markers = "python_version < \"3.11\""}
+
+[package.extras]
+crypto = ["cryptography (>=3.4.0)"]
+dev = ["coverage[toml] (==7.10.7)", "cryptography (>=3.4.0)", "pre-commit", "pytest (>=8.4.2,<9.0.0)", "sphinx", "sphinx-rtd-theme", "zope.interface"]
+docs = ["sphinx", "sphinx-rtd-theme", "zope.interface"]
+tests = ["coverage[toml] (==7.10.7)", "pytest (>=8.4.2,<9.0.0)"]
+
+[[package]]
 name = "pymdown-extensions"
 version = "10.16.1"
 description = "Extension pack for Python Markdown."
@@ -3197,10 +3219,10 @@ files = [
 ]
 
 [extras]
-server = ["alembic", "argon2-cffi", "asyncpg", "cryptography", "fastapi", "jinja2", "sqlalchemy", "uvicorn"]
+server = ["alembic", "argon2-cffi", "asyncpg", "cryptography", "fastapi", "jinja2", "pyjwt", "sqlalchemy", "uvicorn"]
 worker = ["celery"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "2c6f008e2ee574f58238c16968cadba3043dd37412d10a373a3046291abcfb2b"
+content-hash = "67165a82b81f7ca095770c45d3e4785938e11c8de238432d92464485abd96cf9"

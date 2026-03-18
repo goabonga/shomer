@@ -59,9 +59,10 @@ alembic = {version = "*", optional = true}
 celery = {extras = ["redis"], version = "*", optional = true}
 argon2-cffi = {version = "*", optional = true}
 cryptography = {version = "*", optional = true}
+pyjwt = {version = "*", optional = true}
 
 [tool.poetry.extras]
-server = ["fastapi", "uvicorn", "jinja2", "sqlalchemy", "asyncpg", "alembic", "argon2-cffi", "cryptography"]
+server = ["fastapi", "uvicorn", "jinja2", "sqlalchemy", "asyncpg", "alembic", "argon2-cffi", "cryptography", "pyjwt"]
 worker = ["celery"]
 
 [tool.poetry.group.dev]
