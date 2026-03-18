@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import __version__
 from .core.settings import get_settings
+from .models import *  # noqa: F401,F403 — register all mappers
 
 settings = get_settings()
 
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     )
 
     from shomer.middleware.cors import setup_cors
+    from shomer.routes.auth import router as auth_router
     from shomer.routes.docs import router as docs_router
     from shomer.routes.health import router as health_router
     from shomer.routes.jwks import router as jwks_router
@@ -58,6 +60,7 @@ def create_app() -> FastAPI:
     setup_cors(application, settings)
 
     application.include_router(health_router)
+    application.include_router(auth_router)
     application.include_router(docs_router)
     application.include_router(jwks_router)
     application.include_router(views_router)

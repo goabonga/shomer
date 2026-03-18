@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Chris <goabonga@pm.me>
+
+"""Pydantic request/response schemas."""
