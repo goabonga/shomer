@@ -36,4 +36,4 @@ def after_all(context):
     context.browser.close()
     context.playwright.stop()
     if context.manage_compose:
-        subprocess.run(["docker", "compose", "down"], check=True)
+        subprocess.run(["docker", "compose", "down", "--volumes"], check=True)
