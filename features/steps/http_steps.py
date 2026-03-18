@@ -2,38 +2,62 @@
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
 import json
+import urllib.error
 import urllib.request
 
-from behave import then, when
+from behave import given, then, when
+
+
+def _send(context, method, path, data=None):
+    """Send an HTTP request and store response on context."""
+    url = context.base_url + path
+    headers = {}
+    body = None
+    if data is not None:
+        body = json.dumps(data).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        context.response = urllib.request.urlopen(req)
+        context.response_status = context.response.status
+        context.response_body = context.response.read().decode()
+    except urllib.error.HTTPError as e:
+        context.response = e
+        context.response_status = e.code
+        context.response_body = e.read().decode()
+
+
+@given("I have a JSON payload")
+def step_set_json_payload(context):
+    context.json_payload = json.loads(context.text)
 
 
 @when('I send a GET request to "{path}"')
 def step_get_request(context, path):
-    url = context.base_url + path
-    req = urllib.request.Request(url)
-    context.response = urllib.request.urlopen(req)
-    context.response_body = context.response.read().decode()
+    _send(context, "GET", path)
 
 
 @when('I send a POST request to "{path}"')
 def step_post_request(context, path):
-    url = context.base_url + path
-    req = urllib.request.Request(url, method="POST")
-    context.response = urllib.request.urlopen(req)
-    context.response_body = context.response.read().decode()
+    data = getattr(context, "json_payload", None)
+    _send(context, "POST", path, data=data)
+    context.json_payload = None
+
+
+@when('I send a POST request to "{path}" with JSON')
+def step_post_request_with_json(context, path):
+    data = json.loads(context.text)
+    _send(context, "POST", path, data=data)
 
 
 @when('I send a DELETE request to "{path}"')
 def step_delete_request(context, path):
-    url = context.base_url + path
-    req = urllib.request.Request(url, method="DELETE")
-    context.response = urllib.request.urlopen(req)
-    context.response_body = context.response.read().decode()
+    _send(context, "DELETE", path)
 
 
 @then("the response status code should be {status_code:d}")
 def step_check_status_code(context, status_code):
-    assert context.response.status == status_code
+    assert context.response_status == status_code
 
 
 @then('the response body should contain "{text}"')
