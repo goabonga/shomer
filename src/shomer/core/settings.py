@@ -51,6 +51,24 @@ class Settings(BaseSettings):
     ----------
     startup_delay : float
         Delay in seconds before accepting requests.
+    debug : bool
+        Enable development mode (relaxed CORS for localhost).
+    cors_allowed_origins : list[str]
+        Allowed CORS origins. Empty list means none unless debug mode.
+    cors_allow_credentials : bool
+        Whether to allow credentials in CORS requests.
+    cors_allowed_methods : list[str]
+        Allowed HTTP methods for CORS.
+    cors_allowed_headers : list[str]
+        Allowed HTTP headers for CORS.
+    cookie_secure : bool
+        Set Secure flag on cookies.
+    cookie_httponly : bool
+        Set HttpOnly flag on cookies.
+    cookie_samesite : str
+        SameSite cookie attribute (lax, strict, or none).
+    cookie_domain : str
+        Cookie domain scope. Empty string means current domain.
     database_host : str
         PostgreSQL server hostname.
     database_port : int
@@ -83,6 +101,19 @@ class Settings(BaseSettings):
 
     # Server
     startup_delay: float = 1.0
+    debug: bool = False
+
+    # CORS
+    cors_allowed_origins: list[str] = []
+    cors_allow_credentials: bool = True
+    cors_allowed_methods: list[str] = ["*"]
+    cors_allowed_headers: list[str] = ["*"]
+
+    # Cookies
+    cookie_secure: bool = True
+    cookie_httponly: bool = True
+    cookie_samesite: str = "lax"
+    cookie_domain: str = ""
 
     # Database
     database_host: str = "localhost"
