@@ -107,6 +107,10 @@ class Settings(BaseSettings):
         Default sender email address.
     email_from_name : str
         Default sender display name.
+    jwk_encryption_key : str
+        Base64-encoded AES-256 key for encrypting JWK private keys.
+    rsa_key_size : int
+        RSA key size in bits (2048 or 4096).
     celery_backend_password : str
         Celery result backend Redis password (loaded via ``get_credential``).
     """
@@ -141,6 +145,10 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
     redis_password: str = ""
+
+    # JWK / RSA
+    jwk_encryption_key: str = ""
+    rsa_key_size: int = 2048
 
     # Email / SMTP
     smtp_host: str = "localhost"
