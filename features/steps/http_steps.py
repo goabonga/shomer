@@ -51,3 +51,15 @@ def step_check_json_key(context, key):
 def step_check_html_content_type(context):
     content_type = context.response.headers.get("Content-Type", "")
     assert "text/html" in content_type
+
+
+@then("the response content type should be json")
+def step_check_json_content_type(context):
+    content_type = context.response.headers.get("Content-Type", "")
+    assert "application/json" in content_type
+
+
+@then('the response should have header "{name}" containing "{value}"')
+def step_check_response_header(context, name, value):
+    header = context.response.headers.get(name, "")
+    assert value in header, f"Header '{name}' = '{header}' does not contain '{value}'"
