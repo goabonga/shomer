@@ -16,7 +16,7 @@ from shomer.core.security import (
 )
 
 # Acceptable range for default params (time_cost=3, memory=64MiB)
-MIN_HASH_MS = 50
+MIN_HASH_MS = 20
 MAX_HASH_MS = 2000
 
 
