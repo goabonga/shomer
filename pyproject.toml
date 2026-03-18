@@ -82,6 +82,7 @@ optional = true
 [tool.poetry.group.test.dependencies]
 behave = "*"
 playwright = "*"
+httpx = "^0.28.1"
 
 [tool.poetry.group.favicon]
 optional = true
