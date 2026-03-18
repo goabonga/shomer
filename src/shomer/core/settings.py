@@ -111,6 +111,12 @@ class Settings(BaseSettings):
         Base64-encoded AES-256 key for encrypting JWK private keys.
     rsa_key_size : int
         RSA key size in bits (2048 or 4096).
+    jwt_issuer : str
+        ``iss`` claim value for issued JWTs.
+    jwt_access_token_exp : int
+        Access token lifetime in seconds (default 3600).
+    jwt_id_token_exp : int
+        ID token lifetime in seconds (default 3600).
     celery_backend_password : str
         Celery result backend Redis password (loaded via ``get_credential``).
     """
@@ -146,9 +152,12 @@ class Settings(BaseSettings):
     redis_db: int = 0
     redis_password: str = ""
 
-    # JWK / RSA
+    # JWK / RSA / JWT
     jwk_encryption_key: str = ""
     rsa_key_size: int = 2048
+    jwt_issuer: str = "https://auth.shomer.local"
+    jwt_access_token_exp: int = 3600
+    jwt_id_token_exp: int = 3600
 
     # Email / SMTP
     smtp_host: str = "localhost"
