@@ -75,6 +75,20 @@ class Settings(BaseSettings):
         Celery result backend Redis port. Defaults to ``redis_port``.
     celery_backend_db : int
         Celery result backend Redis database number.
+    smtp_host : str
+        SMTP server hostname.
+    smtp_port : int
+        SMTP server port.
+    smtp_user : str
+        SMTP authentication username.
+    smtp_password : str
+        SMTP authentication password.
+    smtp_use_tls : bool
+        Whether to use STARTTLS for SMTP connections.
+    email_from_address : str
+        Default sender email address.
+    email_from_name : str
+        Default sender display name.
     celery_backend_password : str
         Celery result backend Redis password (loaded via ``get_credential``).
     """
@@ -96,6 +110,15 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
     redis_password: str = ""
+
+    # Email / SMTP
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    email_from_address: str = "noreply@shomer.local"
+    email_from_name: str = "Shomer"
 
     # Celery result backend (defaults to broker Redis when empty)
     celery_backend_host: str = ""
