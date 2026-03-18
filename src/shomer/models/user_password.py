@@ -6,9 +6,13 @@
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, ForeignKey, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from shomer.models.user import User
 
 from shomer.core.database import Base, TimestampMixin, UUIDMixin
 
@@ -44,6 +48,9 @@ class UserPassword(Base, UUIDMixin, TimestampMixin):
         default=True,
         nullable=False,
     )
+
+    # Relationships
+    user: Mapped[User] = relationship(back_populates="passwords")
 
     def __repr__(self) -> str:
         return f"<UserPassword user_id={self.user_id} current={self.is_current}>"
