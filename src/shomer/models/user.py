@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 if TYPE_CHECKING:
     from shomer.models.user_email import UserEmail
     from shomer.models.user_password import UserPassword
+    from shomer.models.user_profile import UserProfile
 
 from shomer.core.database import Base, TimestampMixin, UUIDMixin
 
@@ -32,6 +33,8 @@ class User(Base, UUIDMixin, TimestampMixin):
         Row creation timestamp (from TimestampMixin).
     updated_at : datetime
         Last update timestamp (from TimestampMixin).
+    profile : UserProfile or None
+        One-to-one OIDC profile (lazy-loaded).
     """
 
     __tablename__ = "users"
@@ -54,6 +57,11 @@ class User(Base, UUIDMixin, TimestampMixin):
     passwords: Mapped[list[UserPassword]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+    profile: Mapped[UserProfile | None] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
     def __repr__(self) -> str:
