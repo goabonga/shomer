@@ -26,18 +26,35 @@ spec:
         - name: redis
           image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          {{- if .Values.redis.auth.password }}
+          command: ["redis-server", "--requirepass", "$(REDIS_PASSWORD)"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shomer.fullname" . }}-credentials
+                  key: REDIS_PASSWORD
+          {{- end }}
           ports:
             - name: redis
               containerPort: 6379
               protocol: TCP
           livenessProbe:
             exec:
+              {{- if .Values.redis.auth.password }}
+              command: ["redis-cli", "-a", "$(REDIS_PASSWORD)", "ping"]
+              {{- else }}
               command: ["redis-cli", "ping"]
+              {{- end }}
             periodSeconds: 10
             timeoutSeconds: 3
           readinessProbe:
             exec:
+              {{- if .Values.redis.auth.password }}
+              command: ["redis-cli", "-a", "$(REDIS_PASSWORD)", "ping"]
+              {{- else }}
               command: ["redis-cli", "ping"]
+              {{- end }}
             periodSeconds: 10
             timeoutSeconds: 3
           {{- with .Values.redis.resources }}

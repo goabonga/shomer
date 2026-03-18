@@ -31,9 +31,8 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["alembic", "upgrade", "head"]
           env:
-            - name: PYTHONPATH
-              value: /app/src
-            {{- range $key, $value := .Values.env }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
+            {{- include "shomer.commonEnv" . | nindent 12 }}
+          volumeMounts:
+            {{- include "shomer.credentialsVolumeMount" . | nindent 12 }}
+      volumes:
+        {{- include "shomer.credentialsVolume" . | nindent 8 }}
