@@ -11,6 +11,7 @@ from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
+    from shomer.models.password_reset_token import PasswordResetToken
     from shomer.models.session import Session
     from shomer.models.user_email import UserEmail
     from shomer.models.user_password import UserPassword
@@ -65,6 +66,10 @@ class User(Base, UUIDMixin, TimestampMixin):
         uselist=False,
     )
     sessions: Mapped[list[Session]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    password_reset_tokens: Mapped[list[PasswordResetToken]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
