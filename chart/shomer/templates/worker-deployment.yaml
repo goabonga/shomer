@@ -22,6 +22,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      enableServiceLinks: false
       serviceAccountName: {{ include "shomer.serviceAccountName" . }}
       {{- with (include "shomer.waitForPostgres" .) }}
       initContainers:
