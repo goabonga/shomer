@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from shomer.core.settings import Settings
 
@@ -28,7 +29,7 @@ class CookiePolicy:
 
     secure: bool
     httponly: bool
-    samesite: str
+    samesite: Literal["lax", "strict", "none"]
     domain: str
 
 
@@ -52,6 +53,6 @@ def get_cookie_policy(settings: Settings) -> CookiePolicy:
     return CookiePolicy(
         secure=secure,
         httponly=settings.cookie_httponly,
-        samesite=settings.cookie_samesite,
+        samesite=settings.cookie_samesite,  # type: ignore[arg-type]
         domain=settings.cookie_domain,
     )

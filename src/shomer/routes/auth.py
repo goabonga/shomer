@@ -5,10 +5,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 
 from shomer.deps import DbSession
+from shomer.middleware.cookies import get_cookie_policy
 from shomer.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
     MessageResponse,
     RegisterRequest,
     RegisterResponse,
@@ -19,7 +23,9 @@ from shomer.services.auth_service import (
     AuthService,
     DuplicateEmailError,
     EmailNotFoundError,
+    EmailNotVerifiedError,
     InvalidCodeError,
+    InvalidCredentialsError,
     RateLimitError,
 )
 from shomer.tasks.email import send_email_task
@@ -157,3 +163,78 @@ async def resend(body: ResendRequest, db: DbSession) -> MessageResponse:
     )
 
     return MessageResponse(message="Verification code sent")
+
+
+@router.post("/login", response_model=LoginResponse)
+async def login(body: LoginRequest, request: Request, db: DbSession) -> JSONResponse:
+    """Authenticate a user and create a session.
+
+    Sets a secure session cookie on success.
+
+    Parameters
+    ----------
+    body : LoginRequest
+        Email and password.
+    request : Request
+        FastAPI request (for client metadata).
+    db : DbSession
+        Injected async database session.
+
+    Returns
+    -------
+    JSONResponse
+        Login confirmation with session cookie.
+
+    Raises
+    ------
+    HTTPException
+        401 if credentials are invalid, 403 if email not verified.
+    """
+    from shomer.core.settings import get_settings
+
+    svc = AuthService(db)
+    try:
+        user, session = await svc.login(
+            email=body.email,
+            password=body.password,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.client.host if request.client else None,
+        )
+    except InvalidCredentialsError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+    except EmailNotVerifiedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified",
+        )
+
+    settings = get_settings()
+    policy = get_cookie_policy(settings)
+    response = JSONResponse(
+        content=LoginResponse(
+            message="Login successful",
+            user_id=str(user.id),
+        ).model_dump(),
+    )
+    response.set_cookie(
+        key="session_id",
+        value=session.token_hash,
+        httponly=policy.httponly,
+        secure=policy.secure,
+        samesite=policy.samesite,
+        domain=policy.domain or None,
+        max_age=86400,
+    )
+    response.set_cookie(
+        key="csrf_token",
+        value=session.csrf_token,
+        httponly=False,
+        secure=policy.secure,
+        samesite=policy.samesite,
+        domain=policy.domain or None,
+        max_age=86400,
+    )
+    return response
