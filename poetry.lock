@@ -85,7 +85,7 @@ version = "4.12.1"
 description = "High-level concurrency and networking framework on top of asyncio or Trio"
 optional = false
 python-versions = ">=3.9"
-groups = ["main", "test"]
+groups = ["main", "dev"]
 files = [
     {file = "anyio-4.12.1-py3-none-any.whl", hash = "sha256:d405828884fc140aa80a3c667b8beed277f1dfedec42ba031bd6ac3db606ab6c"},
     {file = "anyio-4.12.1.tar.gz", hash = "sha256:41cfcc3a4c85d3f05c932da7c26d0201ac36f72abd4435ba90d0464a3ffed703"},
@@ -448,7 +448,7 @@ version = "2025.7.14"
 description = "Python package for providing Mozilla's CA Bundle."
 optional = false
 python-versions = ">=3.7"
-groups = ["docs", "test"]
+groups = ["dev", "docs"]
 files = [
     {file = "certifi-2025.7.14-py3-none-any.whl", hash = "sha256:6b31f564a415d79ee77df69d757bb49a5bb53bd9f756cbbe24394ffd6fc1f4b2"},
     {file = "certifi-2025.7.14.tar.gz", hash = "sha256:8ea99dbdfaaf2ba2f9bac77b9249ef62ec5218e7c2b2e903378ed5fccf765995"},
@@ -1015,12 +1015,12 @@ version = "1.3.0"
 description = "Backport of PEP 654 (exception groups)"
 optional = false
 python-versions = ">=3.7"
-groups = ["main", "dev", "test"]
+groups = ["main", "dev"]
 files = [
     {file = "exceptiongroup-1.3.0-py3-none-any.whl", hash = "sha256:4d111e6e0c13d0644cad6ddaa7ed0261a0b36971f6d23e7ec9b4b9097da78a10"},
     {file = "exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88"},
 ]
-markers = {main = "(extra == \"server\" or extra == \"worker\") and python_version == \"3.10\"", dev = "python_version == \"3.10\"", test = "python_version == \"3.10\""}
+markers = {main = "(extra == \"server\" or extra == \"worker\") and python_version == \"3.10\"", dev = "python_version == \"3.10\""}
 
 [package.dependencies]
 typing-extensions = {version = ">=4.6.0", markers = "python_version < \"3.13\""}
@@ -1160,7 +1160,7 @@ version = "0.16.0"
 description = "A pure-Python, bring-your-own-I/O implementation of HTTP/1.1"
 optional = false
 python-versions = ">=3.8"
-groups = ["main", "test"]
+groups = ["main", "dev"]
 files = [
     {file = "h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"},
     {file = "h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1"},
@@ -1185,7 +1185,7 @@ version = "1.0.9"
 description = "A minimal low-level HTTP client."
 optional = false
 python-versions = ">=3.8"
-groups = ["test"]
+groups = ["dev"]
 files = [
     {file = "httpcore-1.0.9-py3-none-any.whl", hash = "sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"},
     {file = "httpcore-1.0.9.tar.gz", hash = "sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8"},
@@ -1261,7 +1261,7 @@ version = "0.28.1"
 description = "The next generation HTTP client."
 optional = false
 python-versions = ">=3.8"
-groups = ["test"]
+groups = ["dev"]
 files = [
     {file = "httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"},
     {file = "httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc"},
@@ -1286,7 +1286,7 @@ version = "3.10"
 description = "Internationalized Domain Names in Applications (IDNA)"
 optional = false
 python-versions = ">=3.6"
-groups = ["main", "docs", "test"]
+groups = ["main", "dev", "docs"]
 files = [
     {file = "idna-3.10-py3-none-any.whl", hash = "sha256:946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3"},
     {file = "idna-3.10.tar.gz", hash = "sha256:12f65c9b470abda6dc35cf8e63cc574b1c52b11df2c86030af0ac09b01b13ea9"},
@@ -3203,4 +3203,4 @@ worker = ["celery"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "c9cc8edfc6cb7c6ccaa7b781fc13dedc33fa4013fec1d41a6858a5bc39a08cf2"
+content-hash = "2c6f008e2ee574f58238c16968cadba3043dd37412d10a373a3046291abcfb2b"
