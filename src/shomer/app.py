@@ -51,6 +51,7 @@ def create_app() -> FastAPI:
     )
 
     from shomer.middleware.cors import setup_cors
+    from shomer.middleware.session import SessionMiddleware
     from shomer.routes.auth import router as auth_router
     from shomer.routes.docs import router as docs_router
     from shomer.routes.health import router as health_router
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     from shomer.routes.views import router as views_router
 
     setup_cors(application, settings)
+    application.add_middleware(SessionMiddleware)
 
     application.include_router(health_router)
     application.include_router(auth_router)
