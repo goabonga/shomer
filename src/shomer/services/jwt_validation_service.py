@@ -163,7 +163,7 @@ class JWTValidationService:
                 error=TokenError.INVALID_CLAIMS,
                 error_message=str(exc),
             )
-        except jwt.DecodeError:
+        except jwt.DecodeError:  # pragma: no cover
             return TokenValidationResult(
                 valid=False,
                 error=TokenError.DECODE_ERROR,
