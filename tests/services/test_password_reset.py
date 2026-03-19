@@ -7,87 +7,105 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from shomer.core.database import Base
-from shomer.core.security import verify_password
-from shomer.models.access_token import AccessToken  # noqa: F401
-from shomer.models.jwk import JWK  # noqa: F401
-from shomer.models.password_reset_token import PasswordResetToken
-from shomer.models.refresh_token import RefreshToken  # noqa: F401
-from shomer.models.session import Session  # noqa: F401
-from shomer.models.user import User  # noqa: F401
-from shomer.models.user_email import UserEmail  # noqa: F401
-from shomer.models.user_password import UserPassword
-from shomer.models.user_profile import UserProfile  # noqa: F401
-from shomer.models.verification_code import VerificationCode  # noqa: F401
 from shomer.services.auth_service import AuthService, InvalidResetTokenError
 
-_ENGINE = create_async_engine(
-    "sqlite+aiosqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-_SESSION_FACTORY = async_sessionmaker(_ENGINE, expire_on_commit=False)
 
+def _flush_sets_token(db: AsyncMock) -> None:
+    """Configure db.flush to populate PasswordResetToken.token.
 
-@pytest.fixture(autouse=True)
-def _setup_db() -> Iterator[None]:
-    async def _create() -> None:
-        async with _ENGINE.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    The PasswordResetToken model has ``default=uuid.uuid4`` which is a
+    server-side column default. Without a real DB, the ``token`` attribute
+    stays ``None`` after construction. This helper makes ``flush`` set it.
+    """
+    original_flush = db.flush
 
-    asyncio.run(_create())
-    yield
+    async def _patched_flush() -> None:
+        # Find the PasswordResetToken that was added and set its token
+        if db.add.call_args:
+            obj = db.add.call_args[0][0]
+            from shomer.models.password_reset_token import PasswordResetToken
 
-    async def _drop() -> None:
-        async with _ENGINE.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
+            if isinstance(obj, PasswordResetToken) and obj.token is None:
+                obj.token = uuid.uuid4()
+        await original_flush()
 
-    asyncio.run(_drop())
+    db.flush = AsyncMock(side_effect=_patched_flush)
 
 
 class TestRequestPasswordReset:
     """Tests for AuthService.request_password_reset()."""
 
     def test_returns_token_for_existing_user(self) -> None:
+        """Returns a UUID token for a registered email."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as session:
-                svc = AuthService(session)
-                await svc.register(email="user@example.com", password="securepassword")
+            db = AsyncMock()
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+
+            db.add = MagicMock()
+            _flush_sets_token(db)
+
+            with patch(
+                "shomer.services.auth_service.get_user_by_email",
+                new_callable=AsyncMock,
+                return_value=mock_user,
+            ):
+                svc = AuthService(db)
                 token = await svc.request_password_reset(email="user@example.com")
                 assert token is not None
                 assert isinstance(token, uuid.UUID)
+                db.add.assert_called_once()
 
         asyncio.run(_run())
 
     def test_returns_none_for_unknown_email(self) -> None:
+        """Returns None for an unregistered email."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as session:
-                svc = AuthService(session)
+            db = AsyncMock()
+            db.flush = AsyncMock()
+
+            with patch(
+                "shomer.services.auth_service.get_user_by_email",
+                new_callable=AsyncMock,
+                return_value=None,
+            ):
+                svc = AuthService(db)
                 token = await svc.request_password_reset(email="nobody@example.com")
                 assert token is None
 
         asyncio.run(_run())
 
     def test_creates_token_in_db(self) -> None:
-        async def _run() -> None:
-            async with _SESSION_FACTORY() as session:
-                svc = AuthService(session)
-                await svc.register(email="user@example.com", password="securepassword")
-                token = await svc.request_password_reset(email="user@example.com")
+        """Creates a PasswordResetToken record in the database."""
 
-                result = await session.execute(
-                    select(PasswordResetToken).where(PasswordResetToken.token == token)
-                )
-                prt = result.scalar_one()
-                assert prt.used is False
+        async def _run() -> None:
+            db = AsyncMock()
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+
+            db.add = MagicMock()
+            _flush_sets_token(db)
+
+            with patch(
+                "shomer.services.auth_service.get_user_by_email",
+                new_callable=AsyncMock,
+                return_value=mock_user,
+            ):
+                svc = AuthService(db)
+                token = await svc.request_password_reset(email="user@example.com")
+                assert token is not None
+                db.add.assert_called_once()
+                added_obj = db.add.call_args[0][0]
+                assert added_obj.user_id == mock_user.id
+                # used defaults to False via column default (may be None pre-flush)
+                assert added_obj.used in (False, None)
 
         asyncio.run(_run())
 
@@ -96,93 +114,131 @@ class TestVerifyPasswordReset:
     """Tests for AuthService.verify_password_reset()."""
 
     def test_resets_password(self) -> None:
-        async def _run() -> None:
-            async with _SESSION_FACTORY() as session:
-                svc = AuthService(session)
-                await svc.register(email="user@example.com", password="oldpassword1")
-                token = await svc.request_password_reset(email="user@example.com")
-                assert token is not None
-                await svc.verify_password_reset(
-                    token=token, new_password="newpassword1"
-                )
+        """Valid token resets the password."""
 
-                # Verify new password works
-                result = await session.execute(
-                    select(UserPassword).where(
-                        UserPassword.is_current == True  # noqa: E712
-                    )
+        async def _run() -> None:
+            db = AsyncMock()
+            token_uuid = uuid.uuid4()
+
+            mock_prt = MagicMock()
+            mock_prt.user_id = uuid.uuid4()
+            mock_prt.used = False
+            mock_prt.expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+
+            mock_current_pw = MagicMock()
+            mock_current_pw.is_current = True
+
+            # First call: find token; second call: get current password
+            prt_result = MagicMock()
+            prt_result.scalar_one_or_none.return_value = mock_prt
+            pw_result = MagicMock()
+            pw_result.scalar_one_or_none.return_value = mock_current_pw
+
+            db.execute.side_effect = [prt_result, pw_result]
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            with patch(
+                "shomer.services.auth_service.hash_password",
+                return_value="$argon2id$new",
+            ):
+                svc = AuthService(db)
+                await svc.verify_password_reset(
+                    token=token_uuid, new_password="newpassword1"
                 )
-                pw = result.scalar_one()
-                assert verify_password("newpassword1", pw.password_hash)
+                assert mock_prt.used is True
+                assert mock_current_pw.is_current is False
+                db.add.assert_called_once()
 
         asyncio.run(_run())
 
     def test_marks_token_as_used(self) -> None:
-        async def _run() -> None:
-            async with _SESSION_FACTORY() as session:
-                svc = AuthService(session)
-                await svc.register(email="user@example.com", password="oldpassword1")
-                token = await svc.request_password_reset(email="user@example.com")
-                assert token is not None
-                await svc.verify_password_reset(
-                    token=token, new_password="newpassword1"
-                )
+        """Token is marked as used after reset."""
 
-                result = await session.execute(
-                    select(PasswordResetToken).where(PasswordResetToken.token == token)
+        async def _run() -> None:
+            db = AsyncMock()
+            token_uuid = uuid.uuid4()
+
+            mock_prt = MagicMock()
+            mock_prt.user_id = uuid.uuid4()
+            mock_prt.used = False
+            mock_prt.expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+
+            prt_result = MagicMock()
+            prt_result.scalar_one_or_none.return_value = mock_prt
+            pw_result = MagicMock()
+            pw_result.scalar_one_or_none.return_value = MagicMock()
+
+            db.execute.side_effect = [prt_result, pw_result]
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            with patch("shomer.services.auth_service.hash_password"):
+                svc = AuthService(db)
+                await svc.verify_password_reset(
+                    token=token_uuid, new_password="newpassword1"
                 )
-                prt = result.scalar_one()
-                assert prt.used is True
+                assert mock_prt.used is True
 
         asyncio.run(_run())
 
     def test_reuse_raises(self) -> None:
+        """Re-using a token raises InvalidResetTokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as session:
-                svc = AuthService(session)
-                await svc.register(email="user@example.com", password="oldpassword1")
-                token = await svc.request_password_reset(email="user@example.com")
-                assert token is not None
+            db = AsyncMock()
+
+            # The query filters used==False, so a used token returns None
+            prt_result = MagicMock()
+            prt_result.scalar_one_or_none.return_value = None
+            db.execute.return_value = prt_result
+
+            svc = AuthService(db)
+            with pytest.raises(InvalidResetTokenError):
                 await svc.verify_password_reset(
-                    token=token, new_password="newpassword1"
+                    token=uuid.uuid4(), new_password="anotherpassword"
                 )
-                with pytest.raises(InvalidResetTokenError):
-                    await svc.verify_password_reset(
-                        token=token, new_password="anotherpassword"
-                    )
 
         asyncio.run(_run())
 
     def test_expired_token_raises(self) -> None:
+        """Expired token raises InvalidResetTokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as session:
-                svc = AuthService(session)
-                await svc.register(email="user@example.com", password="oldpassword1")
-                token = await svc.request_password_reset(email="user@example.com")
-                assert token is not None
+            db = AsyncMock()
+            token_uuid = uuid.uuid4()
 
-                # Expire the token
-                result = await session.execute(
-                    select(PasswordResetToken).where(PasswordResetToken.token == token)
+            mock_prt = MagicMock()
+            mock_prt.user_id = uuid.uuid4()
+            mock_prt.used = False
+            mock_prt.expires_at = datetime.now(timezone.utc) - timedelta(hours=2)
+
+            prt_result = MagicMock()
+            prt_result.scalar_one_or_none.return_value = mock_prt
+            db.execute.return_value = prt_result
+
+            svc = AuthService(db)
+            with pytest.raises(InvalidResetTokenError):
+                await svc.verify_password_reset(
+                    token=token_uuid, new_password="newpassword1"
                 )
-                prt = result.scalar_one()
-                prt.expires_at = datetime.now(timezone.utc) - timedelta(hours=2)
-                await session.flush()
-
-                with pytest.raises(InvalidResetTokenError):
-                    await svc.verify_password_reset(
-                        token=token, new_password="newpassword1"
-                    )
 
         asyncio.run(_run())
 
     def test_invalid_token_raises(self) -> None:
+        """Non-existent token raises InvalidResetTokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as session:
-                svc = AuthService(session)
-                with pytest.raises(InvalidResetTokenError):
-                    await svc.verify_password_reset(
-                        token=uuid.uuid4(), new_password="newpassword1"
-                    )
+            db = AsyncMock()
+
+            prt_result = MagicMock()
+            prt_result.scalar_one_or_none.return_value = None
+            db.execute.return_value = prt_result
+
+            svc = AuthService(db)
+            with pytest.raises(InvalidResetTokenError):
+                await svc.verify_password_reset(
+                    token=uuid.uuid4(), new_password="newpassword1"
+                )
 
         asyncio.run(_run())

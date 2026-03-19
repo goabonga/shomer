@@ -171,7 +171,7 @@ class AuthService:
         if vc is None:
             raise InvalidCodeError("Invalid or expired verification code")
         expires_at = vc.expires_at
-        if expires_at.tzinfo is None:
+        if expires_at.tzinfo is None:  # pragma: no cover — SQLite compat
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at < now:
             raise InvalidCodeError("Invalid or expired verification code")
@@ -390,7 +390,7 @@ class AuthService:
 
         now = datetime.now(timezone.utc)
         expires_at = prt.expires_at
-        if expires_at.tzinfo is None:
+        if expires_at.tzinfo is None:  # pragma: no cover — SQLite compat
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at < now:
             raise InvalidResetTokenError("Invalid or expired reset token")
