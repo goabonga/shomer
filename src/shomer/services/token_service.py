@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""OAuth2 token endpoint service for authorization_code grant (RFC 6749 §4.1.3)."""
+"""OAuth2 token endpoint service (RFC 6749 §4.1.3 and §4.4)."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ class TokenResponse:
 
 
 class TokenService:
-    """Exchange authorization codes for tokens.
+    """Exchange authorization codes or client credentials for tokens.
 
     Attributes
     ----------
@@ -219,6 +219,75 @@ class TokenService:
             refresh_token=raw_refresh,
             scope=" ".join(scopes),
             id_token=id_token,
+        )
+
+    async def issue_client_credentials(
+        self,
+        *,
+        client_id: str,
+        client_scopes: list[str],
+        requested_scope: str | None = None,
+    ) -> TokenResponse:
+        """Issue tokens for a client_credentials grant (RFC 6749 §4.4).
+
+        Parameters
+        ----------
+        client_id : str
+            The authenticated client identifier.
+        client_scopes : list[str]
+            Scopes the client is allowed to request.
+        requested_scope : str or None
+            Space-separated scopes requested by the client.
+            If None, all allowed scopes are granted.
+
+        Returns
+        -------
+        TokenResponse
+            The token response (access_token only, no refresh_token or id_token).
+
+        Raises
+        ------
+        TokenError
+            If the requested scope is not allowed.
+        """
+        # Determine granted scopes
+        if requested_scope:
+            requested = requested_scope.split()
+            invalid = [s for s in requested if s not in client_scopes]
+            if invalid:
+                raise TokenError(
+                    "invalid_scope",
+                    f"Scope not allowed: {' '.join(invalid)}",
+                )
+            granted_scopes = requested
+        else:
+            granted_scopes = list(client_scopes)
+
+        # Generate access token
+        now = datetime.now(timezone.utc)
+        jti = uuid.uuid4().hex
+
+        access_token_record = AccessToken(
+            jti=jti,
+            user_id=None,
+            client_id=client_id,
+            scopes=" ".join(granted_scopes),
+            expires_at=now + timedelta(seconds=self.settings.jwt_access_token_exp),
+        )
+        self.session.add(access_token_record)
+        await self.session.flush()
+
+        access_jwt = self._build_access_jwt(
+            sub=client_id,
+            aud=client_id,
+            jti=jti,
+            scopes=granted_scopes,
+        )
+
+        return TokenResponse(
+            access_token=access_jwt,
+            expires_in=self.settings.jwt_access_token_exp,
+            scope=" ".join(granted_scopes),
         )
 
     async def _get_authorization_code(self, code: str) -> AuthorizationCode | None:
