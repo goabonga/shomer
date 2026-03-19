@@ -462,3 +462,31 @@ class TestClockSkew:
             assert result.error == TokenError.EXPIRED
 
         asyncio.run(_run())
+
+
+class TestJWTValidationDecodeErrors:
+    """Tests for JWT validation decode error paths."""
+
+    def test_malformed_token(self) -> None:
+        """Completely malformed token returns invalid result."""
+
+        async def _run() -> None:
+            settings = MagicMock()
+            settings.jwt_issuer = "https://test.local"
+            svc = JWTValidationService(settings, AsyncMock())
+            result = await svc.validate("not.a.valid.jwt")
+            assert result.valid is False
+
+        asyncio.run(_run())
+
+    def test_invalid_header(self) -> None:
+        """Token with invalid base64 header returns invalid result."""
+
+        async def _run() -> None:
+            settings = MagicMock()
+            settings.jwt_issuer = "https://test.local"
+            svc = JWTValidationService(settings, AsyncMock())
+            result = await svc.validate("eyJhbGciOiJSUzI1NiJ9.e30.invalid")
+            assert result.valid is False
+
+        asyncio.run(_run())
