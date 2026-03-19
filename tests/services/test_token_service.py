@@ -47,7 +47,7 @@ def _settings() -> Settings:
         jwt_issuer="https://test.shomer.local",
         jwt_access_token_exp=3600,
         jwt_id_token_exp=3600,
-        jwk_encryption_key="test-secret-key",
+        jwk_encryption_key="test-secret-key-that-is-at-least-32-bytes!",
     )
 
 

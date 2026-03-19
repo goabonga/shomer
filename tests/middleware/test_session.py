@@ -117,9 +117,8 @@ class TestSessionMiddleware:
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
-                resp = await client.get(
-                    "/liveness", cookies={"session_id": "invalid-token"}
-                )
+                client.cookies.set("session_id", "invalid-token")
+                resp = await client.get("/liveness")
                 assert resp.status_code == 200
 
         asyncio.run(_run())
@@ -141,7 +140,8 @@ class TestSessionMiddleware:
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
-                resp = await client.get("/liveness", cookies={"session_id": raw_token})
+                client.cookies.set("session_id", raw_token)
+                resp = await client.get("/liveness")
                 assert resp.status_code == 200
 
             # Check session was renewed
@@ -180,7 +180,8 @@ class TestSessionMiddleware:
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
-                resp = await client.get("/liveness", cookies={"session_id": raw_token})
+                client.cookies.set("session_id", raw_token)
+                resp = await client.get("/liveness")
                 # Should still pass through (middleware doesn't block)
                 assert resp.status_code == 200
 

@@ -261,3 +261,63 @@ class TestCreateAuthorizationCode:
                 assert len(code) > 10
 
         asyncio.run(_run())
+
+
+class TestValidateRequestEdgeCases:
+    """Additional edge-case tests for validate_request coverage."""
+
+    def test_missing_response_type(self) -> None:
+        """response_type=None raises invalid_request."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                cid = await _create_client(db)
+                svc = AuthorizeService(db)
+                with pytest.raises(AuthorizeError, match="response_type is required"):
+                    await svc.validate_request(
+                        client_id=cid,
+                        redirect_uri="https://app.example.com/callback",
+                        response_type=None,
+                        scope="openid",
+                        state="xyz",
+                    )
+
+        asyncio.run(_run())
+
+    def test_client_not_authorized_for_code(self) -> None:
+        """Client without 'code' in response_types raises unauthorized_client."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                cid = await _create_client(db, response_types=["id_token"])
+                svc = AuthorizeService(db)
+                with pytest.raises(AuthorizeError, match="not authorized"):
+                    await svc.validate_request(
+                        client_id=cid,
+                        redirect_uri="https://app.example.com/callback",
+                        response_type="code",
+                        scope="openid",
+                        state="xyz",
+                    )
+
+        asyncio.run(_run())
+
+    def test_unsupported_pkce_method(self) -> None:
+        """Unsupported code_challenge_method raises invalid_request."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                cid = await _create_client(db)
+                svc = AuthorizeService(db)
+                with pytest.raises(AuthorizeError, match="Unsupported code_challenge"):
+                    await svc.validate_request(
+                        client_id=cid,
+                        redirect_uri="https://app.example.com/callback",
+                        response_type="code",
+                        scope="openid",
+                        state="xyz",
+                        code_challenge="challenge",
+                        code_challenge_method="RS256",
+                    )
+
+        asyncio.run(_run())
