@@ -1,0 +1,33 @@
+{{- if .Values.mailcatcher.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "shomer.fullname" . }}-mailcatcher
+  labels:
+    {{- include "shomer.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mailcatcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "shomer.name" . }}-mailcatcher
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "shomer.name" . }}-mailcatcher
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: mailcatcher
+    spec:
+      containers:
+        - name: mailcatcher
+          image: "{{ .Values.mailcatcher.image.repository }}:{{ .Values.mailcatcher.image.tag }}"
+          imagePullPolicy: {{ .Values.mailcatcher.image.pullPolicy }}
+          ports:
+            - name: smtp
+              containerPort: 1025
+              protocol: TCP
+            - name: http
+              containerPort: 1080
+              protocol: TCP
+{{- end }}

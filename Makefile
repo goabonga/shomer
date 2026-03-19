@@ -87,6 +87,7 @@ kind-up: ## Deploy to a local kind cluster with ingress
 		--set ingress.hosts[0].host=shomer.localhost \
 		--set ingress.hosts[0].paths[0].path=/ \
 		--set ingress.hosts[0].paths[0].pathType=Prefix \
+		--set mailcatcher.enabled=true \
 		--wait --timeout 300s
 	@echo "✅ Cluster ready at http://shomer.localhost"
 	@echo "   Run 'make kind-bdd' to test"
@@ -98,7 +99,13 @@ kind-down: ## Delete the local kind cluster
 
 kind-bdd: env ## Run BDD tests against kind cluster
 	@echo "🥒 Running BDD tests against kind..."
-	@BASE_URL=http://shomer.localhost poetry run behave
+	@kubectl port-forward svc/shomer-mailcatcher 1080:1080 &>/dev/null &
+	@kubectl port-forward svc/shomer-postgres 5432:5432 &>/dev/null &
+	@sleep 3
+	@BASE_URL=http://shomer.localhost MAILCATCHER_URL=http://localhost:1080 poetry run behave; \
+		EXIT=$$?; \
+		kill %1 %2 2>/dev/null || true; \
+		exit $$EXIT
 
 migrate: env ## Run database migrations
 	@echo "🗄️ Running database migrations..."

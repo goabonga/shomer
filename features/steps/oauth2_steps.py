@@ -3,33 +3,15 @@
 
 """BDD steps for OAuth2 consent flow setup."""
 
-import json
 import os
 import subprocess
-import urllib.error
-import urllib.request
 
 from behave import given
-
-
-def _api(context, method, path, data=None):
-    """Send an API request and return (status, body_text)."""
-    url = context.base_url + path
-    headers = {}
-    body = None
-    if data is not None:
-        body = json.dumps(data).encode()
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=body, headers=headers, method=method)
-    try:
-        resp = urllib.request.urlopen(req)
-        return resp.status, resp.read().decode()
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode()
+from features.steps.mail_steps import register_and_verify_user
 
 
 def _psql(sql):
-    """Run SQL against PostgreSQL on localhost:5432."""
+    """Run SQL against PostgreSQL on localhost:5432 (for OAuth2 client seeding only)."""
     env = os.environ.copy()
     env["PGPASSWORD"] = "shomer"
     result = subprocess.run(
@@ -45,32 +27,23 @@ def _psql(sql):
 
 @given("an authenticated user with an OAuth2 client")
 def step_setup_oauth2_flow(context):
-    """Register a verified user and create an OAuth2 client in the DB.
+    """Register a verified user (via MailCatcher) and create an OAuth2 client.
 
-    The user will authenticate via Playwright during the consent flow
-    (redirect to login → fill credentials → submit).
+    The user will authenticate via Playwright during the consent flow.
     """
     email = "oauth2-bdd@example.com"
     password = "securepassword123"
 
-    # 1. Register user via API (idempotent — returns 201 even if exists)
-    _api(
-        context,
-        "POST",
-        "/auth/register",
-        {
-            "email": email,
-            "password": password,
-        },
-    )
-
-    # 2. Verify email directly in PostgreSQL
+    # 0. Clean up any existing user (idempotent reruns)
     _psql(
-        "UPDATE user_emails SET is_verified = true, "
-        "verified_at = NOW() WHERE email = 'oauth2-bdd@example.com';"
+        "DELETE FROM users WHERE id IN "
+        "(SELECT user_id FROM user_emails WHERE email = 'oauth2-bdd@example.com');"
     )
 
-    # 3. Create OAuth2 client directly in PostgreSQL
+    # 1. Register and verify user via API + MailCatcher email flow
+    register_and_verify_user(context, email, password)
+
+    # 2. Create OAuth2 client via psql (no admin API yet)
     _psql(
         "INSERT INTO oauth2_clients "
         "(id, client_id, client_name, client_type, "

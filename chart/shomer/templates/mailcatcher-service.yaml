@@ -1,0 +1,26 @@
+{{- if .Values.mailcatcher.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "shomer.fullname" . }}-mailcatcher
+  labels:
+    {{- include "shomer.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mailcatcher
+spec:
+  type: {{ .Values.mailcatcher.service.type | default "ClusterIP" }}
+  ports:
+    - port: 1025
+      targetPort: smtp
+      protocol: TCP
+      name: smtp
+    - port: 1080
+      targetPort: http
+      protocol: TCP
+      name: http
+      {{- if eq (.Values.mailcatcher.service.type | default "ClusterIP") "NodePort" }}
+      nodePort: {{ .Values.mailcatcher.service.nodePort | default 31080 }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/name: {{ include "shomer.name" . }}-mailcatcher
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

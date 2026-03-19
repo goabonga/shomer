@@ -80,6 +80,16 @@ postgres:
     database: shomer
   resources: {}
 
+mailcatcher:
+  enabled: false
+  image:
+    repository: schickling/mailcatcher
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    nodePort: 31080
+
 livenessProbe:
   httpGet:
     path: /liveness

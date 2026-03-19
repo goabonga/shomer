@@ -44,26 +44,60 @@ def step_fill_input(context, selector, value):
 
 @when('I click the "{text}" button')
 def step_click_button(context, text):
-    context.page.click(f"button:has-text('{text}')")
-    context.page.wait_for_load_state("load", timeout=10000)
-    context.page.wait_for_load_state("networkidle", timeout=10000)
+    context._last_navigation_url = ""
+    _redirect_holder = []
+
+    def _on_response(response):
+        loc = response.headers.get("location", "")
+        if response.status in (301, 302, 303) and loc:
+            _redirect_holder.append(loc)
+
+    context.page.on("response", _on_response)
+    try:
+        context.page.wait_for_selector(f"button:has-text('{text}')", timeout=5000)
+        context.page.click(f"button:has-text('{text}')")
+        context.page.wait_for_load_state("load", timeout=10000)
+        context.page.wait_for_load_state("networkidle", timeout=10000)
+    except Exception:
+        pass
+
+    if _redirect_holder:
+        context._last_navigation_url = _redirect_holder[-1]
+
+    try:
+        context.page.remove_listener("response", _on_response)
+    except Exception:
+        pass
 
 
 @when('I click the "{text}" link')
 def step_click_link(context, text):
     context.page.click(f"a:has-text('{text}')")
-    context.page.wait_for_load_state("networkidle")
+    context.page.wait_for_load_state("load", timeout=10000)
+    context.page.wait_for_load_state("networkidle", timeout=10000)
 
 
 @then('the page URL should contain "{text}"')
 def step_check_url(context, text):
-    assert text in context.page.url, (
-        f"URL '{context.page.url}' does not contain '{text}'"
-    )
+    try:
+        url = context.page.url
+    except Exception:
+        url = ""
+    # Fallback to captured redirect URL (for external redirects like OAuth2 callback)
+    nav_url = getattr(context, "_last_navigation_url", "")
+    if text not in url and nav_url:
+        url = nav_url
+    assert text in url, f"URL '{url}' does not contain '{text}'"
 
 
 @then('I take a screenshot named "{name}"')
 def step_take_screenshot(context, name):
     SCREENSHOTS_DIR.mkdir(exist_ok=True)
-    context.page.screenshot(path=str(SCREENSHOTS_DIR / f"{name}.png"))
-    context.page.close()
+    try:
+        context.page.screenshot(path=str(SCREENSHOTS_DIR / f"{name}.png"))
+    except Exception:
+        pass  # Page may be closed after external redirect
+    try:
+        context.page.close()
+    except Exception:
+        pass

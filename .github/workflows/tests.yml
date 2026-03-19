@@ -277,11 +277,21 @@ jobs:
             --set "ingress.hosts[0].host=shomer.localhost" \
             --set "ingress.hosts[0].paths[0].path=/" \
             --set "ingress.hosts[0].paths[0].pathType=Prefix" \
+            --set mailcatcher.enabled=true \
+            --set mailcatcher.service.type=NodePort \
+            --set mailcatcher.service.nodePort=31080 \
             --wait --timeout 300s
+
+      - name: 🔌 Port-forward MailCatcher and PostgreSQL
+        run: |
+          kubectl port-forward svc/shomer-mailcatcher 1080:1080 &
+          kubectl port-forward svc/shomer-postgres 5432:5432 &
+          sleep 3
 
       - name: 🥒 Run BDD tests against Helm
         env:
           BASE_URL: http://shomer.localhost
+          MAILCATCHER_URL: http://localhost:1080
         run: poetry run behave
 
       - name: 🔍 Debug on failure
