@@ -42,6 +42,20 @@ Feature: Password management UI pages
     And the page should contain "Change Password"
     And I take a screenshot named "change_password_page"
 
+  Scenario: Change password with valid session shows success
+    Given I register and verify "ui-change-pw@example.com" with password "securepassword123"
+    When I open the page "/ui/login"
+    And I fill "input[name='email']" with "ui-change-pw@example.com"
+    And I fill "input[name='password']" with "securepassword123"
+    And I click the "Login" button
+    Then the page URL should contain "/"
+    When I navigate to "/ui/password/change"
+    And I fill "input[name='current_password']" with "securepassword123"
+    And I fill "input[name='new_password']" with "newstrongpassword1"
+    And I click the "Change Password" button
+    Then the page should contain "Password changed"
+    And I take a screenshot named "change_password_success"
+
   Scenario: Change password without session shows error
     When I open the page "/ui/password/change"
     And I fill "input[name='current_password']" with "oldpassword"

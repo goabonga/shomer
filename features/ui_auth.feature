@@ -36,6 +36,25 @@ Feature: Authentication UI pages
     And the page should contain "Resend Code"
     And I take a screenshot named "verify_page"
 
+  Scenario: Verification with valid code shows success
+    Given I register and verify "ui-verify-happy@example.com" with password "securepassword123"
+    When I open the page "/ui/verify"
+    Then the page should contain "Verify Email"
+    And I take a screenshot named "verify_after_registration"
+
+  Scenario: Login with unverified email shows error
+    When I open the page "/ui/register"
+    And I fill "input[name='email']" with "ui-unverified@example.com"
+    And I fill "input[name='password']" with "securepassword123"
+    And I click the "Register" button
+    Then the page should contain "Verify Email"
+    When I open the page "/ui/login"
+    And I fill "input[name='email']" with "ui-unverified@example.com"
+    And I fill "input[name='password']" with "securepassword123"
+    And I click the "Login" button
+    Then the page should contain "not verified"
+    And I take a screenshot named "login_unverified"
+
   Scenario: Verification with invalid code shows error
     When I open the page "/ui/verify"
     And I fill "input[name='email']" with "nobody@example.com"

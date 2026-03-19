@@ -17,6 +17,19 @@ Feature: User login
     Then the response status code should be 401
     And the response body should contain "Invalid email or password"
 
+  Scenario: Login with unverified email returns 403
+    When I send a POST request to "/auth/register" with JSON
+      """
+      {"email": "unverified-login@example.com", "password": "securepassword123"}
+      """
+    Then the response status code should be 201
+    When I send a POST request to "/auth/login" with JSON
+      """
+      {"email": "unverified-login@example.com", "password": "securepassword123"}
+      """
+    Then the response status code should be 403
+    And the response body should contain "not verified"
+
   Scenario: Login with missing password returns 422
     When I send a POST request to "/auth/login" with JSON
       """

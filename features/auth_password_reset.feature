@@ -33,6 +33,15 @@ Feature: Password reset
       """
     Then the response status code should be 400
 
+  Scenario: Successful password reset with valid token
+    Given a registered and verified user "reset-verify-happy@example.com" with password "securepassword123"
+    When I send a POST request to "/auth/password/reset" with JSON
+      """
+      {"email": "reset-verify-happy@example.com"}
+      """
+    Then the response status code should be 200
+    And I should receive an email at "reset-verify-happy@example.com"
+
   Scenario: Reset verify with short password returns 422
     When I send a POST request to "/auth/password/reset-verify" with JSON
       """

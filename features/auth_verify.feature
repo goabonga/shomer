@@ -20,6 +20,19 @@ Feature: Email verification
     Then the response status code should be 404
     And the response body should contain "Email not found"
 
+  Scenario: Resend for recently registered email returns 429 (rate limited)
+    When I send a POST request to "/auth/register" with JSON
+      """
+      {"email": "resend-rate@example.com", "password": "securepassword123"}
+      """
+    Then the response status code should be 201
+    When I send a POST request to "/auth/verify/resend" with JSON
+      """
+      {"email": "resend-rate@example.com"}
+      """
+    Then the response status code should be 429
+    And the response body should contain "wait"
+
   Scenario: Verify with short code returns 422
     When I send a POST request to "/auth/verify" with JSON
       """

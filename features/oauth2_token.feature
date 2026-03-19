@@ -97,3 +97,36 @@ Feature: OAuth2 token endpoint
     Then the response status code should be 401
     And the response should have JSON key "error"
     And the response should have JSON key "error_description"
+
+  # --- happy paths ---
+
+  Scenario: client_credentials grant returns access_token
+    Given a verified user and an OAuth2 client with all grants
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "client_credentials", "client_id": "bdd-full-client", "client_secret": "bdd-test-secret-value", "scope": "openid"}
+      """
+    Then the response status code should be 200
+    And the response should have JSON key "access_token"
+    And the response should have JSON key "token_type"
+    And the response body should contain "Bearer"
+
+  Scenario: password grant returns access_token and refresh_token
+    Given a verified user and an OAuth2 client with all grants
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "password", "username": "token-bdd@example.com", "password": "securepassword123", "client_id": "bdd-full-client", "client_secret": "bdd-test-secret-value"}
+      """
+    Then the response status code should be 200
+    And the response should have JSON key "access_token"
+    And the response should have JSON key "refresh_token"
+    And the response body should contain "Bearer"
+
+  Scenario: unauthorized_client for disallowed grant_type
+    Given an authenticated user with an OAuth2 client
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "client_credentials", "client_id": "bdd-test-client", "client_secret": "anything"}
+      """
+    Then the response status code should be 401
+    And the response body should contain "invalid_client"
