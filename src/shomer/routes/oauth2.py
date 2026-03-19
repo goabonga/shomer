@@ -140,12 +140,14 @@ async def authorize(
     # Render consent page
     from shomer.app import templates
 
+    scope_descriptions = _describe_scopes(auth_request.validated_scopes)
+
     response: Any = templates.TemplateResponse(
         request,
         "oauth2/consent.html",
         {
             "client_name": client.client_name if client else auth_request.client_id,
-            "scopes": auth_request.validated_scopes,
+            "scopes": scope_descriptions,
             "client_id": auth_request.client_id,
             "redirect_uri": auth_request.redirect_uri,
             "response_type": auth_request.response_type,
@@ -155,9 +157,45 @@ async def authorize(
             "code_challenge": auth_request.code_challenge or "",
             "code_challenge_method": auth_request.code_challenge_method or "",
             "csrf_token": session.csrf_token,
+            "logo_uri": client.logo_uri if client else None,
+            "policy_uri": client.policy_uri if client else None,
+            "tos_uri": client.tos_uri if client else None,
         },
     )
     return response
+
+
+#: Human-readable descriptions for common OAuth2/OIDC scopes.
+_SCOPE_DESCRIPTIONS: dict[str, str] = {
+    "openid": "Verify your identity",
+    "profile": "View your profile information (name, picture)",
+    "email": "View your email address",
+    "address": "View your postal address",
+    "phone": "View your phone number",
+    "offline_access": "Maintain access while you are not using the application",
+}
+
+
+def _describe_scopes(scopes: list[str]) -> list[dict[str, str]]:
+    """Map scope names to human-readable descriptions.
+
+    Parameters
+    ----------
+    scopes : list[str]
+        Raw scope names.
+
+    Returns
+    -------
+    list[dict[str, str]]
+        List of dicts with ``name`` and ``description`` keys.
+    """
+    return [
+        {
+            "name": s,
+            "description": _SCOPE_DESCRIPTIONS.get(s, s),
+        }
+        for s in scopes
+    ]
 
 
 @router.post("/authorize")
