@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Error — Shomer{% endblock %}
+{% block content %}
+<div class="error-card">
+    <h1>Authorization Error</h1>
+
+    <div class="error-message">
+        <p class="error-friendly">{{ friendly_message }}</p>
+    </div>
+
+    <div class="error-details">
+        <p><strong>Error:</strong> <code>{{ error }}</code></p>
+        <p><strong>Description:</strong> {{ error_description }}</p>
+    </div>
+
+    <div class="error-actions">
+        <a href="/" class="btn-home">Back to Home</a>
+    </div>
+</div>
+
+<style>
+    .error-card { text-align: center; }
+    .error-message { margin: 24px 0; }
+    .error-friendly { font-size: 1.1em; color: #555; }
+    .error-details { text-align: left; background: #f9f9f9; padding: 16px; border-radius: 4px; margin: 20px 0; }
+    .error-details p { margin: 8px 0; }
+    .error-details code { background: #eee; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+    .error-actions { margin-top: 24px; }
+    .btn-home { display: inline-block; padding: 10px 24px; background: #333; color: #fff; text-decoration: none; border-radius: 4px; }
+    .btn-home:hover { background: #555; }
+</style>
+{% endblock %}
