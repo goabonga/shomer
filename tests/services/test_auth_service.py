@@ -6,15 +6,20 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from shomer.core.database import Base
+from shomer.core.security import hash_password
 from shomer.models.access_token import AccessToken  # noqa: F401
+from shomer.models.authorization_code import AuthorizationCode  # noqa: F401
 from shomer.models.jwk import JWK  # noqa: F401
+from shomer.models.oauth2_client import OAuth2Client  # noqa: F401
 from shomer.models.password_reset_token import PasswordResetToken  # noqa: F401
 from shomer.models.refresh_token import RefreshToken  # noqa: F401
 from shomer.models.session import Session  # noqa: F401
@@ -23,7 +28,7 @@ from shomer.models.user_email import UserEmail  # noqa: F401
 from shomer.models.user_password import UserPassword  # noqa: F401
 from shomer.models.user_profile import UserProfile  # noqa: F401
 from shomer.models.verification_code import VerificationCode  # noqa: F401
-from shomer.services.auth_service import AuthService
+from shomer.services.auth_service import AuthService, InvalidCredentialsError
 
 _ENGINE = create_async_engine(
     "sqlite+aiosqlite://",
@@ -170,3 +175,66 @@ class TestGenerateCode:
     def test_codes_are_different(self) -> None:
         codes = {AuthService._generate_code() for _ in range(100)}
         assert len(codes) > 1
+
+
+async def _create_user_with_password(
+    session: Any,
+    email: str = "pw@example.com",
+    password: str = "old",
+) -> uuid.UUID:
+    """Create a user with verified email and hashed password."""
+    user = User(username="test")
+    session.add(user)
+    await session.flush()
+    ue = UserEmail(user_id=user.id, email=email, is_primary=True, is_verified=True)
+    session.add(ue)
+    pw = UserPassword(user_id=user.id, password_hash=hash_password(password))
+    session.add(pw)
+    await session.flush()
+    return user.id
+
+
+class TestChangePassword:
+    """Tests for AuthService.change_password()."""
+
+    def test_successful_change(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as session:
+                uid = await _create_user_with_password(
+                    session, password="securepassword123"
+                )
+                svc = AuthService(session)
+                await svc.change_password(
+                    user_id=uid,
+                    current_password="securepassword123",
+                    new_password="newsecurepassword1",
+                )
+                # Verify new password is set
+                from sqlalchemy import select
+
+                result = await session.execute(
+                    select(UserPassword).where(
+                        UserPassword.user_id == uid,
+                        UserPassword.is_current == True,  # noqa: E712
+                    )
+                )
+                pw = result.scalar_one()
+                assert pw.password_hash.startswith("$argon2id$")
+
+        asyncio.run(_run())
+
+    def test_wrong_current_password_raises(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as session:
+                uid = await _create_user_with_password(
+                    session, password="securepassword123"
+                )
+                svc = AuthService(session)
+                with pytest.raises(InvalidCredentialsError):
+                    await svc.change_password(
+                        user_id=uid,
+                        current_password="wrongpassword",
+                        new_password="newsecurepassword1",
+                    )
+
+        asyncio.run(_run())
