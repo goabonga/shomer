@@ -17,19 +17,35 @@ def _send(context, method, path, data=None):
     if data is not None:
         body = json.dumps(data).encode()
         headers["Content-Type"] = "application/json"
+    # Attach session cookie if available
+    cookie = getattr(context, "session_cookie", None)
+    if cookie:
+        headers["Cookie"] = f"session_id={cookie}"
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         context.response = urllib.request.urlopen(req, timeout=10)
         context.response_status = context.response.status
         context.response_body = context.response.read().decode()
+        _capture_session_cookie(context, context.response)
     except urllib.error.HTTPError as e:
         context.response = e
         context.response_status = e.code
         context.response_body = e.read().decode()
+        _capture_session_cookie(context, e)
     except urllib.error.URLError as e:
         context.response = None
         context.response_status = 0
         context.response_body = str(e)
+
+
+def _capture_session_cookie(context, response):
+    """Extract session_id cookie from Set-Cookie header."""
+    cookies = response.headers.get_all("Set-Cookie") or []
+    for cookie in cookies:
+        if "session_id=" in cookie:
+            value = cookie.split("session_id=")[1].split(";")[0]
+            if value and value != '""':
+                context.session_cookie = value
 
 
 @given("I have a JSON payload")
@@ -60,15 +76,20 @@ def _send_form(context, path, form_data):
     url = context.base_url + path
     body = urllib.parse.urlencode(form_data).encode()
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    cookie = getattr(context, "session_cookie", None)
+    if cookie:
+        headers["Cookie"] = f"session_id={cookie}"
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         context.response = urllib.request.urlopen(req, timeout=10)
         context.response_status = context.response.status
         context.response_body = context.response.read().decode()
+        _capture_session_cookie(context, context.response)
     except urllib.error.HTTPError as e:
         context.response = e
         context.response_status = e.code
         context.response_body = e.read().decode()
+        _capture_session_cookie(context, e)
     except urllib.error.URLError as e:
         context.response = None
         context.response_status = 0
@@ -79,6 +100,23 @@ def _send_form(context, path, form_data):
 def step_post_form(context, path):
     form_data = json.loads(context.text)
     _send_form(context, path, form_data)
+
+
+@given('a registered and verified user "{email}" with password "{password}"')
+def step_registered_verified_user(context, email, password):
+    """Register and verify a user via the API + MailCatcher."""
+    from features.steps.mail_steps import register_and_verify_user
+
+    register_and_verify_user(context, email, password)
+
+
+@given('I am logged in as "{email}" with password "{password}"')
+def step_logged_in_as(context, email, password):
+    """Log in via POST /auth/login and capture the session cookie."""
+    _send(context, "POST", "/auth/login", {"email": email, "password": password})
+    assert context.response_status == 200, (
+        f"Login failed with status {context.response_status}: {context.response_body}"
+    )
 
 
 @when('I send a DELETE request to "{path}"')

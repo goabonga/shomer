@@ -1,5 +1,9 @@
 Feature: Email verification
 
+  Scenario: Successful verification returns 200
+    Given I register and verify "verify-happy@example.com" with password "securepassword123"
+    Then I should receive an email at "verify-happy@example.com"
+
   Scenario: Verify with invalid code returns 400
     When I send a POST request to "/auth/verify" with JSON
       """

@@ -66,6 +66,15 @@ Feature: Authentication UI pages
     And the page should contain "Register"
     And I take a screenshot named "login_to_register"
 
+  Scenario: Login with valid credentials redirects to home
+    Given I register and verify "ui-login-happy@example.com" with password "securepassword123"
+    When I open the page "/ui/login"
+    And I fill "input[name='email']" with "ui-login-happy@example.com"
+    And I fill "input[name='password']" with "securepassword123"
+    And I click the "Login" button
+    Then the page URL should contain "/"
+    And I take a screenshot named "login_success"
+
   Scenario: Login page preserves next parameter
     When I open the page "/ui/login?next=/dashboard"
     Then the page title should be "Login — Shomer"
