@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import enum
 
-from sqlalchemy import Boolean, Enum, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, Boolean, Enum, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shomer.core.database import Base, TimestampMixin, UUIDMixin
@@ -27,6 +26,24 @@ class ClientType(str, enum.Enum):
 
     CONFIDENTIAL = "confidential"
     PUBLIC = "public"
+
+
+class TokenEndpointAuthMethod(str, enum.Enum):
+    """Token endpoint authentication method per RFC 6749 §2.3 / OIDC Core §9.
+
+    Attributes
+    ----------
+    CLIENT_SECRET_BASIC
+        HTTP Basic authentication with client_id:client_secret.
+    CLIENT_SECRET_POST
+        client_id and client_secret in the POST body.
+    NONE
+        No authentication (public clients).
+    """
+
+    CLIENT_SECRET_BASIC = "client_secret_basic"
+    CLIENT_SECRET_POST = "client_secret_post"
+    NONE = "none"
 
 
 class OAuth2Client(Base, UUIDMixin, TimestampMixin):
@@ -63,6 +80,8 @@ class OAuth2Client(Base, UUIDMixin, TimestampMixin):
         URL of the privacy policy.
     contacts : list
         Contact email addresses (JSON array).
+    token_endpoint_auth_method : TokenEndpointAuthMethod
+        How this client authenticates at the token endpoint.
     is_active : bool
         Whether the client is active.
     created_at : datetime
@@ -93,22 +112,22 @@ class OAuth2Client(Base, UUIDMixin, TimestampMixin):
         nullable=False,
     )
     redirect_uris: Mapped[list[str]] = mapped_column(
-        JSONB().with_variant(Text, "sqlite"),
+        JSON,
         default=list,
         nullable=False,
     )
     grant_types: Mapped[list[str]] = mapped_column(
-        JSONB().with_variant(Text, "sqlite"),
+        JSON,
         default=list,
         nullable=False,
     )
     response_types: Mapped[list[str]] = mapped_column(
-        JSONB().with_variant(Text, "sqlite"),
+        JSON,
         default=list,
         nullable=False,
     )
     scopes: Mapped[list[str]] = mapped_column(
-        JSONB().with_variant(Text, "sqlite"),
+        JSON,
         default=list,
         nullable=False,
     )
@@ -127,8 +146,18 @@ class OAuth2Client(Base, UUIDMixin, TimestampMixin):
         nullable=True,
     )
     contacts: Mapped[list[str]] = mapped_column(
-        JSONB().with_variant(Text, "sqlite"),
+        JSON,
         default=list,
+        nullable=False,
+    )
+
+    token_endpoint_auth_method: Mapped[TokenEndpointAuthMethod] = mapped_column(
+        Enum(
+            TokenEndpointAuthMethod,
+            name="token_endpoint_auth_method",
+            native_enum=False,
+        ),
+        default=TokenEndpointAuthMethod.CLIENT_SECRET_BASIC,
         nullable=False,
     )
 
