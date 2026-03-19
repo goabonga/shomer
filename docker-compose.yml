@@ -12,6 +12,7 @@ services:
       - SHOMER_DATABASE_USER=shomer
       - SHOMER_DATABASE_NAME=shomer
       - SHOMER_REDIS_HOST=redis
+      - SHOMER_DEBUG=true
     secrets:
       - DATABASE_PASSWORD
       - REDIS_PASSWORD

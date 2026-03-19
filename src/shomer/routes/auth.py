@@ -189,7 +189,7 @@ async def login(body: LoginRequest, request: Request, db: DbSession) -> JSONResp
 
     svc = AuthService(db)
     try:
-        user, session = await svc.login(
+        user, session, raw_token = await svc.login(
             email=body.email,
             password=body.password,
             user_agent=request.headers.get("user-agent"),
@@ -216,7 +216,7 @@ async def login(body: LoginRequest, request: Request, db: DbSession) -> JSONResp
     )
     response.set_cookie(
         key="session_id",
-        value=session.token_hash,
+        value=raw_token,
         httponly=policy.httponly,
         secure=policy.secure,
         samesite=policy.samesite,

@@ -243,7 +243,7 @@ class AuthService:
         password: str,
         user_agent: str | None = None,
         ip_address: str | None = None,
-    ) -> tuple[User, Session]:
+    ) -> tuple[User, Session, str]:
         """Authenticate a user and create a session.
 
         Parameters
@@ -259,8 +259,9 @@ class AuthService:
 
         Returns
         -------
-        tuple[User, Session]
-            The authenticated user and the new session.
+        tuple[User, Session, str]
+            The authenticated user, the new session, and the raw
+            session token (to be stored in the cookie).
 
         Raises
         ------
@@ -306,7 +307,7 @@ class AuthService:
         self.session.add(session)
         await self.session.flush()
 
-        return user, session
+        return user, session, session_token
 
     async def _get_current_password(self, user_id: uuid.UUID) -> UserPassword | None:
         """Get the current password for a user.

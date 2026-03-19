@@ -79,7 +79,7 @@ class TestLogin:
                     session, "user@example.com", "securepassword"
                 )
                 svc = AuthService(session)
-                user, sess = await svc.login(
+                user, sess, _ = await svc.login(
                     email="user@example.com", password="securepassword"
                 )
                 assert user.id is not None
@@ -95,7 +95,7 @@ class TestLogin:
                     session, "user@example.com", "securepassword"
                 )
                 svc = AuthService(session)
-                _, sess = await svc.login(
+                _, sess, _ = await svc.login(
                     email="user@example.com", password="securepassword"
                 )
                 result = await session.execute(
@@ -113,7 +113,7 @@ class TestLogin:
                     session, "user@example.com", "securepassword"
                 )
                 svc = AuthService(session)
-                _, sess = await svc.login(
+                _, sess, _ = await svc.login(
                     email="user@example.com",
                     password="securepassword",
                     user_agent="Mozilla/5.0",
