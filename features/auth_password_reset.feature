@@ -1,5 +1,15 @@
 Feature: Password reset
 
+  Scenario: Request reset for known email returns 200 and sends email
+    Given a registered and verified user "reset-happy@example.com" with password "securepassword123"
+    When I send a POST request to "/auth/password/reset" with JSON
+      """
+      {"email": "reset-happy@example.com"}
+      """
+    Then the response status code should be 200
+    And the response body should contain "reset link has been sent"
+    And I should receive an email at "reset-happy@example.com"
+
   Scenario: Request reset for unknown email still returns 200
     When I send a POST request to "/auth/password/reset" with JSON
       """
