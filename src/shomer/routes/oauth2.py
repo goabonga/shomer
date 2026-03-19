@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request, status
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from shomer.deps import DbSession
 from shomer.services.authorize_service import AuthorizeError, AuthorizeService
@@ -112,12 +112,7 @@ async def authorize(
             return RedirectResponse(
                 url=f"{redirect_uri}?{urlencode(params)}", status_code=302
             )
-        from fastapi import HTTPException, status
-
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": exc.error, "error_description": exc.description},
-        )
+        return _render_oauth2_error(request, exc.error, exc.description)
 
     # Check if user is authenticated
     session_token = request.cookies.get("session_id")
@@ -163,6 +158,61 @@ async def authorize(
         },
     )
     return response
+
+
+#: User-friendly messages for OAuth2 error codes.
+_FRIENDLY_ERROR_MESSAGES: dict[str, str] = {
+    "invalid_client": (
+        "The application that sent you here is not recognized. "
+        "Please contact the application developer."
+    ),
+    "invalid_request": (
+        "The authorization request is missing required parameters. "
+        "Please try again from the application."
+    ),
+    "unauthorized_client": (
+        "The application is not authorized for this operation. "
+        "Please contact the application developer."
+    ),
+    "access_denied": ("Access to your account was denied."),
+    "server_error": ("An unexpected error occurred. Please try again later."),
+}
+
+
+def _render_oauth2_error(
+    request: Request,
+    error: str,
+    error_description: str,
+) -> HTMLResponse:
+    """Render a user-friendly OAuth2 error page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    error : str
+        OAuth2 error code (e.g. ``invalid_client``).
+    error_description : str
+        Human-readable error description.
+
+    Returns
+    -------
+    HTMLResponse
+        Rendered error page with 400 status.
+    """
+    from shomer.app import templates
+
+    friendly = _FRIENDLY_ERROR_MESSAGES.get(error, error_description)
+    content = templates.TemplateResponse(
+        request,
+        "oauth2/error.html",
+        {
+            "error": error,
+            "error_description": error_description,
+            "friendly_message": friendly,
+        },
+    )
+    return HTMLResponse(content=content.body, status_code=400)
 
 
 #: Human-readable descriptions for common OAuth2/OIDC scopes.
