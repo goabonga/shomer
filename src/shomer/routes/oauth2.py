@@ -285,14 +285,14 @@ async def token(
     grant_type: str = Form(...),
     code: str = Form(""),
     redirect_uri: str = Form(""),
+    scope: str = Form(""),
     client_id: str = Form(""),
     client_secret: str = Form(""),
     code_verifier: str = Form(""),
 ) -> JSONResponse:
-    """OAuth2 token endpoint per RFC 6749 §4.1.3.
+    """OAuth2 token endpoint per RFC 6749 §4.1.3 and §4.4.
 
-    Exchanges an authorization code for access_token, refresh_token,
-    and optionally id_token.
+    Supports ``authorization_code`` and ``client_credentials`` grants.
 
     Parameters
     ----------
@@ -301,25 +301,27 @@ async def token(
     db : DbSession
         Injected async database session.
     grant_type : str
-        Must be ``authorization_code``.
+        ``authorization_code`` or ``client_credentials``.
     code : str
-        The authorization code.
+        The authorization code (authorization_code grant only).
     redirect_uri : str
-        Must match the original redirect_uri.
+        Must match the original redirect_uri (authorization_code grant only).
+    scope : str
+        Requested scopes (client_credentials grant).
     client_id : str
         Client identifier (from POST body or Basic auth).
     client_secret : str
         Client secret (from POST body or Basic auth).
     code_verifier : str
-        PKCE code verifier.
+        PKCE code verifier (authorization_code grant only).
 
     Returns
     -------
     JSONResponse
         Token response per RFC 6749 §5.1 or error per §5.2.
     """
-    # Only authorization_code grant for now
-    if grant_type != "authorization_code":
+    supported_grants = {"authorization_code", "client_credentials"}
+    if grant_type not in supported_grants:
         return JSONResponse(
             status_code=400,
             content={
@@ -347,17 +349,89 @@ async def token(
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    # Exchange code for tokens
     from shomer.core.settings import get_settings
 
     settings = get_settings()
     token_svc = TokenService(db, settings)
+
+    if grant_type == "client_credentials":
+        return await _handle_client_credentials(token_svc, authenticated_client, scope)
+
+    # authorization_code grant
     try:
         response = await token_svc.exchange_authorization_code(
             code=code,
             client_id=authenticated_client.client_id,
             redirect_uri=redirect_uri,
             code_verifier=code_verifier or None,
+        )
+    except TokenError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": exc.error,
+                "error_description": exc.description,
+            },
+        )
+
+    return JSONResponse(
+        content=response.to_dict(),
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+
+
+async def _handle_client_credentials(
+    token_svc: TokenService,
+    client: Any,
+    scope: str,
+) -> JSONResponse:
+    """Handle client_credentials grant per RFC 6749 §4.4.
+
+    Parameters
+    ----------
+    token_svc : TokenService
+        Token service instance.
+    client : OAuth2Client
+        The authenticated client.
+    scope : str
+        Requested scopes (space-separated).
+
+    Returns
+    -------
+    JSONResponse
+        Token response or error.
+    """
+    from shomer.models.oauth2_client import ClientType
+
+    # Only confidential clients may use client_credentials
+    if client.client_type != ClientType.CONFIDENTIAL:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "unauthorized_client",
+                "error_description": (
+                    "Public clients cannot use client_credentials grant"
+                ),
+            },
+        )
+
+    # Check grant_type is allowed for this client
+    if "client_credentials" not in (client.grant_types or []):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "unauthorized_client",
+                "error_description": (
+                    "Client is not authorized for client_credentials grant"
+                ),
+            },
+        )
+
+    try:
+        response = await token_svc.issue_client_credentials(
+            client_id=client.client_id,
+            client_scopes=client.scopes or [],
+            requested_scope=scope or None,
         )
     except TokenError as exc:
         return JSONResponse(

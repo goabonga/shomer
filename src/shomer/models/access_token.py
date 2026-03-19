@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""AccessToken model for token storage and revocation."""
+"""AccessToken model for token storage and revocation.
+
+user_id is nullable to support client_credentials grants (M2M tokens
+that are not associated with any user).
+"""
 
 from __future__ import annotations
 
@@ -27,8 +31,8 @@ class AccessToken(Base, UUIDMixin, TimestampMixin):
         Primary key (from UUIDMixin).
     jti : str
         JWT ID (unique token identifier, indexed).
-    user_id : uuid.UUID
-        Foreign key to the users table.
+    user_id : uuid.UUID or None
+        Foreign key to the users table (None for client_credentials grants).
     client_id : str
         OAuth2 client that requested the token.
     scopes : str
@@ -51,9 +55,9 @@ class AccessToken(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     client_id: Mapped[str] = mapped_column(
@@ -76,7 +80,7 @@ class AccessToken(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relationships
-    user: Mapped[User] = relationship(back_populates="access_tokens")
+    user: Mapped[User | None] = relationship(back_populates="access_tokens")
 
     def __repr__(self) -> str:
         return f"<AccessToken jti={self.jti} revoked={self.revoked}>"

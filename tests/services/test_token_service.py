@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""Unit tests for TokenService (authorization_code grant)."""
+"""Unit tests for TokenService (authorization_code and client_credentials grants)."""
 
 from __future__ import annotations
 
@@ -299,5 +299,145 @@ class TestPKCE:
                         redirect_uri="https://app.example.com/cb",
                         code_verifier="wrong-verifier",
                     )
+
+        asyncio.run(_run())
+
+
+class TestClientCredentials:
+    """Tests for TokenService.issue_client_credentials()."""
+
+    def test_successful_issue(self) -> None:
+        """Issue access_token with all allowed scopes."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                svc = TokenService(db, _settings())
+                resp = await svc.issue_client_credentials(
+                    client_id="m2m-client",
+                    client_scopes=["read", "write"],
+                )
+                assert resp.access_token is not None
+                assert resp.token_type == "Bearer"
+                assert resp.refresh_token is None
+                assert resp.id_token is None
+                assert resp.scope == "read write"
+
+        asyncio.run(_run())
+
+    def test_grants_requested_scope_subset(self) -> None:
+        """Only requested scopes are granted."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                svc = TokenService(db, _settings())
+                resp = await svc.issue_client_credentials(
+                    client_id="m2m-client",
+                    client_scopes=["read", "write", "admin"],
+                    requested_scope="read",
+                )
+                assert resp.scope == "read"
+
+        asyncio.run(_run())
+
+    def test_grants_all_scopes_when_none_requested(self) -> None:
+        """All allowed scopes are granted when no scope is requested."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                svc = TokenService(db, _settings())
+                resp = await svc.issue_client_credentials(
+                    client_id="m2m-client",
+                    client_scopes=["read", "write"],
+                )
+                assert resp.scope == "read write"
+
+        asyncio.run(_run())
+
+    def test_invalid_scope_raises(self) -> None:
+        """Requesting a scope not allowed by the client raises TokenError."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="Scope not allowed"):
+                    await svc.issue_client_credentials(
+                        client_id="m2m-client",
+                        client_scopes=["read"],
+                        requested_scope="read admin",
+                    )
+
+        asyncio.run(_run())
+
+    def test_no_refresh_token(self) -> None:
+        """client_credentials grant must NOT issue a refresh_token."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                svc = TokenService(db, _settings())
+                resp = await svc.issue_client_credentials(
+                    client_id="m2m-client",
+                    client_scopes=["read"],
+                )
+                assert resp.refresh_token is None
+
+        asyncio.run(_run())
+
+    def test_no_id_token(self) -> None:
+        """client_credentials grant must NOT issue an id_token."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                svc = TokenService(db, _settings())
+                resp = await svc.issue_client_credentials(
+                    client_id="m2m-client",
+                    client_scopes=["openid"],
+                    requested_scope="openid",
+                )
+                assert resp.id_token is None
+
+        asyncio.run(_run())
+
+    def test_access_token_record_has_null_user_id(self) -> None:
+        """AccessToken record should have user_id=None for M2M tokens."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                svc = TokenService(db, _settings())
+                await svc.issue_client_credentials(
+                    client_id="m2m-client",
+                    client_scopes=["read"],
+                )
+                from sqlalchemy import select
+
+                from shomer.models.access_token import AccessToken
+
+                stmt = select(AccessToken).where(AccessToken.client_id == "m2m-client")
+                result = await db.execute(stmt)
+                record = result.scalar_one()
+                assert record.user_id is None
+                assert record.client_id == "m2m-client"
+
+        asyncio.run(_run())
+
+    def test_subject_is_client_id(self) -> None:
+        """JWT subject claim should be the client_id."""
+        import jwt as pyjwt
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                settings = _settings()
+                svc = TokenService(db, settings)
+                resp = await svc.issue_client_credentials(
+                    client_id="m2m-client",
+                    client_scopes=["read"],
+                )
+                payload = pyjwt.decode(
+                    resp.access_token,
+                    settings.jwk_encryption_key,
+                    algorithms=["HS256"],
+                    audience="m2m-client",
+                )
+                assert payload["sub"] == "m2m-client"
+                assert payload["aud"] == "m2m-client"
 
         asyncio.run(_run())
