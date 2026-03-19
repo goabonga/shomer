@@ -117,3 +117,37 @@ def step_setup_oauth2_full(context):
     context.oauth2_client_secret = secret
     context.oauth2_user_email = email
     context.oauth2_user_password = password
+
+
+@given("an authorization code for the OAuth2 client")
+def step_create_auth_code(context):
+    """Insert an authorization code in the DB for the test client/user.
+
+    Requires ``a verified user and an OAuth2 client with all grants``
+    to have run first. Stores the code on ``context.oauth2_auth_code``.
+    """
+    import secrets
+
+    code = secrets.token_urlsafe(32)
+
+    # Get user_id from the DB
+    user_id = _psql(
+        "SELECT u.id FROM users u "
+        "JOIN user_emails ue ON ue.user_id = u.id "
+        f"WHERE ue.email = '{context.oauth2_user_email}';"
+    )
+    assert user_id, "User not found in DB"
+
+    _psql(
+        "INSERT INTO authorization_codes "
+        "(id, code, user_id, client_id, redirect_uri, scopes, "
+        "expires_at, is_used, created_at, updated_at) "
+        "VALUES ("
+        f"gen_random_uuid(), '{code}', '{user_id}', "
+        f"'{context.oauth2_client_id}', "
+        "'https://app.example.com/callback', 'openid profile', "
+        "NOW() + INTERVAL '10 minutes', false, NOW(), NOW()"
+        ");"
+    )
+
+    context.oauth2_auth_code = code
