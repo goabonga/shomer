@@ -86,6 +86,8 @@ optional = true
 [tool.poetry.group.test.dependencies]
 behave = "*"
 playwright = "*"
+argon2-cffi = "*"
+cryptography = "*"
 
 [tool.poetry.group.favicon]
 optional = true
