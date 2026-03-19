@@ -95,6 +95,18 @@ class LoginResponse(BaseModel):
     user_id: str
 
 
+class LogoutRequest(BaseModel):
+    """Logout request body.
+
+    Attributes
+    ----------
+    logout_all : bool
+        If ``True``, invalidate all sessions for the user.
+    """
+
+    logout_all: bool = False
+
+
 class RegisterResponse(BaseModel):
     """Registration success response.
 

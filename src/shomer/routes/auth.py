@@ -13,6 +13,7 @@ from shomer.middleware.cookies import get_cookie_policy
 from shomer.schemas.auth import (
     LoginRequest,
     LoginResponse,
+    LogoutRequest,
     MessageResponse,
     RegisterRequest,
     RegisterResponse,
@@ -28,6 +29,7 @@ from shomer.services.auth_service import (
     InvalidCredentialsError,
     RateLimitError,
 )
+from shomer.services.session_service import SessionService
 from shomer.tasks.email import send_email_task
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -237,4 +239,47 @@ async def login(body: LoginRequest, request: Request, db: DbSession) -> JSONResp
         domain=policy.domain or None,
         max_age=86400,
     )
+    return response
+
+
+@router.post("/logout", response_model=MessageResponse)
+async def logout(
+    request: Request, db: DbSession, body: LogoutRequest | None = None
+) -> JSONResponse:
+    """Log out the current user.
+
+    Deletes the current session (or all sessions if ``logout_all``
+    is ``True``) and clears the session cookies.
+
+    Parameters
+    ----------
+    request : Request
+        Incoming request with session cookie.
+    db : DbSession
+        Injected async database session.
+    body : LogoutRequest or None
+        Optional body with ``logout_all`` flag.
+
+    Returns
+    -------
+    JSONResponse
+        Logout confirmation with cleared cookies.
+    """
+    session_token = request.cookies.get("session_id")
+    svc = SessionService(db)
+
+    if session_token:
+        session = await svc.validate(session_token)
+        if session is not None:
+            logout_all = body.logout_all if body else False
+            if logout_all:
+                await svc.delete_all_for_user(session.user_id)
+            else:
+                await svc.delete(session.id)
+
+    response = JSONResponse(
+        content=MessageResponse(message="Logged out successfully").model_dump(),
+    )
+    response.delete_cookie("session_id")
+    response.delete_cookie("csrf_token")
     return response
