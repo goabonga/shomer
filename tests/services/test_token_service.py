@@ -1,0 +1,303 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Chris <goabonga@pm.me>
+
+"""Unit tests for TokenService (authorization_code grant)."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import secrets
+import uuid
+from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from shomer.core.database import Base
+from shomer.core.settings import Settings
+from shomer.models.access_token import AccessToken  # noqa: F401
+from shomer.models.authorization_code import AuthorizationCode
+from shomer.models.jwk import JWK  # noqa: F401
+from shomer.models.oauth2_client import OAuth2Client  # noqa: F401
+from shomer.models.password_reset_token import PasswordResetToken  # noqa: F401
+from shomer.models.refresh_token import RefreshToken  # noqa: F401
+from shomer.models.session import Session  # noqa: F401
+from shomer.models.user import User
+from shomer.models.user_email import UserEmail  # noqa: F401
+from shomer.models.user_password import UserPassword  # noqa: F401
+from shomer.models.user_profile import UserProfile  # noqa: F401
+from shomer.models.verification_code import VerificationCode  # noqa: F401
+from shomer.services.token_service import TokenError, TokenService
+
+_ENGINE = create_async_engine(
+    "sqlite+aiosqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+_SESSION_FACTORY = async_sessionmaker(_ENGINE, expire_on_commit=False)
+
+
+def _settings() -> Settings:
+    return Settings(
+        jwt_issuer="https://test.shomer.local",
+        jwt_access_token_exp=3600,
+        jwt_id_token_exp=3600,
+        jwk_encryption_key="test-secret-key",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _setup_db() -> Iterator[None]:
+    async def _create() -> None:
+        async with _ENGINE.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_create())
+    yield
+
+    async def _drop() -> None:
+        async with _ENGINE.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+
+    asyncio.run(_drop())
+
+
+async def _create_auth_code(
+    db: Any,
+    *,
+    client_id: str = "test-client",
+    redirect_uri: str = "https://app.example.com/cb",
+    scopes: str = "openid profile",
+    nonce: str | None = None,
+    code_challenge: str | None = None,
+    code_challenge_method: str | None = None,
+    expired: bool = False,
+    used: bool = False,
+) -> tuple[str, uuid.UUID]:
+    """Create a user + auth code. Returns (code, user_id)."""
+    user = User(username="test")
+    db.add(user)
+    await db.flush()
+
+    code = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    ac = AuthorizationCode(
+        code=code,
+        user_id=user.id,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        scopes=scopes,
+        nonce=nonce,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+        expires_at=now - timedelta(hours=1) if expired else now + timedelta(minutes=10),
+        is_used=used,
+        used_at=now if used else None,
+    )
+    db.add(ac)
+    await db.flush()
+    return code, user.id
+
+
+class TestExchangeAuthorizationCode:
+    """Tests for TokenService.exchange_authorization_code()."""
+
+    def test_successful_exchange(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(db)
+                svc = TokenService(db, _settings())
+                resp = await svc.exchange_authorization_code(
+                    code=code,
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
+                )
+                assert resp.access_token is not None
+                assert resp.refresh_token is not None
+                assert resp.token_type == "Bearer"
+                assert resp.scope == "openid profile"
+
+        asyncio.run(_run())
+
+    def test_issues_id_token_with_openid_scope(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(
+                    db, scopes="openid profile", nonce="abc"
+                )
+                svc = TokenService(db, _settings())
+                resp = await svc.exchange_authorization_code(
+                    code=code,
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
+                )
+                assert resp.id_token is not None
+
+        asyncio.run(_run())
+
+    def test_no_id_token_without_openid(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(db, scopes="profile")
+                svc = TokenService(db, _settings())
+                resp = await svc.exchange_authorization_code(
+                    code=code,
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
+                )
+                assert resp.id_token is None
+
+        asyncio.run(_run())
+
+    def test_invalid_code_raises(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="Invalid"):
+                    await svc.exchange_authorization_code(
+                        code="nonexistent",
+                        client_id="test-client",
+                        redirect_uri="https://app.example.com/cb",
+                    )
+
+        asyncio.run(_run())
+
+    def test_expired_code_raises(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(db, expired=True)
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="expired"):
+                    await svc.exchange_authorization_code(
+                        code=code,
+                        client_id="test-client",
+                        redirect_uri="https://app.example.com/cb",
+                    )
+
+        asyncio.run(_run())
+
+    def test_used_code_raises(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(db, used=True)
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="already used"):
+                    await svc.exchange_authorization_code(
+                        code=code,
+                        client_id="test-client",
+                        redirect_uri="https://app.example.com/cb",
+                    )
+
+        asyncio.run(_run())
+
+    def test_client_mismatch_raises(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(db)
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="Client mismatch"):
+                    await svc.exchange_authorization_code(
+                        code=code,
+                        client_id="wrong-client",
+                        redirect_uri="https://app.example.com/cb",
+                    )
+
+        asyncio.run(_run())
+
+    def test_redirect_uri_mismatch_raises(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(db)
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="Redirect URI"):
+                    await svc.exchange_authorization_code(
+                        code=code,
+                        client_id="test-client",
+                        redirect_uri="https://evil.com/cb",
+                    )
+
+        asyncio.run(_run())
+
+    def test_marks_code_as_used(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(db)
+                svc = TokenService(db, _settings())
+                await svc.exchange_authorization_code(
+                    code=code,
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
+                )
+                # Second use should fail
+                with pytest.raises(TokenError, match="already used"):
+                    await svc.exchange_authorization_code(
+                        code=code,
+                        client_id="test-client",
+                        redirect_uri="https://app.example.com/cb",
+                    )
+
+        asyncio.run(_run())
+
+
+class TestPKCE:
+    """Tests for PKCE verification."""
+
+    def test_pkce_s256_success(self) -> None:
+        import base64
+
+        verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        digest = hashlib.sha256(verifier.encode("ascii")).digest()
+        challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(
+                    db, code_challenge=challenge, code_challenge_method="S256"
+                )
+                svc = TokenService(db, _settings())
+                resp = await svc.exchange_authorization_code(
+                    code=code,
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
+                    code_verifier=verifier,
+                )
+                assert resp.access_token is not None
+
+        asyncio.run(_run())
+
+    def test_pkce_missing_verifier_raises(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(
+                    db, code_challenge="challenge", code_challenge_method="S256"
+                )
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="code_verifier required"):
+                    await svc.exchange_authorization_code(
+                        code=code,
+                        client_id="test-client",
+                        redirect_uri="https://app.example.com/cb",
+                    )
+
+        asyncio.run(_run())
+
+    def test_pkce_wrong_verifier_raises(self) -> None:
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                code, _ = await _create_auth_code(
+                    db, code_challenge="correct-challenge", code_challenge_method="S256"
+                )
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="PKCE verification failed"):
+                    await svc.exchange_authorization_code(
+                        code=code,
+                        client_id="test-client",
+                        redirect_uri="https://app.example.com/cb",
+                        code_verifier="wrong-verifier",
+                    )
+
+        asyncio.run(_run())

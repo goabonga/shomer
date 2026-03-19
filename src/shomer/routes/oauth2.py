@@ -9,12 +9,16 @@ from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from shomer.deps import DbSession
 from shomer.services.authorize_service import AuthorizeError, AuthorizeService
-from shomer.services.oauth2_client_service import OAuth2ClientService
+from shomer.services.oauth2_client_service import (
+    InvalidClientError,
+    OAuth2ClientService,
+)
 from shomer.services.session_service import SessionService
+from shomer.services.token_service import TokenError, TokenService
 
 router = APIRouter(prefix="/oauth2", tags=["oauth2"])
 
@@ -271,4 +275,100 @@ async def authorize_consent(
     params = {"code": code, "state": auth_request.state}
     return RedirectResponse(
         url=f"{auth_request.redirect_uri}?{urlencode(params)}", status_code=302
+    )
+
+
+@router.post("/token")
+async def token(
+    request: Request,
+    db: DbSession,
+    grant_type: str = Form(...),
+    code: str = Form(""),
+    redirect_uri: str = Form(""),
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+    code_verifier: str = Form(""),
+) -> JSONResponse:
+    """OAuth2 token endpoint per RFC 6749 §4.1.3.
+
+    Exchanges an authorization code for access_token, refresh_token,
+    and optionally id_token.
+
+    Parameters
+    ----------
+    request : Request
+        Incoming request (for Authorization header).
+    db : DbSession
+        Injected async database session.
+    grant_type : str
+        Must be ``authorization_code``.
+    code : str
+        The authorization code.
+    redirect_uri : str
+        Must match the original redirect_uri.
+    client_id : str
+        Client identifier (from POST body or Basic auth).
+    client_secret : str
+        Client secret (from POST body or Basic auth).
+    code_verifier : str
+        PKCE code verifier.
+
+    Returns
+    -------
+    JSONResponse
+        Token response per RFC 6749 §5.1 or error per §5.2.
+    """
+    # Only authorization_code grant for now
+    if grant_type != "authorization_code":
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "unsupported_grant_type",
+                "error_description": f"Unsupported grant_type: {grant_type}",
+            },
+        )
+
+    # Authenticate client
+    client_svc = OAuth2ClientService(db)
+    auth_header = request.headers.get("authorization")
+    try:
+        authenticated_client = await client_svc.authenticate_client(
+            authorization_header=auth_header,
+            body_client_id=client_id or None,
+            body_client_secret=client_secret or None,
+        )
+    except InvalidClientError as exc:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "invalid_client",
+                "error_description": str(exc),
+            },
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    # Exchange code for tokens
+    from shomer.core.settings import get_settings
+
+    settings = get_settings()
+    token_svc = TokenService(db, settings)
+    try:
+        response = await token_svc.exchange_authorization_code(
+            code=code,
+            client_id=authenticated_client.client_id,
+            redirect_uri=redirect_uri,
+            code_verifier=code_verifier or None,
+        )
+    except TokenError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": exc.error,
+                "error_description": exc.description,
+            },
+        )
+
+    return JSONResponse(
+        content=response.to_dict(),
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
     )
