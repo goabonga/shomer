@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""User registration, email verification, and login service."""
+"""User registration, email verification, login, and password reset service."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shomer.core.security import hash_password, verify_password
+from shomer.models.password_reset_token import PasswordResetToken
 from shomer.models.queries import create_user, get_user_by_email
 from shomer.models.session import Session
 from shomer.models.user import User
@@ -23,6 +24,9 @@ from shomer.models.verification_code import VerificationCode
 
 #: Default lifetime for a verification code.
 VERIFICATION_CODE_TTL = timedelta(minutes=15)
+
+#: Default lifetime for a password reset token.
+RESET_TOKEN_TTL = timedelta(hours=1)
 
 
 class DuplicateEmailError(Exception):
@@ -47,6 +51,10 @@ class InvalidCredentialsError(Exception):
 
 class EmailNotVerifiedError(Exception):
     """Raised when the email has not been verified yet."""
+
+
+class InvalidResetTokenError(Exception):
+    """Raised when the password reset token is invalid or expired."""
 
 
 #: Minimum interval between resend requests.
@@ -317,6 +325,87 @@ class AuthService:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def request_password_reset(self, *, email: str) -> uuid.UUID | None:
+        """Generate a password reset token for an email.
+
+        Silently returns ``None`` if the email is not registered (to
+        prevent user enumeration).
+
+        Parameters
+        ----------
+        email : str
+            Email address.
+
+        Returns
+        -------
+        uuid.UUID or None
+            The reset token UUID, or ``None`` if email not found.
+        """
+        user = await get_user_by_email(self.session, email)
+        if user is None:
+            # Perform a dummy DB query to equalize timing with the
+            # real path (token insert + flush). Prevents timing-based
+            # user enumeration.
+            await self.session.flush()
+            return None
+
+        token = PasswordResetToken(
+            user_id=user.id,
+            expires_at=datetime.now(timezone.utc) + RESET_TOKEN_TTL,
+        )
+        self.session.add(token)
+        await self.session.flush()
+        return token.token
+
+    async def verify_password_reset(
+        self, *, token: uuid.UUID, new_password: str
+    ) -> None:
+        """Validate a reset token and set the new password.
+
+        Parameters
+        ----------
+        token : uuid.UUID
+            Reset token UUID from the email link.
+        new_password : str
+            New plain-text password.
+
+        Raises
+        ------
+        InvalidResetTokenError
+            If the token is invalid, expired, or already used.
+        """
+        stmt = select(PasswordResetToken).where(
+            PasswordResetToken.token == token,
+            PasswordResetToken.used == False,  # noqa: E712
+        )
+        result = await self.session.execute(stmt)
+        prt = result.scalar_one_or_none()
+
+        if prt is None:
+            raise InvalidResetTokenError("Invalid or expired reset token")
+
+        now = datetime.now(timezone.utc)
+        expires_at = prt.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            raise InvalidResetTokenError("Invalid or expired reset token")
+
+        # Mark token as used
+        prt.used = True
+
+        # Deactivate current password and set new one
+        current_pw = await self._get_current_password(prt.user_id)
+        if current_pw is not None:
+            current_pw.is_current = False
+
+        new_pw = UserPassword(
+            user_id=prt.user_id,
+            password_hash=hash_password(new_password),
+        )
+        self.session.add(new_pw)
+        await self.session.flush()
 
     async def _email_exists(self, email: str) -> bool:
         """Check if an email is already registered.
