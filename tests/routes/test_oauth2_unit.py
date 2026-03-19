@@ -8,10 +8,15 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi import HTTPException
+
 from shomer.routes.oauth2 import (
+    _FRIENDLY_ERROR_MESSAGES,
     _handle_client_credentials,
     _handle_password_grant,
+    _render_oauth2_error,
     authorize,
+    authorize_consent,
 )
 from shomer.services.authorize_service import AuthorizeError
 from shomer.services.token_service import TokenError, TokenResponse
@@ -180,6 +185,36 @@ class TestAuthorizeRoute:
 
         asyncio.run(_run())
 
+    @patch("shomer.routes.oauth2._render_oauth2_error")
+    @patch("shomer.routes.oauth2.AuthorizeService")
+    def test_unsafe_error_renders_error_page(
+        self, mock_cls: MagicMock, mock_render: MagicMock
+    ) -> None:
+        """Non-safe error (invalid_request) renders error page instead of redirect."""
+
+        async def _run() -> None:
+            mock_svc = AsyncMock()
+            mock_svc.validate_request.side_effect = AuthorizeError(
+                "invalid_request", "client_id is required"
+            )
+            mock_cls.return_value = mock_svc
+            mock_render.return_value = MagicMock(status_code=400)
+            req = MagicMock()
+            db = AsyncMock()
+            resp = await authorize(
+                req,
+                db,
+                client_id=None,
+                redirect_uri=None,
+                response_type="code",
+                scope="",
+                state="xyz",
+            )
+            mock_render.assert_called_once()
+            assert resp.status_code == 400
+
+        asyncio.run(_run())
+
     @patch("shomer.routes.oauth2.SessionService")
     @patch("shomer.routes.oauth2.AuthorizeService")
     def test_unauthenticated_redirects_to_login(
@@ -280,3 +315,114 @@ class TestAuthorizeRoute:
                 assert ctx["csrf_token"] == "csrf"
 
         asyncio.run(_run())
+
+
+class TestAuthorizeConsent:
+    """Unit tests for POST /oauth2/authorize (consent)."""
+
+    @patch("shomer.routes.oauth2.SessionService")
+    def test_no_session_raises_401(self, mock_cls: MagicMock) -> None:
+        async def _run() -> None:
+            req = MagicMock()
+            req.cookies.get.return_value = None
+            import pytest
+
+            with pytest.raises(HTTPException) as exc_info:
+                await authorize_consent(
+                    req,
+                    AsyncMock(),
+                    "approve",
+                    "csrf",
+                    "c",
+                    "https://a.com/cb",
+                    "code",
+                    "",
+                    "xyz",
+                    "",
+                    "",
+                    "",
+                )
+            assert exc_info.value.status_code == 401
+
+        asyncio.run(_run())
+
+    @patch("shomer.core.security.constant_time_compare", return_value=False)
+    @patch("shomer.routes.oauth2.SessionService")
+    def test_wrong_csrf_raises_403(
+        self, mock_cls: MagicMock, mock_cmp: MagicMock
+    ) -> None:
+        async def _run() -> None:
+            mock_session = MagicMock(csrf_token="real")
+            mock_svc = AsyncMock()
+            mock_svc.validate.return_value = mock_session
+            mock_cls.return_value = mock_svc
+            req = MagicMock()
+            req.cookies.get.return_value = "tok"
+            import pytest
+
+            with pytest.raises(HTTPException) as exc_info:
+                await authorize_consent(
+                    req,
+                    AsyncMock(),
+                    "approve",
+                    "wrong",
+                    "c",
+                    "https://a.com/cb",
+                    "code",
+                    "",
+                    "xyz",
+                    "",
+                    "",
+                    "",
+                )
+            assert exc_info.value.status_code == 403
+
+        asyncio.run(_run())
+
+    @patch("shomer.core.security.constant_time_compare", return_value=True)
+    @patch("shomer.routes.oauth2.SessionService")
+    def test_deny_redirects_with_error(
+        self, mock_cls: MagicMock, mock_cmp: MagicMock
+    ) -> None:
+        async def _run() -> None:
+            mock_session = MagicMock(csrf_token="ok")
+            mock_svc = AsyncMock()
+            mock_svc.validate.return_value = mock_session
+            mock_cls.return_value = mock_svc
+            req = MagicMock()
+            req.cookies.get.return_value = "tok"
+            resp = await authorize_consent(
+                req,
+                AsyncMock(),
+                "deny",
+                "ok",
+                "c",
+                "https://a.com/cb",
+                "code",
+                "",
+                "xyz",
+                "",
+                "",
+                "",
+            )
+            assert resp.status_code == 302
+            assert "access_denied" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+
+class TestRenderOAuth2Error:
+    """Unit tests for _render_oauth2_error helper."""
+
+    @patch("shomer.app.templates")
+    def test_renders_error_page(self, mock_tpl: MagicMock) -> None:
+        mock_tpl.TemplateResponse.return_value = MagicMock(body=b"<html>error</html>")
+        resp = _render_oauth2_error(MagicMock(), "invalid_request", "bad")
+        assert resp.status_code == 400
+
+    def test_friendly_messages_exist(self) -> None:
+        assert "invalid_client" in _FRIENDLY_ERROR_MESSAGES
+        assert "invalid_request" in _FRIENDLY_ERROR_MESSAGES
+        assert "server_error" in _FRIENDLY_ERROR_MESSAGES
+        for msg in _FRIENDLY_ERROR_MESSAGES.values():
+            assert len(msg) > 0
