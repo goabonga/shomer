@@ -18,13 +18,17 @@ def _send(context, method, path, data=None):
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        context.response = urllib.request.urlopen(req)
+        context.response = urllib.request.urlopen(req, timeout=10)
         context.response_status = context.response.status
         context.response_body = context.response.read().decode()
     except urllib.error.HTTPError as e:
         context.response = e
         context.response_status = e.code
         context.response_body = e.read().decode()
+    except urllib.error.URLError as e:
+        context.response = None
+        context.response_status = 0
+        context.response_body = str(e)
 
 
 @given("I have a JSON payload")

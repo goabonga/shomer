@@ -93,6 +93,20 @@ Common env vars for shomer containers (database + redis components).
   value: {{ .Values.postgres.auth.database | quote }}
 - name: SHOMER_REDIS_HOST
   value: {{ printf "%s-redis" (include "shomer.fullname" .) | quote }}
+{{- if .Values.mailcatcher.enabled }}
+- name: SHOMER_SMTP_HOST
+  value: {{ printf "%s-mailcatcher" (include "shomer.fullname" .) | quote }}
+- name: SHOMER_SMTP_PORT
+  value: "1025"
+- name: SHOMER_SMTP_USE_TLS
+  value: "false"
+- name: SHOMER_SMTP_USER
+  value: ""
+- name: SHOMER_SMTP_PASSWORD
+  value: ""
+- name: SHOMER_DEBUG
+  value: "true"
+{{- end }}
 {{- range $key, $value := .Values.env }}
 - name: {{ $key }}
   value: {{ $value | quote }}

@@ -23,6 +23,7 @@ app.config_from_object(
         "timezone": "UTC",
         "enable_utc": True,
         "beat_schedule": {},
+        "include": ["shomer.tasks.email"],
     }
 )
 

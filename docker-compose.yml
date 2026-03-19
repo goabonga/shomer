@@ -13,6 +13,11 @@ services:
       - SHOMER_DATABASE_NAME=shomer
       - SHOMER_REDIS_HOST=redis
       - SHOMER_DEBUG=true
+      - SHOMER_SMTP_HOST=mailcatcher
+      - SHOMER_SMTP_PORT=1025
+      - SHOMER_SMTP_USE_TLS=false
+      - SHOMER_SMTP_USER=
+      - SHOMER_SMTP_PASSWORD=
     secrets:
       - DATABASE_PASSWORD
       - REDIS_PASSWORD
@@ -35,6 +40,11 @@ services:
     environment:
       - CREDENTIALS_DIRECTORY=/run/secrets
       - SHOMER_REDIS_HOST=redis
+      - SHOMER_SMTP_HOST=mailcatcher
+      - SHOMER_SMTP_PORT=1025
+      - SHOMER_SMTP_USE_TLS=false
+      - SHOMER_SMTP_USER=
+      - SHOMER_SMTP_PASSWORD=
     secrets:
       - REDIS_PASSWORD
     depends_on:
@@ -42,6 +52,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      mailcatcher:
+        condition: service_started
 
   beat:
     build:
@@ -111,6 +123,12 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+
+  mailcatcher:
+    image: schickling/mailcatcher
+    ports:
+      - "1080:1080"
+      - "1025:1025"
 
 secrets:
   DATABASE_PASSWORD:

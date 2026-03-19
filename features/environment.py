@@ -4,11 +4,22 @@
 import os
 import subprocess
 import time
+import urllib.error
 import urllib.request
 
 from playwright.sync_api import sync_playwright
 
 DEFAULT_BASE_URL = "http://localhost:8000"
+MAILCATCHER_URL = os.getenv("MAILCATCHER_URL", "http://localhost:1080")
+
+
+def before_scenario(context, scenario):
+    """Clear MailCatcher inbox before each scenario."""
+    try:
+        req = urllib.request.Request(MAILCATCHER_URL + "/messages", method="DELETE")
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        pass
 
 
 def before_all(context):
@@ -21,12 +32,14 @@ def before_all(context):
             check=True,
         )
 
-    for _ in range(50):
+    for _ in range(60):
         try:
-            urllib.request.urlopen(context.base_url + "/readiness")
-            break
+            resp = urllib.request.urlopen(context.base_url + "/readiness", timeout=5)
+            if resp.status == 200:
+                break
         except Exception:
-            time.sleep(0.2)
+            pass
+        time.sleep(1)
 
     context.playwright = sync_playwright().start()
     context.browser = context.playwright.chromium.launch(headless=True)
