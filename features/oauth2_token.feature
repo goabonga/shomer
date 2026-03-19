@@ -63,3 +63,37 @@ Feature: OAuth2 token endpoint
     Then the response status code should be 401
     And the response should have JSON key "error"
     And the response should have JSON key "error_description"
+
+  # --- password grant ---
+
+  Scenario: password grant without client auth returns 401
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "password", "username": "user@example.com", "password": "pass"}
+      """
+    Then the response status code should be 401
+    And the response body should contain "invalid_client"
+
+  Scenario: password grant with unknown client returns 401
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "password", "username": "user@example.com", "password": "pass", "client_id": "unknown", "client_secret": "wrong"}
+      """
+    Then the response status code should be 401
+    And the response body should contain "invalid_client"
+
+  Scenario: password grant missing username returns 400
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "password", "password": "pass", "client_id": "no-such-client", "client_secret": "x"}
+      """
+    Then the response status code should be 401
+
+  Scenario: password grant error uses RFC 6749 format
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "password", "username": "u", "password": "p", "client_id": "no-client", "client_secret": "x"}
+      """
+    Then the response status code should be 401
+    And the response should have JSON key "error"
+    And the response should have JSON key "error_description"

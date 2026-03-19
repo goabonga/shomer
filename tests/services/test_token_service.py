@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""Unit tests for TokenService (authorization_code and client_credentials grants)."""
+"""Unit tests for TokenService (authorization_code, client_credentials and password grants)."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from shomer.core.database import Base
+from shomer.core.security import hash_password
 from shomer.core.settings import Settings
 from shomer.models.access_token import AccessToken  # noqa: F401
 from shomer.models.authorization_code import AuthorizationCode
@@ -27,8 +28,8 @@ from shomer.models.password_reset_token import PasswordResetToken  # noqa: F401
 from shomer.models.refresh_token import RefreshToken  # noqa: F401
 from shomer.models.session import Session  # noqa: F401
 from shomer.models.user import User
-from shomer.models.user_email import UserEmail  # noqa: F401
-from shomer.models.user_password import UserPassword  # noqa: F401
+from shomer.models.user_email import UserEmail
+from shomer.models.user_password import UserPassword
 from shomer.models.user_profile import UserProfile  # noqa: F401
 from shomer.models.verification_code import VerificationCode  # noqa: F401
 from shomer.services.token_service import TokenError, TokenService
@@ -439,5 +440,176 @@ class TestClientCredentials:
                 )
                 assert payload["sub"] == "m2m-client"
                 assert payload["aud"] == "m2m-client"
+
+        asyncio.run(_run())
+
+
+async def _create_verified_user(
+    db: Any,
+    *,
+    email: str = "user@example.com",
+    password: str = "securepassword123",
+) -> uuid.UUID:
+    """Create a user with verified email and current password. Returns user_id."""
+    user = User(username="testuser")
+    db.add(user)
+    await db.flush()
+
+    user_email = UserEmail(
+        user_id=user.id,
+        email=email,
+        is_primary=True,
+        is_verified=True,
+    )
+    db.add(user_email)
+
+    pw = UserPassword(
+        user_id=user.id,
+        password_hash=hash_password(password),
+    )
+    db.add(pw)
+    await db.flush()
+    return user.id
+
+
+class TestPasswordGrant:
+    """Tests for TokenService.issue_password_grant()."""
+
+    def test_successful_password_grant(self) -> None:
+        """Valid email + password returns access_token + refresh_token."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                await _create_verified_user(db)
+                svc = TokenService(db, _settings())
+                resp = await svc.issue_password_grant(
+                    username="user@example.com",
+                    password="securepassword123",
+                    client_id="test-client",
+                )
+                assert resp.access_token is not None
+                assert resp.refresh_token is not None
+                assert resp.token_type == "Bearer"
+
+        asyncio.run(_run())
+
+    def test_password_grant_with_scope(self) -> None:
+        """Requested scopes are included in the response."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                await _create_verified_user(db)
+                svc = TokenService(db, _settings())
+                resp = await svc.issue_password_grant(
+                    username="user@example.com",
+                    password="securepassword123",
+                    client_id="test-client",
+                    scope="openid profile",
+                )
+                assert resp.scope == "openid profile"
+
+        asyncio.run(_run())
+
+    def test_unknown_user_raises(self) -> None:
+        """Unknown email returns invalid_grant."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="Invalid credentials"):
+                    await svc.issue_password_grant(
+                        username="nobody@example.com",
+                        password="anything",
+                        client_id="test-client",
+                    )
+
+        asyncio.run(_run())
+
+    def test_wrong_password_raises(self) -> None:
+        """Wrong password returns invalid_grant."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                await _create_verified_user(db)
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="Invalid credentials"):
+                    await svc.issue_password_grant(
+                        username="user@example.com",
+                        password="wrongpassword",
+                        client_id="test-client",
+                    )
+
+        asyncio.run(_run())
+
+    def test_unverified_email_raises(self) -> None:
+        """Unverified email returns invalid_grant."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                user = User(username="unverified")
+                db.add(user)
+                await db.flush()
+                ue = UserEmail(
+                    user_id=user.id,
+                    email="unverified@example.com",
+                    is_primary=True,
+                    is_verified=False,
+                )
+                db.add(ue)
+                pw = UserPassword(
+                    user_id=user.id,
+                    password_hash=hash_password("securepassword123"),
+                )
+                db.add(pw)
+                await db.flush()
+
+                svc = TokenService(db, _settings())
+                with pytest.raises(TokenError, match="Email not verified"):
+                    await svc.issue_password_grant(
+                        username="unverified@example.com",
+                        password="securepassword123",
+                        client_id="test-client",
+                    )
+
+        asyncio.run(_run())
+
+    def test_subject_is_user_id(self) -> None:
+        """JWT sub claim should be the user_id."""
+        import jwt as pyjwt
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                user_id = await _create_verified_user(db)
+                settings = _settings()
+                svc = TokenService(db, settings)
+                resp = await svc.issue_password_grant(
+                    username="user@example.com",
+                    password="securepassword123",
+                    client_id="test-client",
+                )
+                payload = pyjwt.decode(
+                    resp.access_token,
+                    settings.jwk_encryption_key,
+                    algorithms=["HS256"],
+                    audience="test-client",
+                )
+                assert payload["sub"] == str(user_id)
+
+        asyncio.run(_run())
+
+    def test_no_id_token(self) -> None:
+        """password grant does not issue id_token."""
+
+        async def _run() -> None:
+            async with _SESSION_FACTORY() as db:
+                await _create_verified_user(db)
+                svc = TokenService(db, _settings())
+                resp = await svc.issue_password_grant(
+                    username="user@example.com",
+                    password="securepassword123",
+                    client_id="test-client",
+                    scope="openid",
+                )
+                assert resp.id_token is None
 
         asyncio.run(_run())

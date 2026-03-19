@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""OAuth2 token endpoint service (RFC 6749 §4.1.3 and §4.4)."""
+"""OAuth2 token endpoint service (RFC 6749 §4.1.3, §4.3 and §4.4)."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ class TokenResponse:
 
 
 class TokenService:
-    """Exchange authorization codes or client credentials for tokens.
+    """Exchange authorization codes, client credentials, or passwords for tokens.
 
     Attributes
     ----------
@@ -288,6 +288,111 @@ class TokenService:
             access_token=access_jwt,
             expires_in=self.settings.jwt_access_token_exp,
             scope=" ".join(granted_scopes),
+        )
+
+    async def issue_password_grant(
+        self,
+        *,
+        username: str,
+        password: str,
+        client_id: str,
+        scope: str | None = None,
+    ) -> TokenResponse:
+        """Authenticate via resource owner password credentials (RFC 6749 §4.3).
+
+        Parameters
+        ----------
+        username : str
+            The resource owner email or username.
+        password : str
+            The resource owner password.
+        client_id : str
+            The authenticated client identifier.
+        scope : str or None
+            Requested scopes (space-separated).
+
+        Returns
+        -------
+        TokenResponse
+            The token response with access_token and refresh_token.
+
+        Raises
+        ------
+        TokenError
+            If authentication fails.
+        """
+        from shomer.core.security import hash_password, verify_password
+        from shomer.models.queries import get_user_by_email
+        from shomer.models.user_password import UserPassword
+
+        # Look up user by email (RFC 6749 §4.3.2: "username" param)
+        user = await get_user_by_email(self.session, username)
+        if user is None:
+            # Anti-enumeration: dummy hash to equalize timing
+            hash_password("dummy-password")
+            raise TokenError("invalid_grant", "Invalid credentials")
+
+        # Verify password
+        current_pw_stmt = select(UserPassword).where(
+            UserPassword.user_id == user.id,
+            UserPassword.is_current == True,  # noqa: E712
+        )
+        result = await self.session.execute(current_pw_stmt)
+        current_pw = result.scalar_one_or_none()
+
+        if current_pw is None or not verify_password(
+            password, current_pw.password_hash
+        ):
+            raise TokenError("invalid_grant", "Invalid credentials")
+
+        # Check email is verified
+        primary_email = next((e for e in user.emails if e.is_primary), None)
+        if primary_email is None or not primary_email.is_verified:
+            raise TokenError("invalid_grant", "Email not verified")
+
+        # Determine scopes
+        scopes = scope.split() if scope else []
+
+        now = datetime.now(timezone.utc)
+        jti = uuid.uuid4().hex
+
+        # Create access token record
+        access_token_record = AccessToken(
+            jti=jti,
+            user_id=user.id,
+            client_id=client_id,
+            scopes=" ".join(scopes),
+            expires_at=now + timedelta(seconds=self.settings.jwt_access_token_exp),
+        )
+        self.session.add(access_token_record)
+
+        # Create refresh token
+        raw_refresh = uuid.uuid4().hex
+        refresh_hash = hashlib.sha256(raw_refresh.encode()).hexdigest()
+        family_id = uuid.uuid4()
+        refresh_record = RefreshToken(
+            token_hash=refresh_hash,
+            family_id=family_id,
+            user_id=user.id,
+            client_id=client_id,
+            scopes=" ".join(scopes),
+            expires_at=now + timedelta(days=30),
+        )
+        self.session.add(refresh_record)
+        await self.session.flush()
+
+        access_jwt = self._build_access_jwt(
+            sub=str(user.id),
+            aud=client_id,
+            jti=jti,
+            scopes=scopes,
+        )
+
+        return TokenResponse(
+            access_token=access_jwt,
+            expires_in=self.settings.jwt_access_token_exp,
+            refresh_token=raw_refresh,
+            scope=" ".join(scopes),
         )
 
     async def _get_authorization_code(self, code: str) -> AuthorizationCode | None:
