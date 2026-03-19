@@ -32,7 +32,7 @@ from shomer.models.user_email import UserEmail
 from shomer.models.user_password import UserPassword
 from shomer.models.user_profile import UserProfile  # noqa: F401
 from shomer.models.verification_code import VerificationCode  # noqa: F401
-from shomer.services.token_service import TokenError, TokenService
+from shomer.services.token_service import TokenError, TokenResponse, TokenService
 
 _ENGINE = create_async_engine(
     "sqlite+aiosqlite://",
@@ -613,3 +613,48 @@ class TestPasswordGrant:
                 assert resp.id_token is None
 
         asyncio.run(_run())
+
+
+class TestTokenResponse:
+    """Tests for TokenResponse.to_dict()."""
+
+    def test_minimal_response(self) -> None:
+        """Only access_token, token_type, expires_in when no optional fields."""
+        resp = TokenResponse(access_token="tok")
+        d = resp.to_dict()
+        assert d == {"access_token": "tok", "token_type": "Bearer", "expires_in": 3600}
+        assert "refresh_token" not in d
+        assert "scope" not in d
+        assert "id_token" not in d
+
+    def test_full_response(self) -> None:
+        """All fields present when set."""
+        resp = TokenResponse(
+            access_token="tok",
+            refresh_token="ref",
+            scope="openid",
+            id_token="idt",
+        )
+        d = resp.to_dict()
+        assert d["refresh_token"] == "ref"
+        assert d["scope"] == "openid"
+        assert d["id_token"] == "idt"
+
+    def test_empty_scope_excluded(self) -> None:
+        """Empty scope string is excluded from dict."""
+        resp = TokenResponse(access_token="tok", scope="")
+        d = resp.to_dict()
+        assert "scope" not in d
+
+
+class TestVerifyPKCEPlain:
+    """Tests for PKCE plain method."""
+
+    def test_plain_match(self) -> None:
+        assert TokenService._verify_pkce("verifier", "verifier", "plain") is True
+
+    def test_plain_mismatch(self) -> None:
+        assert TokenService._verify_pkce("verifier", "wrong", "plain") is False
+
+    def test_unknown_method(self) -> None:
+        assert TokenService._verify_pkce("v", "c", "unknown") is False
