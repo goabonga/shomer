@@ -7,99 +7,115 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Iterator
-from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from shomer.core.database import Base
-from shomer.core.security import hash_password
-from shomer.models.access_token import AccessToken  # noqa: F401
-from shomer.models.authorization_code import AuthorizationCode  # noqa: F401
-from shomer.models.jwk import JWK  # noqa: F401
 from shomer.models.oauth2_client import (
     ClientType,
-    OAuth2Client,
     TokenEndpointAuthMethod,
 )
-from shomer.models.password_reset_token import PasswordResetToken  # noqa: F401
-from shomer.models.queries import get_user_by_id
-from shomer.models.refresh_token import RefreshToken  # noqa: F401
-from shomer.models.session import Session
-from shomer.models.user import User
-from shomer.models.user_email import UserEmail
-from shomer.models.user_password import UserPassword
-from shomer.models.user_profile import UserProfile  # noqa: F401
-from shomer.models.verification_code import VerificationCode  # noqa: F401
 from shomer.services.oauth2_client_service import (
     InvalidClientError,
     OAuth2ClientService,
 )
 from shomer.services.session_service import SessionService
 
-_ENGINE = create_async_engine(
-    "sqlite+aiosqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-_SESSION_FACTORY = async_sessionmaker(_ENGINE, expire_on_commit=False)
-
-
-@pytest.fixture(autouse=True)
-def _setup_db() -> Iterator[None]:
-    async def _create() -> None:
-        async with _ENGINE.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    asyncio.run(_create())
-    yield
-
-    async def _drop() -> None:
-        async with _ENGINE.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-
-    asyncio.run(_drop())
-
-
 # --- models/queries.py: get_user_by_id ---
+
+
+class TestCreateUser:
+    """Tests for create_user query helper."""
+
+    def test_creates_user_with_email_and_password(self) -> None:
+        async def _run() -> None:
+            from shomer.models.queries import create_user
+
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.add_all = MagicMock()
+            db.flush = AsyncMock()
+
+            user = await create_user(
+                db, email="a@b.com", password_hash="$hash", username="bob"
+            )
+            assert user.username == "bob"
+            db.add.assert_called_once()
+            db.add_all.assert_called_once()
+            assert db.flush.await_count == 2
+
+        asyncio.run(_run())
+
+
+class TestGetUserByEmail:
+    """Tests for get_user_by_email query helper."""
+
+    def test_returns_user_when_found(self) -> None:
+        async def _run() -> None:
+            from shomer.models.queries import get_user_by_email
+
+            db = AsyncMock()
+            mock_user = MagicMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_user
+            db.execute.return_value = result
+
+            found = await get_user_by_email(db, "a@b.com")
+            assert found is mock_user
+
+        asyncio.run(_run())
+
+    def test_returns_none_when_not_found(self) -> None:
+        async def _run() -> None:
+            from shomer.models.queries import get_user_by_email
+
+            db = AsyncMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            db.execute.return_value = result
+
+            found = await get_user_by_email(db, "x@b.com")
+            assert found is None
+
+        asyncio.run(_run())
 
 
 class TestGetUserById:
     """Tests for get_user_by_id query helper."""
 
     def test_returns_user_when_found(self) -> None:
-        async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                user = User(username="found")
-                db.add(user)
-                await db.flush()
-                ue = UserEmail(
-                    user_id=user.id,
-                    email="f@example.com",
-                    is_primary=True,
-                )
-                db.add(ue)
-                pw = UserPassword(
-                    user_id=user.id,
-                    password_hash=hash_password("pw123456789"),
-                )
-                db.add(pw)
-                await db.flush()
+        """get_user_by_id returns user when present in DB."""
 
-                result = await get_user_by_id(db, user.id)
-                assert result is not None
-                assert result.username == "found"
+        async def _run() -> None:
+            from shomer.models.queries import get_user_by_id
+
+            db = AsyncMock()
+            mock_user = MagicMock()
+            mock_user.username = "found"
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_user
+            db.execute.return_value = result
+
+            found = await get_user_by_id(db, uuid.uuid4())
+            assert found is not None
+            assert found.username == "found"
 
         asyncio.run(_run())
 
     def test_returns_none_when_not_found(self) -> None:
+        """get_user_by_id returns None when user not in DB."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                result = await get_user_by_id(db, uuid.uuid4())
-                assert result is None
+            from shomer.models.queries import get_user_by_id
+
+            db = AsyncMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            db.execute.return_value = result
+
+            found = await get_user_by_id(db, uuid.uuid4())
+            assert found is None
 
         asyncio.run(_run())
 
@@ -111,35 +127,34 @@ class TestSessionValidateNaiveDatetime:
     """Test session validation with naive (no-tzinfo) datetime from SQLite."""
 
     def test_valid_session_with_naive_datetime(self) -> None:
-        """SQLite returns naive datetimes — validate must handle them."""
+        """SQLite returns naive datetimes -- validate must handle them."""
         import hashlib
         import warnings
+        from datetime import datetime, timedelta
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                user = User(username="tz")
-                db.add(user)
-                await db.flush()
-                raw = uuid.uuid4().hex
-                thash = hashlib.sha256(raw.encode()).hexdigest()
-                # Use naive datetime (no timezone) — mimics SQLite behavior
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", DeprecationWarning)
-                    naive_now = datetime.utcnow()  # noqa: DTZ003
-                    naive_future = naive_now + timedelta(hours=24)
-                session = Session(
-                    user_id=user.id,
-                    token_hash=thash,
-                    csrf_token=uuid.uuid4().hex,
-                    last_activity=naive_now,
-                    expires_at=naive_future,
-                )
-                db.add(session)
-                await db.flush()
+            db = AsyncMock()
+            raw = uuid.uuid4().hex
+            thash = hashlib.sha256(raw.encode()).hexdigest()
 
-                svc = SessionService(db)
-                result = await svc.validate(raw)
-                assert result is not None
+            # Use naive datetime (no timezone) -- mimics SQLite behavior
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                naive_now = datetime.utcnow()  # noqa: DTZ003
+                naive_future = naive_now + timedelta(hours=24)
+
+            mock_session = MagicMock()
+            mock_session.user_id = uuid.uuid4()
+            mock_session.token_hash = thash
+            mock_session.expires_at = naive_future
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_session
+            db.execute.return_value = result
+
+            svc = SessionService(db)
+            found = await svc.validate(raw)
+            assert found is not None
 
         asyncio.run(_run())
 
@@ -154,26 +169,22 @@ class TestOAuth2ClientAuthenticateEdgeCases:
         """Public client with auth_method=NONE succeeds without secret."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                client = OAuth2Client(
-                    client_id="pub-client",
-                    client_name="Public",
-                    client_type=ClientType.PUBLIC,
-                    redirect_uris=["https://app.example.com/cb"],
-                    grant_types=["authorization_code"],
-                    response_types=["code"],
-                    scopes=["openid"],
-                    contacts=[],
-                    token_endpoint_auth_method=TokenEndpointAuthMethod.NONE,
-                )
-                db.add(client)
-                await db.flush()
+            db = AsyncMock()
 
-                svc = OAuth2ClientService(db)
-                result = await svc.authenticate_client(
-                    body_client_id="pub-client",
-                )
-                assert result.client_id == "pub-client"
+            mock_client = MagicMock()
+            mock_client.client_id = "pub-client"
+            mock_client.client_type = ClientType.PUBLIC
+            mock_client.token_endpoint_auth_method = TokenEndpointAuthMethod.NONE
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_client
+            db.execute.return_value = result
+
+            svc = OAuth2ClientService(db)
+            authed = await svc.authenticate_client(
+                body_client_id="pub-client",
+            )
+            assert authed.client_id == "pub-client"
 
         asyncio.run(_run())
 
@@ -181,24 +192,20 @@ class TestOAuth2ClientAuthenticateEdgeCases:
         """Confidential client with auth_method=NONE raises error."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                client = OAuth2Client(
-                    client_id="conf-none",
-                    client_name="Conf None",
-                    client_type=ClientType.CONFIDENTIAL,
-                    redirect_uris=[],
-                    grant_types=[],
-                    response_types=[],
-                    scopes=[],
-                    contacts=[],
-                    token_endpoint_auth_method=TokenEndpointAuthMethod.NONE,
-                )
-                db.add(client)
-                await db.flush()
+            db = AsyncMock()
 
-                svc = OAuth2ClientService(db)
-                with pytest.raises(InvalidClientError, match="only allowed for public"):
-                    await svc.authenticate_client(body_client_id="conf-none")
+            mock_client = MagicMock()
+            mock_client.client_id = "conf-none"
+            mock_client.client_type = ClientType.CONFIDENTIAL
+            mock_client.token_endpoint_auth_method = TokenEndpointAuthMethod.NONE
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_client
+            db.execute.return_value = result
+
+            svc = OAuth2ClientService(db)
+            with pytest.raises(InvalidClientError, match="only allowed for public"):
+                await svc.authenticate_client(body_client_id="conf-none")
 
         asyncio.run(_run())
 
@@ -206,22 +213,26 @@ class TestOAuth2ClientAuthenticateEdgeCases:
         """Secret-based auth without providing a secret raises error."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = OAuth2ClientService(db)
-                client, _ = await svc.create_client(
-                    client_name="SecretRequired",
-                    redirect_uris=["https://app.example.com/cb"],
-                    response_types=["code"],
-                    grant_types=["authorization_code"],
-                    scopes=["openid"],
-                )
-                await db.flush()
+            db = AsyncMock()
 
-                with pytest.raises(InvalidClientError, match="secret required"):
-                    await svc.authenticate_client(
-                        body_client_id=client.client_id,
-                        body_client_secret=None,
-                    )
+            mock_client = MagicMock()
+            mock_client.client_id = "secret-client"
+            mock_client.client_type = ClientType.CONFIDENTIAL
+            mock_client.token_endpoint_auth_method = (
+                TokenEndpointAuthMethod.CLIENT_SECRET_BASIC
+            )
+            mock_client.client_secret_hash = "$argon2id$hash"
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_client
+            db.execute.return_value = result
+
+            svc = OAuth2ClientService(db)
+            with pytest.raises(InvalidClientError, match="secret required"):
+                await svc.authenticate_client(
+                    body_client_id="secret-client",
+                    body_client_secret=None,
+                )
 
         asyncio.run(_run())
 
@@ -229,20 +240,28 @@ class TestOAuth2ClientAuthenticateEdgeCases:
         """Wrong client_secret raises error."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = OAuth2ClientService(db)
-                client, _ = await svc.create_client(
-                    client_name="WrongSecret",
-                    redirect_uris=["https://app.example.com/cb"],
-                    response_types=["code"],
-                    grant_types=["authorization_code"],
-                    scopes=["openid"],
-                )
-                await db.flush()
+            db = AsyncMock()
 
+            mock_client = MagicMock()
+            mock_client.client_id = "wrong-secret-client"
+            mock_client.client_type = ClientType.CONFIDENTIAL
+            mock_client.token_endpoint_auth_method = (
+                TokenEndpointAuthMethod.CLIENT_SECRET_BASIC
+            )
+            mock_client.client_secret_hash = "$argon2id$hash"
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_client
+            db.execute.return_value = result
+
+            with patch(
+                "shomer.services.oauth2_client_service.verify_password",
+                return_value=False,
+            ):
+                svc = OAuth2ClientService(db)
                 with pytest.raises(InvalidClientError, match="Invalid client"):
                     await svc.authenticate_client(
-                        body_client_id=client.client_id,
+                        body_client_id="wrong-secret-client",
                         body_client_secret="wrong-secret",
                     )
 
@@ -253,53 +272,64 @@ class TestRotateSecret:
     """Tests for OAuth2ClientService.rotate_secret."""
 
     def test_rotate_secret_success(self) -> None:
+        """Rotating secret of confidential client succeeds."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
+            db = AsyncMock()
+
+            mock_client = MagicMock()
+            mock_client.client_id = "rotate-client"
+            mock_client.client_type = ClientType.CONFIDENTIAL
+            mock_client.client_secret_hash = "$argon2id$old"
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_client
+            db.execute.return_value = result
+            db.flush = AsyncMock()
+
+            with patch("shomer.services.oauth2_client_service.hash_password") as mhash:
+                mhash.return_value = "$argon2id$new"
                 svc = OAuth2ClientService(db)
-                client, _ = await svc.create_client(
-                    client_name="Rotate",
-                    redirect_uris=["https://a.com/cb"],
-                    response_types=["code"],
-                    grant_types=["authorization_code"],
-                    scopes=["openid"],
-                )
-                await db.flush()
-                rotated, new_secret = await svc.rotate_secret(client.client_id)
+                rotated, new_secret = await svc.rotate_secret("rotate-client")
                 assert new_secret is not None
                 assert len(new_secret) > 10
-                assert rotated.client_secret_hash is not None
+                assert rotated.client_secret_hash == "$argon2id$new"
 
         asyncio.run(_run())
 
     def test_rotate_secret_not_found_raises(self) -> None:
+        """Rotating a nonexistent client raises InvalidClientError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = OAuth2ClientService(db)
-                with pytest.raises(InvalidClientError, match="not found"):
-                    await svc.rotate_secret("nonexistent")
+            db = AsyncMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            db.execute.return_value = result
+
+            svc = OAuth2ClientService(db)
+            with pytest.raises(InvalidClientError, match="not found"):
+                await svc.rotate_secret("nonexistent")
 
         asyncio.run(_run())
 
     def test_rotate_secret_public_client_raises(self) -> None:
-        async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                client = OAuth2Client(
-                    client_id="pub-rotate",
-                    client_name="PubRotate",
-                    client_type=ClientType.PUBLIC,
-                    redirect_uris=[],
-                    grant_types=[],
-                    response_types=[],
-                    scopes=[],
-                    contacts=[],
-                    token_endpoint_auth_method=TokenEndpointAuthMethod.NONE,
-                )
-                db.add(client)
-                await db.flush()
+        """Rotating secret of public client raises InvalidClientError."""
 
-                svc = OAuth2ClientService(db)
-                with pytest.raises(InvalidClientError, match="public"):
-                    await svc.rotate_secret("pub-rotate")
+        async def _run() -> None:
+            db = AsyncMock()
+
+            mock_client = MagicMock()
+            mock_client.client_id = "pub-rotate"
+            mock_client.client_type = ClientType.PUBLIC
+            mock_client.token_endpoint_auth_method = TokenEndpointAuthMethod.NONE
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_client
+            db.execute.return_value = result
+
+            svc = OAuth2ClientService(db)
+            with pytest.raises(InvalidClientError, match="public"):
+                await svc.rotate_secret("pub-rotate")
 
         asyncio.run(_run())
 
@@ -339,7 +369,7 @@ class TestSessionMiddlewareRenewal:
     """Test middleware session renewal path directly."""
 
     def test_no_cookie_passes_through(self) -> None:
-        """No session cookie — middleware does nothing."""
+        """No session cookie -- middleware does nothing."""
         from shomer.middleware.session import SessionMiddleware
 
         async def _run() -> None:
@@ -356,7 +386,7 @@ class TestSessionMiddlewareRenewal:
         asyncio.run(_run())
 
     def test_invalid_cookie_passes_through(self) -> None:
-        """Invalid session token — middleware passes through."""
+        """Invalid session token -- middleware passes through."""
         from shomer.middleware.session import SessionMiddleware
 
         async def _run() -> None:

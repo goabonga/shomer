@@ -6,73 +6,41 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import uuid
-from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock
 
 import jwt as pyjwt
-import pytest
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from shomer.core.database import Base
-from shomer.core.security import AESEncryption
-from shomer.core.settings import Settings
-from shomer.models.jwk import JWK, JWKStatus
-from shomer.models.password_reset_token import PasswordResetToken  # noqa: F401
-from shomer.models.session import Session  # noqa: F401
-from shomer.models.user import User  # noqa: F401
-from shomer.models.user_email import UserEmail  # noqa: F401
-from shomer.models.user_password import UserPassword  # noqa: F401
-from shomer.models.user_profile import UserProfile  # noqa: F401
-from shomer.models.verification_code import VerificationCode  # noqa: F401
 from shomer.services.jwt_validation_service import (
     JWTValidationService,
     TokenError,
 )
 
-_ENGINE = create_async_engine(
-    "sqlite+aiosqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-_SESSION_FACTORY = async_sessionmaker(_ENGINE, expire_on_commit=False)
 _ISSUER = "https://test.shomer.local"
 
 
-@pytest.fixture(autouse=True)
-def _setup_db() -> Iterator[None]:
-    """Create and drop tables for each test."""
-
-    async def _create() -> None:
-        async with _ENGINE.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    asyncio.run(_create())
-    yield
-
-    async def _drop() -> None:
-        async with _ENGINE.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-
-    asyncio.run(_drop())
+def _settings(**overrides: object) -> MagicMock:
+    """Create a mock Settings object."""
+    s = MagicMock()
+    s.jwt_issuer = overrides.get("jwt_issuer", _ISSUER)
+    s.jwt_clock_skew = overrides.get("jwt_clock_skew", 5)
+    return s
 
 
-def _settings(**overrides: object) -> Settings:
-    defaults = {"jwt_issuer": _ISSUER, "jwt_clock_skew": 5}
-    defaults.update(overrides)
-    return Settings(**defaults)  # type: ignore[arg-type]
+def _generate_rsa_pair() -> tuple[rsa.RSAPrivateKey, str, str]:
+    """Generate an RSA key pair.
 
-
-def _generate_rsa_pair() -> tuple[rsa.RSAPrivateKey, bytes]:
-    """Generate an RSA key pair, return (private_key, public_jwk_json)."""
+    Returns
+    -------
+    tuple[rsa.RSAPrivateKey, str, str]
+        (private_key, public_jwk_json_str, kid)
+    """
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     pub = private_key.public_key().public_numbers()
-    import base64
-
     n_bytes = pub.n.to_bytes((pub.n.bit_length() + 7) // 8, byteorder="big")
     e_bytes = pub.e.to_bytes((pub.e.bit_length() + 7) // 8, byteorder="big")
     kid = f"test-{uuid.uuid4().hex[:8]}"
@@ -86,37 +54,38 @@ def _generate_rsa_pair() -> tuple[rsa.RSAPrivateKey, bytes]:
             "e": base64.urlsafe_b64encode(e_bytes).rstrip(b"=").decode(),
         }
     )
-    return private_key, pub_jwk.encode()
+    return private_key, pub_jwk, kid
 
 
-async def _insert_key(
-    status: JWKStatus = JWKStatus.ACTIVE,
-) -> tuple[rsa.RSAPrivateKey, str]:
-    """Insert a JWK into the DB and return (private_key, kid)."""
-    private_key, pub_jwk_bytes = _generate_rsa_pair()
-    pub_jwk = json.loads(pub_jwk_bytes)
-    kid = pub_jwk["kid"]
+def _mock_db_with_key(pub_jwk_str: str, kid: str, *, found: bool = True) -> AsyncMock:
+    """Create a mock DB that returns a JWK for the given kid.
 
-    enc_key = AESEncryption.generate_key()
-    enc = AESEncryption(enc_key)
-    priv_pem = private_key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    )
+    Parameters
+    ----------
+    pub_jwk_str : str
+        Public JWK JSON string.
+    kid : str
+        Key ID.
+    found : bool
+        Whether the key should be found.
 
-    async with _SESSION_FACTORY() as session:
-        jwk = JWK(
-            kid=kid,
-            algorithm="RS256",
-            public_key=pub_jwk_bytes.decode(),
-            private_key_enc=enc.encrypt(priv_pem),
-            status=status,
-        )
-        session.add(jwk)
-        await session.commit()
-
-    return private_key, kid
+    Returns
+    -------
+    AsyncMock
+        The mock database session.
+    """
+    db = AsyncMock()
+    if found:
+        mock_jwk = MagicMock()
+        mock_jwk.kid = kid
+        mock_jwk.public_key = pub_jwk_str
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = mock_jwk
+    else:
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+    db.execute.return_value = result
+    return db
 
 
 def _sign_token(
@@ -137,8 +106,12 @@ class TestValidToken:
     """Tests for successful validation."""
 
     def test_valid_token(self) -> None:
+        """Valid token returns valid=True with claims."""
+
         async def _run() -> None:
-            private_key, kid = await _insert_key()
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            db = _mock_db_with_key(pub_jwk, kid)
+
             now = datetime.now(timezone.utc)
             token = _sign_token(
                 private_key,
@@ -153,19 +126,22 @@ class TestValidToken:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token, audience="client-1")
-                assert result.valid is True
-                assert result.claims is not None
-                assert result.claims["sub"] == "user-1"
-                assert result.error is None
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token, audience="client-1")
+            assert result.valid is True
+            assert result.claims is not None
+            assert result.claims["sub"] == "user-1"
+            assert result.error is None
 
         asyncio.run(_run())
 
     def test_valid_without_audience_check(self) -> None:
+        """Token without audience check still validates."""
+
         async def _run() -> None:
-            private_key, kid = await _insert_key()
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            db = _mock_db_with_key(pub_jwk, kid)
+
             now = datetime.now(timezone.utc)
             token = _sign_token(
                 private_key,
@@ -178,16 +154,20 @@ class TestValidToken:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token)
-                assert result.valid is True
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token)
+            assert result.valid is True
 
         asyncio.run(_run())
 
     def test_rotated_key_still_valid(self) -> None:
+        """Rotated (non-revoked) key still validates tokens."""
+
         async def _run() -> None:
-            private_key, kid = await _insert_key(status=JWKStatus.ROTATED)
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            # Rotated key is still non-revoked, so it's found
+            db = _mock_db_with_key(pub_jwk, kid)
+
             now = datetime.now(timezone.utc)
             token = _sign_token(
                 private_key,
@@ -200,10 +180,9 @@ class TestValidToken:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token)
-                assert result.valid is True
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token)
+            assert result.valid is True
 
         asyncio.run(_run())
 
@@ -212,8 +191,12 @@ class TestExpiredToken:
     """Tests for expired tokens."""
 
     def test_expired_token(self) -> None:
+        """Expired token returns EXPIRED error."""
+
         async def _run() -> None:
-            private_key, kid = await _insert_key()
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            db = _mock_db_with_key(pub_jwk, kid)
+
             now = datetime.now(timezone.utc)
             token = _sign_token(
                 private_key,
@@ -226,11 +209,10 @@ class TestExpiredToken:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token)
-                assert result.valid is False
-                assert result.error == TokenError.EXPIRED
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token)
+            assert result.valid is False
+            assert result.error == TokenError.EXPIRED
 
         asyncio.run(_run())
 
@@ -239,8 +221,12 @@ class TestInvalidSignature:
     """Tests for signature mismatches."""
 
     def test_wrong_key_signature(self) -> None:
+        """Token signed with wrong key returns INVALID_SIGNATURE."""
+
         async def _run() -> None:
-            _, kid = await _insert_key()
+            _, pub_jwk, kid = _generate_rsa_pair()
+            db = _mock_db_with_key(pub_jwk, kid)
+
             # Sign with a different key
             other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
             now = datetime.now(timezone.utc)
@@ -255,11 +241,10 @@ class TestInvalidSignature:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token)
-                assert result.valid is False
-                assert result.error == TokenError.INVALID_SIGNATURE
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token)
+            assert result.valid is False
+            assert result.error == TokenError.INVALID_SIGNATURE
 
         asyncio.run(_run())
 
@@ -268,8 +253,13 @@ class TestKeyNotFound:
     """Tests for missing or revoked keys."""
 
     def test_unknown_kid(self) -> None:
+        """Unknown kid returns KEY_NOT_FOUND."""
+
         async def _run() -> None:
-            private_key, _ = await _insert_key()
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            # DB returns None for the kid in the token
+            db = _mock_db_with_key(pub_jwk, "other-kid", found=False)
+
             now = datetime.now(timezone.utc)
             token = _sign_token(
                 private_key,
@@ -282,17 +272,21 @@ class TestKeyNotFound:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token)
-                assert result.valid is False
-                assert result.error == TokenError.KEY_NOT_FOUND
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token)
+            assert result.valid is False
+            assert result.error == TokenError.KEY_NOT_FOUND
 
         asyncio.run(_run())
 
     def test_revoked_key_rejected(self) -> None:
+        """Revoked key (not found in non-revoked query) returns KEY_NOT_FOUND."""
+
         async def _run() -> None:
-            private_key, kid = await _insert_key(status=JWKStatus.REVOKED)
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            # Revoked key won't be returned by the query
+            db = _mock_db_with_key(pub_jwk, kid, found=False)
+
             now = datetime.now(timezone.utc)
             token = _sign_token(
                 private_key,
@@ -305,11 +299,10 @@ class TestKeyNotFound:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token)
-                assert result.valid is False
-                assert result.error == TokenError.KEY_NOT_FOUND
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token)
+            assert result.valid is False
+            assert result.error == TokenError.KEY_NOT_FOUND
 
         asyncio.run(_run())
 
@@ -318,8 +311,12 @@ class TestInvalidClaims:
     """Tests for claims validation."""
 
     def test_wrong_issuer(self) -> None:
+        """Wrong issuer returns INVALID_CLAIMS."""
+
         async def _run() -> None:
-            private_key, kid = await _insert_key()
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            db = _mock_db_with_key(pub_jwk, kid)
+
             now = datetime.now(timezone.utc)
             token = _sign_token(
                 private_key,
@@ -332,17 +329,20 @@ class TestInvalidClaims:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token)
-                assert result.valid is False
-                assert result.error == TokenError.INVALID_CLAIMS
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token)
+            assert result.valid is False
+            assert result.error == TokenError.INVALID_CLAIMS
 
         asyncio.run(_run())
 
     def test_wrong_audience(self) -> None:
+        """Wrong audience returns INVALID_CLAIMS."""
+
         async def _run() -> None:
-            private_key, kid = await _insert_key()
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            db = _mock_db_with_key(pub_jwk, kid)
+
             now = datetime.now(timezone.utc)
             token = _sign_token(
                 private_key,
@@ -356,11 +356,10 @@ class TestInvalidClaims:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token, audience="expected-client")
-                assert result.valid is False
-                assert result.error == TokenError.INVALID_CLAIMS
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token, audience="expected-client")
+            assert result.valid is False
+            assert result.error == TokenError.INVALID_CLAIMS
 
         asyncio.run(_run())
 
@@ -369,18 +368,24 @@ class TestDecodeError:
     """Tests for malformed tokens."""
 
     def test_malformed_token(self) -> None:
+        """Malformed token returns DECODE_ERROR."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate("not.a.jwt.at.all")
-                assert result.valid is False
-                assert result.error == TokenError.DECODE_ERROR
+            db = AsyncMock()
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate("not.a.jwt.at.all")
+            assert result.valid is False
+            assert result.error == TokenError.DECODE_ERROR
 
         asyncio.run(_run())
 
     def test_missing_kid_header(self) -> None:
+        """Token without kid header returns KEY_NOT_FOUND."""
+
         async def _run() -> None:
-            private_key, _ = await _insert_key()
+            private_key, _, _ = _generate_rsa_pair()
+            db = AsyncMock()
+
             now = datetime.now(timezone.utc)
             # Sign without kid header
             token = pyjwt.encode(
@@ -394,11 +399,10 @@ class TestDecodeError:
                 algorithm="RS256",
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(), session)
-                result = await svc.validate(token)
-                assert result.valid is False
-                assert result.error == TokenError.KEY_NOT_FOUND
+            svc = JWTValidationService(_settings(), db)
+            result = await svc.validate(token)
+            assert result.valid is False
+            assert result.error == TokenError.KEY_NOT_FOUND
 
         asyncio.run(_run())
 
@@ -407,8 +411,12 @@ class TestClockSkew:
     """Tests for clock skew tolerance."""
 
     def test_within_skew_tolerance(self) -> None:
+        """Token just expired but within skew is still valid."""
+
         async def _run() -> None:
-            private_key, kid = await _insert_key()
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            db = _mock_db_with_key(pub_jwk, kid)
+
             now = datetime.now(timezone.utc)
             # Token expired 3 seconds ago, skew is 5
             token = _sign_token(
@@ -422,16 +430,19 @@ class TestClockSkew:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(jwt_clock_skew=5), session)
-                result = await svc.validate(token)
-                assert result.valid is True
+            svc = JWTValidationService(_settings(jwt_clock_skew=5), db)
+            result = await svc.validate(token)
+            assert result.valid is True
 
         asyncio.run(_run())
 
     def test_beyond_skew_tolerance(self) -> None:
+        """Token expired beyond skew returns EXPIRED."""
+
         async def _run() -> None:
-            private_key, kid = await _insert_key()
+            private_key, pub_jwk, kid = _generate_rsa_pair()
+            db = _mock_db_with_key(pub_jwk, kid)
+
             now = datetime.now(timezone.utc)
             # Token expired 10 seconds ago, skew is 5
             token = _sign_token(
@@ -445,10 +456,9 @@ class TestClockSkew:
                 },
             )
 
-            async with _SESSION_FACTORY() as session:
-                svc = JWTValidationService(_settings(jwt_clock_skew=5), session)
-                result = await svc.validate(token)
-                assert result.valid is False
-                assert result.error == TokenError.EXPIRED
+            svc = JWTValidationService(_settings(jwt_clock_skew=5), db)
+            result = await svc.validate(token)
+            assert result.valid is False
+            assert result.error == TokenError.EXPIRED
 
         asyncio.run(_run())

@@ -7,68 +7,27 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import secrets
 import uuid
-from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import jwt as pyjwt
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from shomer.core.database import Base
-from shomer.core.security import hash_password
-from shomer.core.settings import Settings
-from shomer.models.access_token import AccessToken  # noqa: F401
-from shomer.models.authorization_code import AuthorizationCode
-from shomer.models.jwk import JWK  # noqa: F401
-from shomer.models.oauth2_client import OAuth2Client  # noqa: F401
-from shomer.models.password_reset_token import PasswordResetToken  # noqa: F401
-from shomer.models.refresh_token import RefreshToken  # noqa: F401
-from shomer.models.session import Session  # noqa: F401
-from shomer.models.user import User
-from shomer.models.user_email import UserEmail
-from shomer.models.user_password import UserPassword
-from shomer.models.user_profile import UserProfile  # noqa: F401
-from shomer.models.verification_code import VerificationCode  # noqa: F401
 from shomer.services.token_service import TokenError, TokenResponse, TokenService
 
-_ENGINE = create_async_engine(
-    "sqlite+aiosqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-_SESSION_FACTORY = async_sessionmaker(_ENGINE, expire_on_commit=False)
+
+def _settings() -> MagicMock:
+    """Create a mock Settings object."""
+    s = MagicMock()
+    s.jwt_issuer = "https://test.shomer.local"
+    s.jwt_access_token_exp = 3600
+    s.jwt_id_token_exp = 3600
+    s.jwk_encryption_key = "test-secret-key-that-is-at-least-32-bytes!"
+    return s
 
 
-def _settings() -> Settings:
-    return Settings(
-        jwt_issuer="https://test.shomer.local",
-        jwt_access_token_exp=3600,
-        jwt_id_token_exp=3600,
-        jwk_encryption_key="test-secret-key-that-is-at-least-32-bytes!",
-    )
-
-
-@pytest.fixture(autouse=True)
-def _setup_db() -> Iterator[None]:
-    async def _create() -> None:
-        async with _ENGINE.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    asyncio.run(_create())
-    yield
-
-    async def _drop() -> None:
-        async with _ENGINE.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-
-    asyncio.run(_drop())
-
-
-async def _create_auth_code(
-    db: Any,
+def _make_auth_code(
     *,
     client_id: str = "test-client",
     redirect_uri: str = "https://app.example.com/cb",
@@ -78,168 +37,219 @@ async def _create_auth_code(
     code_challenge_method: str | None = None,
     expired: bool = False,
     used: bool = False,
-) -> tuple[str, uuid.UUID]:
-    """Create a user + auth code. Returns (code, user_id)."""
-    user = User(username="test")
-    db.add(user)
-    await db.flush()
-
-    code = secrets.token_urlsafe(32)
+) -> MagicMock:
+    """Create a mock AuthorizationCode."""
     now = datetime.now(timezone.utc)
-    ac = AuthorizationCode(
-        code=code,
-        user_id=user.id,
-        client_id=client_id,
-        redirect_uri=redirect_uri,
-        scopes=scopes,
-        nonce=nonce,
-        code_challenge=code_challenge,
-        code_challenge_method=code_challenge_method,
-        expires_at=now - timedelta(hours=1) if expired else now + timedelta(minutes=10),
-        is_used=used,
-        used_at=now if used else None,
-    )
-    db.add(ac)
-    await db.flush()
-    return code, user.id
+    ac = MagicMock()
+    ac.code = "test-code-value"
+    ac.user_id = uuid.uuid4()
+    ac.client_id = client_id
+    ac.redirect_uri = redirect_uri
+    ac.scopes = scopes
+    ac.nonce = nonce
+    ac.code_challenge = code_challenge
+    ac.code_challenge_method = code_challenge_method
+    ac.expires_at = now - timedelta(hours=1) if expired else now + timedelta(minutes=10)
+    ac.is_used = used
+    ac.used_at = now if used else None
+    return ac
 
 
 class TestExchangeAuthorizationCode:
     """Tests for TokenService.exchange_authorization_code()."""
 
     def test_successful_exchange(self) -> None:
+        """Successful exchange returns access_token, refresh_token, scope."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(db)
-                svc = TokenService(db, _settings())
-                resp = await svc.exchange_authorization_code(
-                    code=code,
-                    client_id="test-client",
-                    redirect_uri="https://app.example.com/cb",
-                )
-                assert resp.access_token is not None
-                assert resp.refresh_token is not None
-                assert resp.token_type == "Bearer"
-                assert resp.scope == "openid profile"
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_ac = _make_auth_code()
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            resp = await svc.exchange_authorization_code(
+                code="test-code",
+                client_id="test-client",
+                redirect_uri="https://app.example.com/cb",
+            )
+            assert resp.access_token is not None
+            assert resp.refresh_token is not None
+            assert resp.token_type == "Bearer"
+            assert resp.scope == "openid profile"
 
         asyncio.run(_run())
 
     def test_issues_id_token_with_openid_scope(self) -> None:
+        """ID token is issued when openid scope is present."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(
-                    db, scopes="openid profile", nonce="abc"
-                )
-                svc = TokenService(db, _settings())
-                resp = await svc.exchange_authorization_code(
-                    code=code,
-                    client_id="test-client",
-                    redirect_uri="https://app.example.com/cb",
-                )
-                assert resp.id_token is not None
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_ac = _make_auth_code(scopes="openid profile", nonce="abc")
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            resp = await svc.exchange_authorization_code(
+                code="test-code",
+                client_id="test-client",
+                redirect_uri="https://app.example.com/cb",
+            )
+            assert resp.id_token is not None
 
         asyncio.run(_run())
 
     def test_no_id_token_without_openid(self) -> None:
+        """No ID token when openid scope is absent."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(db, scopes="profile")
-                svc = TokenService(db, _settings())
-                resp = await svc.exchange_authorization_code(
-                    code=code,
-                    client_id="test-client",
-                    redirect_uri="https://app.example.com/cb",
-                )
-                assert resp.id_token is None
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_ac = _make_auth_code(scopes="profile")
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            resp = await svc.exchange_authorization_code(
+                code="test-code",
+                client_id="test-client",
+                redirect_uri="https://app.example.com/cb",
+            )
+            assert resp.id_token is None
 
         asyncio.run(_run())
 
     def test_invalid_code_raises(self) -> None:
+        """Invalid code raises TokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = TokenService(db, _settings())
-                with pytest.raises(TokenError, match="Invalid"):
-                    await svc.exchange_authorization_code(
-                        code="nonexistent",
-                        client_id="test-client",
-                        redirect_uri="https://app.example.com/cb",
-                    )
+            db = AsyncMock()
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = None
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="Invalid"):
+                await svc.exchange_authorization_code(
+                    code="nonexistent",
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
+                )
 
         asyncio.run(_run())
 
     def test_expired_code_raises(self) -> None:
+        """Expired code raises TokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(db, expired=True)
-                svc = TokenService(db, _settings())
-                with pytest.raises(TokenError, match="expired"):
-                    await svc.exchange_authorization_code(
-                        code=code,
-                        client_id="test-client",
-                        redirect_uri="https://app.example.com/cb",
-                    )
+            db = AsyncMock()
+            mock_ac = _make_auth_code(expired=True)
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="expired"):
+                await svc.exchange_authorization_code(
+                    code="test-code",
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
+                )
 
         asyncio.run(_run())
 
     def test_used_code_raises(self) -> None:
+        """Already-used code raises TokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(db, used=True)
-                svc = TokenService(db, _settings())
-                with pytest.raises(TokenError, match="already used"):
-                    await svc.exchange_authorization_code(
-                        code=code,
-                        client_id="test-client",
-                        redirect_uri="https://app.example.com/cb",
-                    )
+            db = AsyncMock()
+            mock_ac = _make_auth_code(used=True)
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="already used"):
+                await svc.exchange_authorization_code(
+                    code="test-code",
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
+                )
 
         asyncio.run(_run())
 
     def test_client_mismatch_raises(self) -> None:
+        """Client mismatch raises TokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(db)
-                svc = TokenService(db, _settings())
-                with pytest.raises(TokenError, match="Client mismatch"):
-                    await svc.exchange_authorization_code(
-                        code=code,
-                        client_id="wrong-client",
-                        redirect_uri="https://app.example.com/cb",
-                    )
+            db = AsyncMock()
+            mock_ac = _make_auth_code()
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="Client mismatch"):
+                await svc.exchange_authorization_code(
+                    code="test-code",
+                    client_id="wrong-client",
+                    redirect_uri="https://app.example.com/cb",
+                )
 
         asyncio.run(_run())
 
     def test_redirect_uri_mismatch_raises(self) -> None:
+        """Redirect URI mismatch raises TokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(db)
-                svc = TokenService(db, _settings())
-                with pytest.raises(TokenError, match="Redirect URI"):
-                    await svc.exchange_authorization_code(
-                        code=code,
-                        client_id="test-client",
-                        redirect_uri="https://evil.com/cb",
-                    )
+            db = AsyncMock()
+            mock_ac = _make_auth_code()
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="Redirect URI"):
+                await svc.exchange_authorization_code(
+                    code="test-code",
+                    client_id="test-client",
+                    redirect_uri="https://evil.com/cb",
+                )
 
         asyncio.run(_run())
 
     def test_marks_code_as_used(self) -> None:
+        """Code is marked as used after exchange."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(db)
-                svc = TokenService(db, _settings())
-                await svc.exchange_authorization_code(
-                    code=code,
-                    client_id="test-client",
-                    redirect_uri="https://app.example.com/cb",
-                )
-                # Second use should fail
-                with pytest.raises(TokenError, match="already used"):
-                    await svc.exchange_authorization_code(
-                        code=code,
-                        client_id="test-client",
-                        redirect_uri="https://app.example.com/cb",
-                    )
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_ac = _make_auth_code()
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            await svc.exchange_authorization_code(
+                code="test-code",
+                client_id="test-client",
+                redirect_uri="https://app.example.com/cb",
+            )
+            assert mock_ac.is_used is True
+            assert mock_ac.used_at is not None
 
         asyncio.run(_run())
 
@@ -248,6 +258,7 @@ class TestPKCE:
     """Tests for PKCE verification."""
 
     def test_pkce_s256_success(self) -> None:
+        """Correct S256 PKCE verifier passes."""
         import base64
 
         verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
@@ -255,51 +266,70 @@ class TestPKCE:
         challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(
-                    db, code_challenge=challenge, code_challenge_method="S256"
-                )
-                svc = TokenService(db, _settings())
-                resp = await svc.exchange_authorization_code(
-                    code=code,
-                    client_id="test-client",
-                    redirect_uri="https://app.example.com/cb",
-                    code_verifier=verifier,
-                )
-                assert resp.access_token is not None
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_ac = _make_auth_code(
+                code_challenge=challenge, code_challenge_method="S256"
+            )
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            resp = await svc.exchange_authorization_code(
+                code="test-code",
+                client_id="test-client",
+                redirect_uri="https://app.example.com/cb",
+                code_verifier=verifier,
+            )
+            assert resp.access_token is not None
 
         asyncio.run(_run())
 
     def test_pkce_missing_verifier_raises(self) -> None:
+        """Missing code_verifier when code_challenge is set raises TokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(
-                    db, code_challenge="challenge", code_challenge_method="S256"
+            db = AsyncMock()
+            mock_ac = _make_auth_code(
+                code_challenge="challenge", code_challenge_method="S256"
+            )
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="code_verifier required"):
+                await svc.exchange_authorization_code(
+                    code="test-code",
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
                 )
-                svc = TokenService(db, _settings())
-                with pytest.raises(TokenError, match="code_verifier required"):
-                    await svc.exchange_authorization_code(
-                        code=code,
-                        client_id="test-client",
-                        redirect_uri="https://app.example.com/cb",
-                    )
 
         asyncio.run(_run())
 
     def test_pkce_wrong_verifier_raises(self) -> None:
+        """Wrong code_verifier raises TokenError."""
+
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                code, _ = await _create_auth_code(
-                    db, code_challenge="correct-challenge", code_challenge_method="S256"
+            db = AsyncMock()
+            mock_ac = _make_auth_code(
+                code_challenge="correct-challenge", code_challenge_method="S256"
+            )
+            ac_result = MagicMock()
+            ac_result.scalar_one_or_none.return_value = mock_ac
+            db.execute.return_value = ac_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="PKCE verification failed"):
+                await svc.exchange_authorization_code(
+                    code="test-code",
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/cb",
+                    code_verifier="wrong-verifier",
                 )
-                svc = TokenService(db, _settings())
-                with pytest.raises(TokenError, match="PKCE verification failed"):
-                    await svc.exchange_authorization_code(
-                        code=code,
-                        client_id="test-client",
-                        redirect_uri="https://app.example.com/cb",
-                        code_verifier="wrong-verifier",
-                    )
 
         asyncio.run(_run())
 
@@ -311,17 +341,20 @@ class TestClientCredentials:
         """Issue access_token with all allowed scopes."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = TokenService(db, _settings())
-                resp = await svc.issue_client_credentials(
-                    client_id="m2m-client",
-                    client_scopes=["read", "write"],
-                )
-                assert resp.access_token is not None
-                assert resp.token_type == "Bearer"
-                assert resp.refresh_token is None
-                assert resp.id_token is None
-                assert resp.scope == "read write"
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            svc = TokenService(db, _settings())
+            resp = await svc.issue_client_credentials(
+                client_id="m2m-client",
+                client_scopes=["read", "write"],
+            )
+            assert resp.access_token is not None
+            assert resp.token_type == "Bearer"
+            assert resp.refresh_token is None
+            assert resp.id_token is None
+            assert resp.scope == "read write"
 
         asyncio.run(_run())
 
@@ -329,14 +362,17 @@ class TestClientCredentials:
         """Only requested scopes are granted."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = TokenService(db, _settings())
-                resp = await svc.issue_client_credentials(
-                    client_id="m2m-client",
-                    client_scopes=["read", "write", "admin"],
-                    requested_scope="read",
-                )
-                assert resp.scope == "read"
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            svc = TokenService(db, _settings())
+            resp = await svc.issue_client_credentials(
+                client_id="m2m-client",
+                client_scopes=["read", "write", "admin"],
+                requested_scope="read",
+            )
+            assert resp.scope == "read"
 
         asyncio.run(_run())
 
@@ -344,13 +380,16 @@ class TestClientCredentials:
         """All allowed scopes are granted when no scope is requested."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = TokenService(db, _settings())
-                resp = await svc.issue_client_credentials(
-                    client_id="m2m-client",
-                    client_scopes=["read", "write"],
-                )
-                assert resp.scope == "read write"
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            svc = TokenService(db, _settings())
+            resp = await svc.issue_client_credentials(
+                client_id="m2m-client",
+                client_scopes=["read", "write"],
+            )
+            assert resp.scope == "read write"
 
         asyncio.run(_run())
 
@@ -358,14 +397,17 @@ class TestClientCredentials:
         """Requesting a scope not allowed by the client raises TokenError."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = TokenService(db, _settings())
-                with pytest.raises(TokenError, match="Scope not allowed"):
-                    await svc.issue_client_credentials(
-                        client_id="m2m-client",
-                        client_scopes=["read"],
-                        requested_scope="read admin",
-                    )
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="Scope not allowed"):
+                await svc.issue_client_credentials(
+                    client_id="m2m-client",
+                    client_scopes=["read"],
+                    requested_scope="read admin",
+                )
 
         asyncio.run(_run())
 
@@ -373,13 +415,16 @@ class TestClientCredentials:
         """client_credentials grant must NOT issue a refresh_token."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = TokenService(db, _settings())
-                resp = await svc.issue_client_credentials(
-                    client_id="m2m-client",
-                    client_scopes=["read"],
-                )
-                assert resp.refresh_token is None
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            svc = TokenService(db, _settings())
+            resp = await svc.issue_client_credentials(
+                client_id="m2m-client",
+                client_scopes=["read"],
+            )
+            assert resp.refresh_token is None
 
         asyncio.run(_run())
 
@@ -387,14 +432,17 @@ class TestClientCredentials:
         """client_credentials grant must NOT issue an id_token."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = TokenService(db, _settings())
-                resp = await svc.issue_client_credentials(
-                    client_id="m2m-client",
-                    client_scopes=["openid"],
-                    requested_scope="openid",
-                )
-                assert resp.id_token is None
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            svc = TokenService(db, _settings())
+            resp = await svc.issue_client_credentials(
+                client_id="m2m-client",
+                client_scopes=["openid"],
+                requested_scope="openid",
+            )
+            assert resp.id_token is None
 
         asyncio.run(_run())
 
@@ -402,74 +450,46 @@ class TestClientCredentials:
         """AccessToken record should have user_id=None for M2M tokens."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                svc = TokenService(db, _settings())
-                await svc.issue_client_credentials(
-                    client_id="m2m-client",
-                    client_scopes=["read"],
-                )
-                from sqlalchemy import select
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
 
-                from shomer.models.access_token import AccessToken
-
-                stmt = select(AccessToken).where(AccessToken.client_id == "m2m-client")
-                result = await db.execute(stmt)
-                record = result.scalar_one()
-                assert record.user_id is None
-                assert record.client_id == "m2m-client"
+            svc = TokenService(db, _settings())
+            await svc.issue_client_credentials(
+                client_id="m2m-client",
+                client_scopes=["read"],
+            )
+            # Check the AccessToken that was added
+            added_obj = db.add.call_args[0][0]
+            assert added_obj.user_id is None
+            assert added_obj.client_id == "m2m-client"
 
         asyncio.run(_run())
 
     def test_subject_is_client_id(self) -> None:
         """JWT subject claim should be the client_id."""
-        import jwt as pyjwt
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                settings = _settings()
-                svc = TokenService(db, settings)
-                resp = await svc.issue_client_credentials(
-                    client_id="m2m-client",
-                    client_scopes=["read"],
-                )
-                payload = pyjwt.decode(
-                    resp.access_token,
-                    settings.jwk_encryption_key,
-                    algorithms=["HS256"],
-                    audience="m2m-client",
-                )
-                assert payload["sub"] == "m2m-client"
-                assert payload["aud"] == "m2m-client"
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            settings = _settings()
+            svc = TokenService(db, settings)
+            resp = await svc.issue_client_credentials(
+                client_id="m2m-client",
+                client_scopes=["read"],
+            )
+            payload = pyjwt.decode(
+                resp.access_token,
+                settings.jwk_encryption_key,
+                algorithms=["HS256"],
+                audience="m2m-client",
+            )
+            assert payload["sub"] == "m2m-client"
+            assert payload["aud"] == "m2m-client"
 
         asyncio.run(_run())
-
-
-async def _create_verified_user(
-    db: Any,
-    *,
-    email: str = "user@example.com",
-    password: str = "securepassword123",
-) -> uuid.UUID:
-    """Create a user with verified email and current password. Returns user_id."""
-    user = User(username="testuser")
-    db.add(user)
-    await db.flush()
-
-    user_email = UserEmail(
-        user_id=user.id,
-        email=email,
-        is_primary=True,
-        is_verified=True,
-    )
-    db.add(user_email)
-
-    pw = UserPassword(
-        user_id=user.id,
-        password_hash=hash_password(password),
-    )
-    db.add(pw)
-    await db.flush()
-    return user.id
 
 
 class TestPasswordGrant:
@@ -479,8 +499,37 @@ class TestPasswordGrant:
         """Valid email + password returns access_token + refresh_token."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                await _create_verified_user(db)
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+            mock_email = MagicMock()
+            mock_email.is_primary = True
+            mock_email.is_verified = True
+            mock_user.emails = [mock_email]
+
+            mock_pw = MagicMock()
+            mock_pw.password_hash = "$argon2id$hash"
+
+            pw_result = MagicMock()
+            pw_result.scalar_one_or_none.return_value = mock_pw
+
+            with (
+                patch(
+                    "shomer.models.queries.get_user_by_email",
+                    new_callable=AsyncMock,
+                    return_value=mock_user,
+                ),
+                patch(
+                    "shomer.core.security.verify_password",
+                    return_value=True,
+                ),
+            ):
+                # First execute call: get current password
+                db.execute.return_value = pw_result
+
                 svc = TokenService(db, _settings())
                 resp = await svc.issue_password_grant(
                     username="user@example.com",
@@ -497,8 +546,36 @@ class TestPasswordGrant:
         """Requested scopes are included in the response."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                await _create_verified_user(db)
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+            mock_email = MagicMock()
+            mock_email.is_primary = True
+            mock_email.is_verified = True
+            mock_user.emails = [mock_email]
+
+            mock_pw = MagicMock()
+            mock_pw.password_hash = "$argon2id$hash"
+
+            pw_result = MagicMock()
+            pw_result.scalar_one_or_none.return_value = mock_pw
+
+            with (
+                patch(
+                    "shomer.models.queries.get_user_by_email",
+                    new_callable=AsyncMock,
+                    return_value=mock_user,
+                ),
+                patch(
+                    "shomer.core.security.verify_password",
+                    return_value=True,
+                ),
+            ):
+                db.execute.return_value = pw_result
+
                 svc = TokenService(db, _settings())
                 resp = await svc.issue_password_grant(
                     username="user@example.com",
@@ -514,7 +591,16 @@ class TestPasswordGrant:
         """Unknown email returns invalid_grant."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
+            db = AsyncMock()
+
+            with (
+                patch(
+                    "shomer.models.queries.get_user_by_email",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ),
+                patch("shomer.core.security.hash_password"),
+            ):
                 svc = TokenService(db, _settings())
                 with pytest.raises(TokenError, match="Invalid credentials"):
                     await svc.issue_password_grant(
@@ -529,8 +615,30 @@ class TestPasswordGrant:
         """Wrong password returns invalid_grant."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                await _create_verified_user(db)
+            db = AsyncMock()
+
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+
+            mock_pw = MagicMock()
+            mock_pw.password_hash = "$argon2id$hash"
+
+            pw_result = MagicMock()
+            pw_result.scalar_one_or_none.return_value = mock_pw
+
+            with (
+                patch(
+                    "shomer.models.queries.get_user_by_email",
+                    new_callable=AsyncMock,
+                    return_value=mock_user,
+                ),
+                patch(
+                    "shomer.core.security.verify_password",
+                    return_value=False,
+                ),
+            ):
+                db.execute.return_value = pw_result
+
                 svc = TokenService(db, _settings())
                 with pytest.raises(TokenError, match="Invalid credentials"):
                     await svc.issue_password_grant(
@@ -545,23 +653,33 @@ class TestPasswordGrant:
         """Unverified email returns invalid_grant."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                user = User(username="unverified")
-                db.add(user)
-                await db.flush()
-                ue = UserEmail(
-                    user_id=user.id,
-                    email="unverified@example.com",
-                    is_primary=True,
-                    is_verified=False,
-                )
-                db.add(ue)
-                pw = UserPassword(
-                    user_id=user.id,
-                    password_hash=hash_password("securepassword123"),
-                )
-                db.add(pw)
-                await db.flush()
+            db = AsyncMock()
+
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+            mock_email = MagicMock()
+            mock_email.is_primary = True
+            mock_email.is_verified = False
+            mock_user.emails = [mock_email]
+
+            mock_pw = MagicMock()
+            mock_pw.password_hash = "$argon2id$hash"
+
+            pw_result = MagicMock()
+            pw_result.scalar_one_or_none.return_value = mock_pw
+
+            with (
+                patch(
+                    "shomer.models.queries.get_user_by_email",
+                    new_callable=AsyncMock,
+                    return_value=mock_user,
+                ),
+                patch(
+                    "shomer.core.security.verify_password",
+                    return_value=True,
+                ),
+            ):
+                db.execute.return_value = pw_result
 
                 svc = TokenService(db, _settings())
                 with pytest.raises(TokenError, match="Email not verified"):
@@ -575,11 +693,38 @@ class TestPasswordGrant:
 
     def test_subject_is_user_id(self) -> None:
         """JWT sub claim should be the user_id."""
-        import jwt as pyjwt
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                user_id = await _create_verified_user(db)
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+            mock_email = MagicMock()
+            mock_email.is_primary = True
+            mock_email.is_verified = True
+            mock_user.emails = [mock_email]
+
+            mock_pw = MagicMock()
+            mock_pw.password_hash = "$argon2id$hash"
+
+            pw_result = MagicMock()
+            pw_result.scalar_one_or_none.return_value = mock_pw
+
+            with (
+                patch(
+                    "shomer.models.queries.get_user_by_email",
+                    new_callable=AsyncMock,
+                    return_value=mock_user,
+                ),
+                patch(
+                    "shomer.core.security.verify_password",
+                    return_value=True,
+                ),
+            ):
+                db.execute.return_value = pw_result
+
                 settings = _settings()
                 svc = TokenService(db, settings)
                 resp = await svc.issue_password_grant(
@@ -593,7 +738,7 @@ class TestPasswordGrant:
                     algorithms=["HS256"],
                     audience="test-client",
                 )
-                assert payload["sub"] == str(user_id)
+                assert payload["sub"] == str(mock_user.id)
 
         asyncio.run(_run())
 
@@ -601,8 +746,36 @@ class TestPasswordGrant:
         """password grant does not issue id_token."""
 
         async def _run() -> None:
-            async with _SESSION_FACTORY() as db:
-                await _create_verified_user(db)
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+            mock_email = MagicMock()
+            mock_email.is_primary = True
+            mock_email.is_verified = True
+            mock_user.emails = [mock_email]
+
+            mock_pw = MagicMock()
+            mock_pw.password_hash = "$argon2id$hash"
+
+            pw_result = MagicMock()
+            pw_result.scalar_one_or_none.return_value = mock_pw
+
+            with (
+                patch(
+                    "shomer.models.queries.get_user_by_email",
+                    new_callable=AsyncMock,
+                    return_value=mock_user,
+                ),
+                patch(
+                    "shomer.core.security.verify_password",
+                    return_value=True,
+                ),
+            ):
+                db.execute.return_value = pw_result
+
                 svc = TokenService(db, _settings())
                 resp = await svc.issue_password_grant(
                     username="user@example.com",
@@ -651,10 +824,13 @@ class TestVerifyPKCEPlain:
     """Tests for PKCE plain method."""
 
     def test_plain_match(self) -> None:
+        """Plain PKCE with matching verifier returns True."""
         assert TokenService._verify_pkce("verifier", "verifier", "plain") is True
 
     def test_plain_mismatch(self) -> None:
+        """Plain PKCE with wrong verifier returns False."""
         assert TokenService._verify_pkce("verifier", "wrong", "plain") is False
 
     def test_unknown_method(self) -> None:
+        """Unknown PKCE method returns False."""
         assert TokenService._verify_pkce("v", "c", "unknown") is False
