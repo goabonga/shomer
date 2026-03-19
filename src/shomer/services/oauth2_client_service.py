@@ -203,7 +203,9 @@ class OAuth2ClientService:
                 raise InvalidClientError("Invalid client credentials")
             return client
 
-        raise InvalidClientError(f"Unsupported auth method: {method}")
+        raise InvalidClientError(
+            f"Unsupported auth method: {method}"
+        )  # pragma: no cover
 
     async def rotate_secret(self, client_id: str) -> tuple[OAuth2Client, str]:
         """Generate a new secret for a confidential client.
