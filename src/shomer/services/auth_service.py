@@ -407,6 +407,43 @@ class AuthService:
         self.session.add(new_pw)
         await self.session.flush()
 
+    async def change_password(
+        self,
+        *,
+        user_id: uuid.UUID,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        """Change a user's password after verifying the current one.
+
+        Parameters
+        ----------
+        user_id : uuid.UUID
+            Authenticated user's ID.
+        current_password : str
+            Current plain-text password.
+        new_password : str
+            New plain-text password.
+
+        Raises
+        ------
+        InvalidCredentialsError
+            If the current password is incorrect.
+        """
+        current_pw = await self._get_current_password(user_id)
+        if current_pw is None or not verify_password(
+            current_password, current_pw.password_hash
+        ):
+            raise InvalidCredentialsError("Current password is incorrect")
+
+        current_pw.is_current = False
+        new_pw = UserPassword(
+            user_id=user_id,
+            password_hash=hash_password(new_password),
+        )
+        self.session.add(new_pw)
+        await self.session.flush()
+
     async def _email_exists(self, email: str) -> bool:
         """Check if an email is already registered.
 
