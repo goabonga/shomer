@@ -100,6 +100,18 @@ Feature: OAuth2 token endpoint
 
   # --- happy paths ---
 
+  Scenario: authorization_code grant returns access_token and refresh_token
+    Given a verified user and an OAuth2 client with all grants
+    And an authorization code for the OAuth2 client
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "authorization_code", "code": "${auth_code}", "redirect_uri": "https://app.example.com/callback", "client_id": "bdd-full-client", "client_secret": "bdd-test-secret-value"}
+      """
+    Then the response status code should be 200
+    And the response should have JSON key "access_token"
+    And the response should have JSON key "refresh_token"
+    And the response body should contain "Bearer"
+
   Scenario: client_credentials grant returns access_token
     Given a verified user and an OAuth2 client with all grants
     When I send a form POST to "/oauth2/token" with
