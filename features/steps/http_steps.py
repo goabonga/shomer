@@ -98,7 +98,12 @@ def _send_form(context, path, form_data):
 
 @when('I send a form POST to "{path}" with')
 def step_post_form(context, path):
-    form_data = json.loads(context.text)
+    text = context.text
+    # Substitute context variables (e.g. ${auth_code})
+    auth_code = getattr(context, "oauth2_auth_code", None)
+    if auth_code and "${auth_code}" in text:
+        text = text.replace("${auth_code}", auth_code)
+    form_data = json.loads(text)
     _send_form(context, path, form_data)
 
 
