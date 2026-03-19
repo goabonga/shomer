@@ -23,7 +23,7 @@ from shomer.models.user_email import UserEmail  # noqa: F401
 from shomer.models.user_password import UserPassword  # noqa: F401
 from shomer.models.user_profile import UserProfile  # noqa: F401
 from shomer.models.verification_code import VerificationCode  # noqa: F401
-from shomer.services.auth_service import AuthService, DuplicateEmailError
+from shomer.services.auth_service import AuthService
 
 _ENGINE = create_async_engine(
     "sqlite+aiosqlite://",
@@ -62,6 +62,7 @@ class TestRegister:
                     email="test@example.com",
                     password="securepassword",
                 )
+                assert user is not None
                 assert user.id is not None
                 assert len(code) == 6
                 assert code.isdigit()
@@ -77,6 +78,7 @@ class TestRegister:
                     password="securepassword",
                     username="testuser",
                 )
+                assert user is not None
                 assert user.username == "testuser"
 
         asyncio.run(_run())
@@ -129,11 +131,12 @@ class TestRegister:
                     email="dupe@example.com",
                     password="securepassword",
                 )
-                with pytest.raises(DuplicateEmailError):
-                    await svc.register(
-                        email="dupe@example.com",
-                        password="anotherpassword",
-                    )
+                user, code = await svc.register(
+                    email="dupe@example.com",
+                    password="anotherpassword",
+                )
+                assert user is None
+                assert code == ""
 
         asyncio.run(_run())
 

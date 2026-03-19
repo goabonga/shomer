@@ -25,7 +25,6 @@ from shomer.schemas.auth import (
 )
 from shomer.services.auth_service import (
     AuthService,
-    DuplicateEmailError,
     EmailNotFoundError,
     EmailNotVerifiedError,
     InvalidCodeError,
@@ -47,8 +46,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def register(body: RegisterRequest, db: DbSession) -> RegisterResponse:
     """Register a new user account.
 
-    Creates the user with hashed password, generates a verification code,
-    and dispatches a verification email via Celery.
+    Always returns 201 to prevent user enumeration. If the email
+    already exists, a dummy hash is performed and the same success
+    message is returned.
 
     Parameters
     ----------
@@ -60,27 +60,16 @@ async def register(body: RegisterRequest, db: DbSession) -> RegisterResponse:
     Returns
     -------
     RegisterResponse
-        Confirmation with user ID.
-
-    Raises
-    ------
-    HTTPException
-        409 if the email is already registered.
+        Confirmation message (always success).
     """
     svc = AuthService(db)
-    try:
-        user, code = await svc.register(
-            email=body.email,
-            password=body.password,
-            username=body.username,
-        )
-    except DuplicateEmailError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
-        )
+    user, code = await svc.register(
+        email=body.email,
+        password=body.password,
+        username=body.username,
+    )
 
-    # Dispatch verification email asynchronously
+    # Always dispatch a task to equalize timing
     send_email_task.delay(
         to=body.email,
         subject="Verify your email",
@@ -90,7 +79,7 @@ async def register(body: RegisterRequest, db: DbSession) -> RegisterResponse:
 
     return RegisterResponse(
         message="Registration successful. Check your email for a verification code.",
-        user_id=str(user.id),
+        user_id=str(user.id) if user else "",
     )
 
 

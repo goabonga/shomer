@@ -14,7 +14,6 @@ from fastapi.templating import Jinja2Templates
 from shomer.deps import DbSession
 from shomer.services.auth_service import (
     AuthService,
-    DuplicateEmailError,
     EmailNotFoundError,
     EmailNotVerifiedError,
     InvalidCodeError,
@@ -50,19 +49,18 @@ async def register_submit(
     password: str = Form(...),
     username: str = Form(""),
 ) -> Any:
-    """Handle registration form submission."""
-    svc = AuthService(db)
-    try:
-        _, code = await svc.register(
-            email=email,
-            password=password,
-            username=username or None,
-        )
-    except DuplicateEmailError:
-        return _render(
-            request, "auth/register.html", {"error": "Email already registered"}
-        )
+    """Handle registration form submission.
 
+    Always redirects to verify page to prevent user enumeration.
+    """
+    svc = AuthService(db)
+    _, code = await svc.register(
+        email=email,
+        password=password,
+        username=username or None,
+    )
+
+    # Always dispatch to equalize timing
     send_email_task.delay(
         to=email,
         subject="Verify your email",
