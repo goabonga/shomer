@@ -25,6 +25,13 @@ def _psql(sql):
     return result.stdout.strip()
 
 
+def _hash_secret(secret):
+    """Hash a client secret with argon2id via Python (for psql seeding)."""
+    from shomer.core.security import hash_password
+
+    return hash_password(secret)
+
+
 @given("an authenticated user with an OAuth2 client")
 def step_setup_oauth2_flow(context):
     """Register a verified user (via MailCatcher) and create an OAuth2 client.
@@ -61,3 +68,52 @@ def step_setup_oauth2_flow(context):
     )
 
     context.oauth2_client_id = "bdd-test-client"
+
+
+@given("a verified user and an OAuth2 client with all grants")
+def step_setup_oauth2_full(context):
+    """Create a verified user and a confidential OAuth2 client with all grant types.
+
+    Stores client_id and client_secret on context for token requests.
+    """
+    email = "token-bdd@example.com"
+    password = "securepassword123"
+
+    _psql(
+        "DELETE FROM users WHERE id IN "
+        "(SELECT user_id FROM user_emails WHERE email = 'token-bdd@example.com');"
+    )
+
+    register_and_verify_user(context, email, password)
+
+    secret = "bdd-test-secret-value"
+    secret_hash = _hash_secret(secret)
+
+    # Escape single quotes in the hash for SQL
+    escaped_hash = secret_hash.replace("'", "''")
+
+    _psql(
+        "INSERT INTO oauth2_clients "
+        "(id, client_id, client_secret_hash, client_name, client_type, "
+        "redirect_uris, grant_types, response_types, scopes, contacts, "
+        "token_endpoint_auth_method, is_active, created_at, updated_at) "
+        "VALUES ("
+        "gen_random_uuid(), 'bdd-full-client', "
+        f"'{escaped_hash}', "
+        "'BDD Full App', 'CONFIDENTIAL', "
+        "'[\"https://app.example.com/callback\"]'::jsonb, "
+        '\'["authorization_code", "client_credentials", "password"]\'::jsonb, '
+        "'[\"code\"]'::jsonb, "
+        '\'["openid", "profile", "email"]\'::jsonb, '
+        "'[]'::jsonb, "
+        "'CLIENT_SECRET_POST', true, NOW(), NOW()"
+        ") ON CONFLICT (client_id) DO UPDATE SET "
+        f"client_secret_hash = '{escaped_hash}', "
+        "grant_types = "
+        '\'["authorization_code", "client_credentials", "password"]\'::jsonb;'
+    )
+
+    context.oauth2_client_id = "bdd-full-client"
+    context.oauth2_client_secret = secret
+    context.oauth2_user_email = email
+    context.oauth2_user_password = password

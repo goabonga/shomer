@@ -37,6 +37,12 @@ def step_check_page_version(context):
     assert expected in body
 
 
+@when('I navigate to "{path}"')
+def step_navigate_to(context, path):
+    """Navigate the current page to a new path (preserves cookies/session)."""
+    context.page.goto(context.base_url + path)
+
+
 @when('I fill "{selector}" with "{value}"')
 def step_fill_input(context, selector, value):
     context.page.fill(selector, value)
