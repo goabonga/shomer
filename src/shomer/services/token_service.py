@@ -134,7 +134,7 @@ class TokenService:
         # Check not expired
         now = datetime.now(timezone.utc)
         expires_at = auth_code.expires_at
-        if expires_at.tzinfo is None:
+        if expires_at.tzinfo is None:  # pragma: no cover — SQLite compat
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at < now:
             raise TokenError("invalid_grant", "Authorization code expired")
