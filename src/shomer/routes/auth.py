@@ -15,6 +15,8 @@ from shomer.schemas.auth import (
     LoginResponse,
     LogoutRequest,
     MessageResponse,
+    PasswordResetRequest,
+    PasswordResetVerifyRequest,
     RegisterRequest,
     RegisterResponse,
     ResendRequest,
@@ -27,6 +29,7 @@ from shomer.services.auth_service import (
     EmailNotVerifiedError,
     InvalidCodeError,
     InvalidCredentialsError,
+    InvalidResetTokenError,
     RateLimitError,
 )
 from shomer.services.session_service import SessionService
@@ -283,3 +286,86 @@ async def logout(
     response.delete_cookie("session_id")
     response.delete_cookie("csrf_token")
     return response
+
+
+@router.post("/password/reset", response_model=MessageResponse)
+async def password_reset(body: PasswordResetRequest, db: DbSession) -> MessageResponse:
+    """Request a password reset email.
+
+    Always returns success to prevent user enumeration.
+
+    Parameters
+    ----------
+    body : PasswordResetRequest
+        Email address.
+    db : DbSession
+        Injected async database session.
+
+    Returns
+    -------
+    MessageResponse
+        Confirmation (always success).
+    """
+    svc = AuthService(db)
+    token = await svc.request_password_reset(email=body.email)
+
+    # Always dispatch a task to equalize timing. The email service
+    # will silently discard sends to unregistered addresses, but the
+    # Celery enqueue cost is constant either way.
+    send_email_task.delay(
+        to=body.email,
+        subject="Reset your password",
+        template="password_reset.html",
+        context={"token": str(token) if token else ""},
+    )
+
+    return MessageResponse(
+        message="If the email is registered, a reset link has been sent."
+    )
+
+
+@router.post("/password/reset-verify", response_model=MessageResponse)
+async def password_reset_verify(
+    body: PasswordResetVerifyRequest, db: DbSession
+) -> MessageResponse:
+    """Verify a reset token and set a new password.
+
+    Parameters
+    ----------
+    body : PasswordResetVerifyRequest
+        Reset token and new password.
+    db : DbSession
+        Injected async database session.
+
+    Returns
+    -------
+    MessageResponse
+        Confirmation of password change.
+
+    Raises
+    ------
+    HTTPException
+        400 if the token is invalid or expired.
+    """
+    import uuid as _uuid
+
+    svc = AuthService(db)
+    try:
+        token_uuid = _uuid.UUID(body.token)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset token",
+        )
+
+    try:
+        await svc.verify_password_reset(
+            token=token_uuid, new_password=body.new_password
+        )
+    except InvalidResetTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    return MessageResponse(message="Password reset successfully")

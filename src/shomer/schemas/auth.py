@@ -107,6 +107,33 @@ class LogoutRequest(BaseModel):
     logout_all: bool = False
 
 
+class PasswordResetRequest(BaseModel):
+    """Password reset request body.
+
+    Attributes
+    ----------
+    email : str
+        Email address to send the reset token to.
+    """
+
+    email: EmailStr
+
+
+class PasswordResetVerifyRequest(BaseModel):
+    """Password reset verification request body.
+
+    Attributes
+    ----------
+    token : str
+        UUID reset token from the email link.
+    new_password : str
+        New password (min 8 characters).
+    """
+
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class RegisterResponse(BaseModel):
     """Registration success response.
 
