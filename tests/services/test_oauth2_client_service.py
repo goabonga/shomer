@@ -297,6 +297,51 @@ class TestAuthenticateClient:
 
         asyncio.run(_run())
 
+    def test_none_method_confidential_raises(self) -> None:
+        """Confidential client with auth_method=NONE raises error."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            mock_client = MagicMock()
+            mock_client.client_id = "conf-none"
+            mock_client.client_type = ClientType.CONFIDENTIAL
+            mock_client.token_endpoint_auth_method = TokenEndpointAuthMethod.NONE
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_client
+            db.execute.return_value = result
+
+            svc = OAuth2ClientService(db)
+            with pytest.raises(InvalidClientError, match="only allowed for public"):
+                await svc.authenticate_client(body_client_id="conf-none")
+
+        asyncio.run(_run())
+
+    def test_missing_secret_raises(self) -> None:
+        """Secret-based auth without a secret raises error."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            mock_client = MagicMock()
+            mock_client.client_id = "no-secret"
+            mock_client.client_type = ClientType.CONFIDENTIAL
+            mock_client.token_endpoint_auth_method = (
+                TokenEndpointAuthMethod.CLIENT_SECRET_BASIC
+            )
+            mock_client.client_secret_hash = "$argon2id$hash"
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_client
+            db.execute.return_value = result
+
+            svc = OAuth2ClientService(db)
+            with pytest.raises(InvalidClientError, match="secret required"):
+                await svc.authenticate_client(
+                    body_client_id="no-secret", body_client_secret=None
+                )
+
+        asyncio.run(_run())
+
 
 class TestRotateSecret:
     """Tests for OAuth2ClientService.rotate_secret()."""
@@ -370,6 +415,21 @@ class TestRotateSecret:
             svc = OAuth2ClientService(db)
             with pytest.raises(InvalidClientError, match="public"):
                 await svc.rotate_secret("pub-client")
+
+        asyncio.run(_run())
+
+    def test_not_found_raises(self) -> None:
+        """Rotating a nonexistent client raises InvalidClientError."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            db.execute.return_value = result
+
+            svc = OAuth2ClientService(db)
+            with pytest.raises(InvalidClientError, match="not found"):
+                await svc.rotate_secret("nonexistent")
 
         asyncio.run(_run())
 

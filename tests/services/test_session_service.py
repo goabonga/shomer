@@ -296,3 +296,36 @@ class TestListActive:
             assert sessions == []
 
         asyncio.run(_run())
+
+
+class TestSessionValidateNaiveDatetime:
+    """Test session validation with naive (no-tzinfo) datetime."""
+
+    def test_valid_session_with_naive_datetime(self) -> None:
+        """Validate handles naive datetimes (SQLite compat)."""
+        import warnings
+
+        async def _run() -> None:
+            db = AsyncMock()
+            raw = uuid.uuid4().hex
+            thash = hashlib.sha256(raw.encode()).hexdigest()
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                naive_now = datetime.utcnow()  # noqa: DTZ003
+                naive_future = naive_now + timedelta(hours=24)
+
+            mock_session = MagicMock()
+            mock_session.user_id = uuid.uuid4()
+            mock_session.token_hash = thash
+            mock_session.expires_at = naive_future
+
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_session
+            db.execute.return_value = result
+
+            svc = SessionService(db)
+            found = await svc.validate(raw)
+            assert found is not None
+
+        asyncio.run(_run())
