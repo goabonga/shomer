@@ -134,6 +134,21 @@ class PasswordResetVerifyRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class PasswordChangeRequest(BaseModel):
+    """Password change request body.
+
+    Attributes
+    ----------
+    current_password : str
+        Current plain-text password.
+    new_password : str
+        New password (min 8 characters).
+    """
+
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class RegisterResponse(BaseModel):
     """Registration success response.
 

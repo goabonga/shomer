@@ -15,6 +15,7 @@ from shomer.schemas.auth import (
     LoginResponse,
     LogoutRequest,
     MessageResponse,
+    PasswordChangeRequest,
     PasswordResetRequest,
     PasswordResetVerifyRequest,
     RegisterRequest,
@@ -369,3 +370,61 @@ async def password_reset_verify(
         )
 
     return MessageResponse(message="Password reset successfully")
+
+
+@router.post("/password/change", response_model=MessageResponse)
+async def password_change(
+    body: PasswordChangeRequest, request: Request, db: DbSession
+) -> MessageResponse:
+    """Change the authenticated user's password.
+
+    Requires a valid session cookie.
+
+    Parameters
+    ----------
+    body : PasswordChangeRequest
+        Current and new passwords.
+    request : Request
+        Incoming request with session cookie.
+    db : DbSession
+        Injected async database session.
+
+    Returns
+    -------
+    MessageResponse
+        Confirmation of password change.
+
+    Raises
+    ------
+    HTTPException
+        401 if not authenticated or current password is wrong.
+    """
+    session_token = request.cookies.get("session_id")
+    if not session_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    svc_session = SessionService(db)
+    session = await svc_session.validate(session_token)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session",
+        )
+
+    svc = AuthService(db)
+    try:
+        await svc.change_password(
+            user_id=session.user_id,
+            current_password=body.current_password,
+            new_password=body.new_password,
+        )
+    except InvalidCredentialsError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect",
+        )
+
+    return MessageResponse(message="Password changed successfully")
