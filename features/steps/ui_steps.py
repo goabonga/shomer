@@ -35,6 +35,30 @@ def step_check_page_version(context):
     assert expected in body
 
 
+@when('I fill "{selector}" with "{value}"')
+def step_fill_input(context, selector, value):
+    context.page.fill(selector, value)
+
+
+@when('I click the "{text}" button')
+def step_click_button(context, text):
+    context.page.click(f"button:has-text('{text}')")
+    context.page.wait_for_load_state("networkidle")
+
+
+@when('I click the "{text}" link')
+def step_click_link(context, text):
+    context.page.click(f"a:has-text('{text}')")
+    context.page.wait_for_load_state("networkidle")
+
+
+@then('the page URL should contain "{text}"')
+def step_check_url(context, text):
+    assert text in context.page.url, (
+        f"URL '{context.page.url}' does not contain '{text}'"
+    )
+
+
 @then('I take a screenshot named "{name}"')
 def step_take_screenshot(context, name):
     SCREENSHOTS_DIR.mkdir(exist_ok=True)

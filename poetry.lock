@@ -2403,6 +2403,19 @@ files = [
 cli = ["click (>=5.0)"]
 
 [[package]]
+name = "python-multipart"
+version = "0.0.22"
+description = "A streaming multipart parser for Python"
+optional = true
+python-versions = ">=3.10"
+groups = ["main"]
+markers = "extra == \"server\""
+files = [
+    {file = "python_multipart-0.0.22-py3-none-any.whl", hash = "sha256:2b2cd894c83d21bf49d702499531c7bafd057d730c201782048f7945d82de155"},
+    {file = "python_multipart-0.0.22.tar.gz", hash = "sha256:7340bef99a7e0032613f56dc36027b959fd3b30a787ed62d310e951f7c3a3a58"},
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.2"
 description = "YAML parser and emitter for Python"
@@ -3258,10 +3271,10 @@ files = [
 ]
 
 [extras]
-server = ["alembic", "argon2-cffi", "asyncpg", "cryptography", "email-validator", "fastapi", "jinja2", "pyjwt", "sqlalchemy", "uvicorn"]
+server = ["alembic", "argon2-cffi", "asyncpg", "cryptography", "email-validator", "fastapi", "jinja2", "pyjwt", "python-multipart", "sqlalchemy", "uvicorn"]
 worker = ["celery"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "da9bdca310b22669ec80329f26786164c81dec2f04ddadf364d37a58e3a96a55"
+content-hash = "58ad36cba1f4e1172619af5d8e7466f2ed5dc5619e5a31aeedcca645c3991fe4"
