@@ -188,12 +188,23 @@ class AuthorizeService:
         if not state:
             raise AuthorizeError("invalid_request", "state is required")
 
-        # PKCE validation (enforcement for public clients is in #38/#39)
-        if code_challenge and code_challenge_method not in ("S256", "plain", None):
+        # PKCE validation per RFC 7636
+        from shomer.models.oauth2_client import ClientType
+
+        if client.client_type == ClientType.PUBLIC and not code_challenge:
             raise AuthorizeError(
                 "invalid_request",
-                f"Unsupported code_challenge_method: {code_challenge_method}",
+                "code_challenge is required for public clients",
             )
+        if code_challenge:
+            if code_challenge_method not in ("S256", "plain", None):
+                raise AuthorizeError(
+                    "invalid_request",
+                    f"Unsupported code_challenge_method: {code_challenge_method}",
+                )
+            # Default to S256 when method is not specified
+            if code_challenge_method is None:
+                code_challenge_method = "S256"
 
         return AuthorizeRequest(
             client_id=client_id,

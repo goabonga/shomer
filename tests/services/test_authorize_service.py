@@ -398,3 +398,110 @@ class TestValidateRequestEdgeCases:
                 )
 
         asyncio.run(_run())
+
+    def test_public_client_requires_pkce(self) -> None:
+        """Public client without code_challenge raises error."""
+        from shomer.models.oauth2_client import ClientType
+
+        async def _run() -> None:
+            db = AsyncMock()
+            mock_client = _make_mock_client()
+            mock_client.client_type = ClientType.PUBLIC
+
+            svc = AuthorizeService.__new__(AuthorizeService)
+            svc.session = db
+            svc.client_service = MagicMock()
+            svc.client_service.get_by_client_id = AsyncMock(return_value=mock_client)
+            svc.client_service.validate_redirect_uri = MagicMock()
+
+            with pytest.raises(AuthorizeError, match="code_challenge is required"):
+                await svc.validate_request(
+                    client_id="test-client",
+                    redirect_uri="https://app.example.com/callback",
+                    response_type="code",
+                    scope="openid",
+                    state="xyz",
+                )
+
+        asyncio.run(_run())
+
+    def test_public_client_with_pkce_succeeds(self) -> None:
+        """Public client with code_challenge succeeds."""
+        from shomer.models.oauth2_client import ClientType
+
+        async def _run() -> None:
+            db = AsyncMock()
+            mock_client = _make_mock_client()
+            mock_client.client_type = ClientType.PUBLIC
+
+            svc = AuthorizeService.__new__(AuthorizeService)
+            svc.session = db
+            svc.client_service = MagicMock()
+            svc.client_service.get_by_client_id = AsyncMock(return_value=mock_client)
+            svc.client_service.validate_redirect_uri = MagicMock()
+
+            req = await svc.validate_request(
+                client_id="test-client",
+                redirect_uri="https://app.example.com/callback",
+                response_type="code",
+                scope="openid",
+                state="xyz",
+                code_challenge="challenge123",
+                code_challenge_method="S256",
+            )
+            assert req.code_challenge == "challenge123"
+            assert req.code_challenge_method == "S256"
+
+        asyncio.run(_run())
+
+    def test_confidential_client_pkce_optional(self) -> None:
+        """Confidential client without code_challenge succeeds."""
+        from shomer.models.oauth2_client import ClientType
+
+        async def _run() -> None:
+            db = AsyncMock()
+            mock_client = _make_mock_client()
+            mock_client.client_type = ClientType.CONFIDENTIAL
+
+            svc = AuthorizeService.__new__(AuthorizeService)
+            svc.session = db
+            svc.client_service = MagicMock()
+            svc.client_service.get_by_client_id = AsyncMock(return_value=mock_client)
+            svc.client_service.validate_redirect_uri = MagicMock()
+
+            req = await svc.validate_request(
+                client_id="test-client",
+                redirect_uri="https://app.example.com/callback",
+                response_type="code",
+                scope="openid",
+                state="xyz",
+            )
+            assert req.code_challenge is None
+
+        asyncio.run(_run())
+
+    def test_code_challenge_method_defaults_to_s256(self) -> None:
+        """code_challenge without method defaults to S256."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            mock_client = _make_mock_client()
+
+            svc = AuthorizeService.__new__(AuthorizeService)
+            svc.session = db
+            svc.client_service = MagicMock()
+            svc.client_service.get_by_client_id = AsyncMock(return_value=mock_client)
+            svc.client_service.validate_redirect_uri = MagicMock()
+
+            req = await svc.validate_request(
+                client_id="test-client",
+                redirect_uri="https://app.example.com/callback",
+                response_type="code",
+                scope="openid",
+                state="xyz",
+                code_challenge="challenge123",
+                code_challenge_method=None,
+            )
+            assert req.code_challenge_method == "S256"
+
+        asyncio.run(_run())
