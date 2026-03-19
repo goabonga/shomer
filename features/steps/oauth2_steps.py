@@ -70,6 +70,27 @@ def step_setup_oauth2_flow(context):
     context.oauth2_client_id = "bdd-test-client"
 
 
+@given("a public OAuth2 client")
+def step_setup_public_client(context):
+    """Create a public OAuth2 client (no secret, auth_method=NONE)."""
+    _psql(
+        "INSERT INTO oauth2_clients "
+        "(id, client_id, client_name, client_type, "
+        "redirect_uris, grant_types, response_types, scopes, contacts, "
+        "token_endpoint_auth_method, is_active, created_at, updated_at) "
+        "VALUES ("
+        "gen_random_uuid(), 'bdd-public-client', 'BDD Public App', 'PUBLIC', "
+        "'[\"https://app.example.com/callback\"]'::jsonb, "
+        "'[\"authorization_code\"]'::jsonb, "
+        "'[\"code\"]'::jsonb, "
+        '\'["openid", "profile"]\'::jsonb, '
+        "'[]'::jsonb, "
+        "'NONE', true, NOW(), NOW()"
+        ") ON CONFLICT (client_id) DO NOTHING;"
+    )
+    context.oauth2_client_id = "bdd-public-client"
+
+
 @given("a verified user and an OAuth2 client with all grants")
 def step_setup_oauth2_full(context):
     """Create a verified user and a confidential OAuth2 client with all grant types.
