@@ -149,7 +149,7 @@ async def login_submit(
     db: DbSession,
     email: str = Form(...),
     password: str = Form(...),
-    next: str = "",
+    next: str = Form(""),
 ) -> Any:
     """Handle login form submission."""
     from shomer.core.settings import get_settings
@@ -157,7 +157,7 @@ async def login_submit(
 
     svc = AuthService(db)
     try:
-        user, session = await svc.login(
+        user, session, raw_token = await svc.login(
             email=email,
             password=password,
             user_agent=request.headers.get("user-agent"),
@@ -174,14 +174,16 @@ async def login_submit(
             request, "auth/login.html", {"error": "Email not verified", "next": next}
         )
 
-    redirect_url = next or "/"
+    from urllib.parse import unquote
+
+    redirect_url = unquote(next) if next else "/"
     response = RedirectResponse(url=redirect_url, status_code=303)
 
     settings = get_settings()
     policy = get_cookie_policy(settings)
     response.set_cookie(
         key="session_id",
-        value=session.token_hash,
+        value=raw_token,
         httponly=policy.httponly,
         secure=policy.secure,
         samesite=policy.samesite,

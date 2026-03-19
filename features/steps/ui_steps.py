@@ -23,8 +23,10 @@ def step_check_page_title(context, title):
 
 @then('the page should contain "{text}"')
 def step_check_page_content(context, text):
-    assert context.page.text_content("body") is not None
-    assert text in context.page.text_content("body")
+    context.page.wait_for_load_state("domcontentloaded")
+    body = context.page.text_content("body")
+    assert body is not None, "Page body is None"
+    assert text in body, f"'{text}' not found in page body"
 
 
 @then("the page should contain the current version")
@@ -43,7 +45,8 @@ def step_fill_input(context, selector, value):
 @when('I click the "{text}" button')
 def step_click_button(context, text):
     context.page.click(f"button:has-text('{text}')")
-    context.page.wait_for_load_state("networkidle")
+    context.page.wait_for_load_state("load", timeout=10000)
+    context.page.wait_for_load_state("networkidle", timeout=10000)
 
 
 @when('I click the "{text}" link')
