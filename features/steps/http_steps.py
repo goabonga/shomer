@@ -3,6 +3,7 @@
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from behave import given, then, when
@@ -52,6 +53,32 @@ def step_post_request(context, path):
 def step_post_request_with_json(context, path):
     data = json.loads(context.text)
     _send(context, "POST", path, data=data)
+
+
+def _send_form(context, path, form_data):
+    """Send a form-encoded POST request."""
+    url = context.base_url + path
+    body = urllib.parse.urlencode(form_data).encode()
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        context.response = urllib.request.urlopen(req, timeout=10)
+        context.response_status = context.response.status
+        context.response_body = context.response.read().decode()
+    except urllib.error.HTTPError as e:
+        context.response = e
+        context.response_status = e.code
+        context.response_body = e.read().decode()
+    except urllib.error.URLError as e:
+        context.response = None
+        context.response_status = 0
+        context.response_body = str(e)
+
+
+@when('I send a form POST to "{path}" with')
+def step_post_form(context, path):
+    form_data = json.loads(context.text)
+    _send_form(context, path, form_data)
 
 
 @when('I send a DELETE request to "{path}"')
