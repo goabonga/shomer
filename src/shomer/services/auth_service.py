@@ -85,16 +85,20 @@ class AuthService:
         email: str,
         password: str,
         username: str | None = None,
-    ) -> tuple[User, str]:
+    ) -> tuple[User | None, str]:
         """Register a new user.
 
         Creates the user, hashes the password, and generates a
         verification code for the email.
 
+        To prevent user enumeration, this method never raises on
+        duplicate emails. Instead it performs a dummy Argon2id hash
+        (timing equalization) and returns ``(None, "")``.
+
         Parameters
         ----------
         email : str
-            Email address (must be unique).
+            Email address.
         password : str
             Plain-text password.
         username : str or None
@@ -102,18 +106,16 @@ class AuthService:
 
         Returns
         -------
-        tuple[User, str]
-            The created user and the 6-digit verification code.
-
-        Raises
-        ------
-        DuplicateEmailError
-            If the email is already registered.
+        tuple[User | None, str]
+            The created user and the 6-digit verification code,
+            or ``(None, "")`` if the email already exists.
         """
         # Check uniqueness
         existing = await self._email_exists(email)
         if existing:
-            raise DuplicateEmailError(f"Email already registered: {email}")
+            # Dummy hash to equalize timing with the real path
+            hash_password("dummy-password")
+            return None, ""
 
         # Hash password and create user
         password_hash = hash_password(password)

@@ -16,7 +16,7 @@ Feature: Authentication UI pages
     And the page should contain "Check your email"
     And I take a screenshot named "register_success"
 
-  Scenario: Registration with duplicate email shows error
+  Scenario: Registration with duplicate email still redirects to verify (anti-enumeration)
     When I open the page "/ui/register"
     And I fill "input[name='email']" with "dupe-ui@example.com"
     And I fill "input[name='password']" with "securepassword123"
@@ -26,8 +26,8 @@ Feature: Authentication UI pages
     And I fill "input[name='email']" with "dupe-ui@example.com"
     And I fill "input[name='password']" with "anotherpassword1"
     And I click the "Register" button
-    Then the page should contain "already registered"
-    And I take a screenshot named "register_duplicate"
+    Then the page should contain "Verify Email"
+    And I take a screenshot named "register_duplicate_safe"
 
   Scenario: Verification page renders correctly
     When I open the page "/ui/verify"

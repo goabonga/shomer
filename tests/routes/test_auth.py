@@ -112,8 +112,8 @@ class TestRegisterEndpoint:
                         "password": "anotherpassword",
                     },
                 )
-                assert resp.status_code == 409
-                assert "already registered" in resp.json()["detail"]
+                assert resp.status_code == 201
+                assert "Registration successful" in resp.json()["message"]
 
         asyncio.run(_run())
 

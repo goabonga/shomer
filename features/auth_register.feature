@@ -17,7 +17,7 @@ Feature: User registration
     Then the response status code should be 201
     And the response body should contain "user_id"
 
-  Scenario: Duplicate email returns 409
+  Scenario: Duplicate email still returns 201 (anti-enumeration)
     Given I have a JSON payload
       """
       {"email": "duplicate@example.com", "password": "securepassword123"}
@@ -29,8 +29,8 @@ Feature: User registration
       {"email": "duplicate@example.com", "password": "anotherpassword1"}
       """
     When I send a POST request to "/auth/register"
-    Then the response status code should be 409
-    And the response body should contain "already registered"
+    Then the response status code should be 201
+    And the response body should contain "Registration successful"
 
   Scenario: Weak password returns 422
     When I send a POST request to "/auth/register" with JSON
