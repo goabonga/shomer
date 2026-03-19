@@ -9,6 +9,7 @@ can resolve all relationships at configuration time.
 
 from shomer.models.access_token import AccessToken as AccessToken
 from shomer.models.jwk import JWK as JWK
+from shomer.models.oauth2_client import OAuth2Client as OAuth2Client
 from shomer.models.password_reset_token import PasswordResetToken as PasswordResetToken
 from shomer.models.refresh_token import RefreshToken as RefreshToken
 from shomer.models.session import Session as Session
