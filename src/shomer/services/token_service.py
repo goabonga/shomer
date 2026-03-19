@@ -458,6 +458,8 @@ class TokenService:
     def _verify_pkce(code_verifier: str, code_challenge: str, method: str) -> bool:
         """Verify PKCE code_verifier against code_challenge.
 
+        Delegates to :func:`shomer.services.pkce_service.verify_code_challenge`.
+
         Parameters
         ----------
         code_verifier : str
@@ -471,12 +473,9 @@ class TokenService:
         -------
         bool
         """
-        import base64
+        from shomer.services.pkce_service import verify_code_challenge
 
-        if method == "plain":
-            return code_verifier == code_challenge
-        if method == "S256":
-            digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
-            computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-            return computed == code_challenge
-        return False
+        try:
+            return verify_code_challenge(code_verifier, code_challenge, method)
+        except ValueError:
+            return False
