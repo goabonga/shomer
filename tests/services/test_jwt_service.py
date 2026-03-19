@@ -250,3 +250,37 @@ class TestCreateIdToken:
             assert decoded["name"] == "Test"
 
         asyncio.run(_run())
+
+
+class TestJWTServiceExtraClaims:
+    """Test JWTService.create_access_token with extra_claims."""
+
+    def test_create_access_token_with_extra_claims(self) -> None:
+        """create_access_token includes scope and extra claims."""
+        from unittest.mock import patch as _patch
+
+        from shomer.services.jwt_service import JWTService
+
+        async def _run() -> None:
+            mock_settings = MagicMock()
+            mock_settings.jwt_issuer = "https://test.local"
+            mock_settings.jwt_access_token_exp = 3600
+            mock_db = AsyncMock()
+            mock_enc = MagicMock()
+
+            svc = JWTService(mock_settings, mock_db, mock_enc)
+            with _patch.object(svc, "_sign", new_callable=AsyncMock) as mock_sign:
+                mock_sign.return_value = "signed-jwt"
+                result = await svc.create_access_token(
+                    sub="user-1",
+                    aud="client-1",
+                    scopes=["openid", "profile"],
+                    extra_claims={"email": "test@example.com"},
+                )
+                assert result == "signed-jwt"
+                call_kwargs = mock_sign.call_args
+                extra = call_kwargs[1].get("extra_claims", {})
+                assert extra.get("scope") == "openid profile"
+                assert extra.get("email") == "test@example.com"
+
+        asyncio.run(_run())

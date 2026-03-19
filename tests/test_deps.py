@@ -85,3 +85,30 @@ class TestTypingAliases:
     @staticmethod
     def _tenant_func(tenant: TenantId) -> None:
         pass
+
+
+class TestGetDbRollback:
+    """Test get_db exception rollback path."""
+
+    def test_rollback_on_commit_failure(self) -> None:
+        """get_db rolls back when commit raises."""
+        from unittest.mock import AsyncMock, patch
+
+        async def _run() -> None:
+            with patch("shomer.deps.async_session") as mock_factory:
+                mock_session = AsyncMock()
+                mock_cm = AsyncMock()
+                mock_cm.__aenter__.return_value = mock_session
+                mock_cm.__aexit__.return_value = False
+                mock_factory.return_value = mock_cm
+                mock_session.commit.side_effect = RuntimeError("db error")
+
+                import pytest
+
+                with pytest.raises(RuntimeError, match="db error"):
+                    async for _s in get_db():
+                        pass
+
+                mock_session.rollback.assert_awaited_once()
+
+        asyncio.run(_run())
