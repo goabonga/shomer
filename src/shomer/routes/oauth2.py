@@ -286,13 +286,15 @@ async def token(
     code: str = Form(""),
     redirect_uri: str = Form(""),
     scope: str = Form(""),
+    username: str = Form(""),
+    password: str = Form(""),
     client_id: str = Form(""),
     client_secret: str = Form(""),
     code_verifier: str = Form(""),
 ) -> JSONResponse:
-    """OAuth2 token endpoint per RFC 6749 §4.1.3 and §4.4.
+    """OAuth2 token endpoint per RFC 6749 §4.1.3, §4.3 and §4.4.
 
-    Supports ``authorization_code`` and ``client_credentials`` grants.
+    Supports ``authorization_code``, ``client_credentials`` and ``password`` grants.
 
     Parameters
     ----------
@@ -301,13 +303,17 @@ async def token(
     db : DbSession
         Injected async database session.
     grant_type : str
-        ``authorization_code`` or ``client_credentials``.
+        ``authorization_code``, ``client_credentials`` or ``password``.
     code : str
         The authorization code (authorization_code grant only).
     redirect_uri : str
         Must match the original redirect_uri (authorization_code grant only).
     scope : str
-        Requested scopes (client_credentials grant).
+        Requested scopes (client_credentials and password grants).
+    username : str
+        Resource owner email (password grant).
+    password : str
+        Resource owner password (password grant).
     client_id : str
         Client identifier (from POST body or Basic auth).
     client_secret : str
@@ -320,7 +326,7 @@ async def token(
     JSONResponse
         Token response per RFC 6749 §5.1 or error per §5.2.
     """
-    supported_grants = {"authorization_code", "client_credentials"}
+    supported_grants = {"authorization_code", "client_credentials", "password"}
     if grant_type not in supported_grants:
         return JSONResponse(
             status_code=400,
@@ -356,6 +362,11 @@ async def token(
 
     if grant_type == "client_credentials":
         return await _handle_client_credentials(token_svc, authenticated_client, scope)
+
+    if grant_type == "password":
+        return await _handle_password_grant(
+            token_svc, authenticated_client, username, password, scope
+        )
 
     # authorization_code grant
     try:
@@ -432,6 +443,74 @@ async def _handle_client_credentials(
             client_id=client.client_id,
             client_scopes=client.scopes or [],
             requested_scope=scope or None,
+        )
+    except TokenError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": exc.error,
+                "error_description": exc.description,
+            },
+        )
+
+    return JSONResponse(
+        content=response.to_dict(),
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+
+
+async def _handle_password_grant(
+    token_svc: TokenService,
+    client: Any,
+    username: str,
+    password: str,
+    scope: str,
+) -> JSONResponse:
+    """Handle resource owner password credentials grant per RFC 6749 §4.3.
+
+    Parameters
+    ----------
+    token_svc : TokenService
+        Token service instance.
+    client : OAuth2Client
+        The authenticated client.
+    username : str
+        Resource owner email.
+    password : str
+        Resource owner password.
+    scope : str
+        Requested scopes (space-separated).
+
+    Returns
+    -------
+    JSONResponse
+        Token response or error.
+    """
+    # Check grant_type is allowed for this client
+    if "password" not in (client.grant_types or []):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "unauthorized_client",
+                "error_description": ("Client is not authorized for password grant"),
+            },
+        )
+
+    if not username or not password:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_request",
+                "error_description": "username and password are required",
+            },
+        )
+
+    try:
+        response = await token_svc.issue_password_grant(
+            username=username,
+            password=password,
+            client_id=client.client_id,
+            scope=scope or None,
         )
     except TokenError as exc:
         return JSONResponse(
