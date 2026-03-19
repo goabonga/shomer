@@ -61,9 +61,10 @@ argon2-cffi = {version = "*", optional = true}
 cryptography = {version = "*", optional = true}
 pyjwt = {version = "*", optional = true}
 email-validator = {version = "*", optional = true}
+python-multipart = {version = "*", optional = true}
 
 [tool.poetry.extras]
-server = ["fastapi", "uvicorn", "jinja2", "sqlalchemy", "asyncpg", "alembic", "argon2-cffi", "cryptography", "pyjwt", "email-validator"]
+server = ["fastapi", "uvicorn", "jinja2", "sqlalchemy", "asyncpg", "alembic", "argon2-cffi", "cryptography", "pyjwt", "email-validator", "python-multipart"]
 worker = ["celery"]
 
 [tool.poetry.group.dev]

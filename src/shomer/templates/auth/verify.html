@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Verify Email — Shomer{% endblock %}
+{% block content %}
+<h1>Verify Email</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+<form method="post" action="/ui/verify">
+    <input type="email" name="email" placeholder="Email" value="{{ email or '' }}" required>
+    <input type="text" name="code" placeholder="6-digit code" required maxlength="6" pattern="[0-9]{6}">
+    <button type="submit">Verify</button>
+</form>
+<form method="post" action="/ui/verify/resend" style="margin-top: 12px;">
+    <input type="hidden" name="email" value="{{ email or '' }}">
+    <button type="submit">Resend Code</button>
+</form>
+{% endblock %}
