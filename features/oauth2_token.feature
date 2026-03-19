@@ -36,3 +36,30 @@ Feature: OAuth2 token endpoint
     Then the response status code should be 401
     And the response should have JSON key "error"
     And the response should have JSON key "error_description"
+
+  # --- client_credentials grant ---
+
+  Scenario: client_credentials without client auth returns 401
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "client_credentials"}
+      """
+    Then the response status code should be 401
+    And the response body should contain "invalid_client"
+
+  Scenario: client_credentials with unknown client returns 401
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "client_credentials", "client_id": "unknown", "client_secret": "wrong"}
+      """
+    Then the response status code should be 401
+    And the response body should contain "invalid_client"
+
+  Scenario: client_credentials error uses RFC 6749 format
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "client_credentials", "client_id": "no-such-client", "client_secret": "x"}
+      """
+    Then the response status code should be 401
+    And the response should have JSON key "error"
+    And the response should have JSON key "error_description"

@@ -50,9 +50,10 @@ class TestAccessTokenModel:
         col = AccessToken.__table__.c.user_id
         assert col.index is True
 
-    def test_user_id_not_nullable(self) -> None:
+    def test_user_id_nullable(self) -> None:
+        """user_id is nullable for client_credentials grants."""
         col = AccessToken.__table__.c.user_id
-        assert col.nullable is False
+        assert col.nullable is True
 
     def test_user_id_foreign_key(self) -> None:
         col = AccessToken.__table__.c.user_id
