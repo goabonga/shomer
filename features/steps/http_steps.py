@@ -17,6 +17,10 @@ def _send(context, method, path, data=None):
     if data is not None:
         body = json.dumps(data).encode()
         headers["Content-Type"] = "application/json"
+    # Attach Bearer token if available
+    bearer = getattr(context, "bearer_token", None)
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
     # Attach session cookie if available
     cookie = getattr(context, "session_cookie", None)
     if cookie:
@@ -122,6 +126,25 @@ def step_logged_in_as(context, email, password):
     assert context.response_status == 200, (
         f"Login failed with status {context.response_status}: {context.response_body}"
     )
+
+
+@given("I have a Bearer token for the OAuth2 client")
+def step_obtain_bearer_token(context):
+    """Obtain a Bearer token via password grant for the BDD test user/client."""
+    form_data = {
+        "grant_type": "password",
+        "username": context.oauth2_user_email,
+        "password": context.oauth2_user_password,
+        "client_id": context.oauth2_client_id,
+        "client_secret": context.oauth2_client_secret,
+        "scope": "openid profile email",
+    }
+    _send_form(context, "/oauth2/token", form_data)
+    assert context.response_status == 200, (
+        f"Token request failed: {context.response_body}"
+    )
+    token_data = json.loads(context.response_body)
+    context.bearer_token = token_data["access_token"]
 
 
 @when('I send a DELETE request to "{path}"')
