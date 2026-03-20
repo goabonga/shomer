@@ -496,7 +496,9 @@ class TestRevokeEndpoint:
 
             with (
                 patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls,
-                patch("shomer.services.revocation_service.RevocationService") as mock_rev_cls,
+                patch(
+                    "shomer.services.revocation_service.RevocationService"
+                ) as mock_rev_cls,
             ):
                 mock_client = MagicMock()
                 mock_client.client_id = "c"
@@ -531,6 +533,60 @@ class TestRevokeEndpoint:
                 db = AsyncMock()
 
                 resp = await revoke(req, db, "tok", "", "", "")
+                assert resp.status_code == 401
+
+        asyncio.run(_run())
+
+
+class TestIntrospectEndpoint:
+    """Unit tests for POST /oauth2/introspect."""
+
+    def test_introspect_returns_result(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import introspect
+
+            with (
+                patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls,
+                patch(
+                    "shomer.services.introspection_service.IntrospectionService"
+                ) as mock_intro_cls,
+            ):
+                mock_client = MagicMock()
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.return_value = mock_client
+                mock_cls.return_value = mock_svc
+
+                mock_intro = AsyncMock()
+                mock_intro.introspect.return_value = {"active": True, "scope": "openid"}
+                mock_intro_cls.return_value = mock_intro
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await introspect(req, db, "tok", "access_token", "c", "s")
+                assert resp.status_code == 200
+                import json
+
+                body = json.loads(bytes(resp.body))
+                assert body["active"] is True
+
+        asyncio.run(_run())
+
+    def test_introspect_invalid_client(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import introspect
+
+            with patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.side_effect = InvalidClientError("bad")
+                mock_cls.return_value = mock_svc
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await introspect(req, db, "tok", "", "", "")
                 assert resp.status_code == 401
 
         asyncio.run(_run())

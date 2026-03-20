@@ -756,3 +756,67 @@ async def revoke(
 
     # RFC 7009 §2.1: always return 200
     return JSONResponse(content={}, status_code=200)
+
+
+@router.post("/introspect")
+async def introspect(
+    request: Request,
+    db: DbSession,
+    token: str = Form(...),
+    token_type_hint: str = Form(""),
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+) -> JSONResponse:
+    """Introspect a token per RFC 7662.
+
+    Returns ``active: true`` with metadata for valid tokens,
+    or ``active: false`` for invalid/expired/revoked tokens.
+
+    Parameters
+    ----------
+    request : Request
+        Incoming request (for Authorization header).
+    db : DbSession
+        Database session.
+    token : str
+        The token to introspect.
+    token_type_hint : str
+        ``access_token`` or ``refresh_token`` (optional).
+    client_id : str
+        Client identifier.
+    client_secret : str
+        Client secret.
+
+    Returns
+    -------
+    JSONResponse
+        RFC 7662 introspection response.
+    """
+    # Authenticate client
+    client_svc = OAuth2ClientService(db)
+    auth_header = request.headers.get("authorization")
+    try:
+        await client_svc.authenticate_client(
+            authorization_header=auth_header,
+            body_client_id=client_id or None,
+            body_client_secret=client_secret or None,
+        )
+    except InvalidClientError as exc:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "invalid_client",
+                "error_description": str(exc),
+            },
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    from shomer.services.introspection_service import IntrospectionService
+
+    svc = IntrospectionService(db)
+    result = await svc.introspect(
+        token=token,
+        token_type_hint=token_type_hint or None,
+    )
+
+    return JSONResponse(content=result)
