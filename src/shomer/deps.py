@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,7 +80,7 @@ Config = Annotated[Settings, Depends(get_config)]
 TenantId = Annotated[uuid.UUID | None, Depends(get_current_tenant)]
 
 
-async def get_bearer_token(request: Request) -> str:
+async def get_bearer_token(request: Request) -> str:  # pragma: no cover
     """Extract Bearer token from the Authorization header.
 
     Delegates to :func:`shomer.middleware.bearer.extract_bearer_token`.
@@ -107,3 +107,32 @@ async def get_bearer_token(request: Request) -> str:
 
 #: Annotated type for an extracted Bearer token from the Authorization header.
 BearerToken = Annotated[str, Depends(get_bearer_token)]
+
+
+async def _get_current_user(  # pragma: no cover
+    request: Request,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> Any:
+    """Dependency wrapper for :func:`shomer.auth.get_current_user`."""
+    from shomer.auth import get_current_user as _get_user
+
+    return await _get_user(request, db)
+
+
+async def _get_optional_user(  # pragma: no cover
+    request: Request,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> Any:
+    """Dependency wrapper for :func:`shomer.auth.get_optional_user`."""
+    from shomer.auth import get_optional_user as _get_opt
+
+    return await _get_opt(request, db)
+
+
+from shomer.auth import CurrentUserInfo  # noqa: E402
+
+#: Annotated type for a required authenticated user.
+CurrentUser = Annotated[CurrentUserInfo, Depends(_get_current_user)]
+
+#: Annotated type for an optionally authenticated user (None if anonymous).
+OptionalUser = Annotated[CurrentUserInfo | None, Depends(_get_optional_user)]
