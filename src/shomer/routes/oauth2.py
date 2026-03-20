@@ -378,11 +378,13 @@ async def token(
     password: str = Form(""),
     client_id: str = Form(""),
     client_secret: str = Form(""),
+    refresh_token: str = Form(""),
     code_verifier: str = Form(""),
 ) -> JSONResponse:
-    """OAuth2 token endpoint per RFC 6749 §4.1.3, §4.3 and §4.4.
+    """OAuth2 token endpoint per RFC 6749 §4.1.3, §4.3, §4.4 and §6.
 
-    Supports ``authorization_code``, ``client_credentials`` and ``password`` grants.
+    Supports ``authorization_code``, ``client_credentials``, ``password``
+    and ``refresh_token`` grants.
 
     Parameters
     ----------
@@ -391,7 +393,8 @@ async def token(
     db : DbSession
         Injected async database session.
     grant_type : str
-        ``authorization_code``, ``client_credentials`` or ``password``.
+        ``authorization_code``, ``client_credentials``, ``password``
+        or ``refresh_token``.
     code : str
         The authorization code (authorization_code grant only).
     redirect_uri : str
@@ -406,6 +409,8 @@ async def token(
         Client identifier (from POST body or Basic auth).
     client_secret : str
         Client secret (from POST body or Basic auth).
+    refresh_token : str
+        The refresh token (refresh_token grant only).
     code_verifier : str
         PKCE code verifier (authorization_code grant only).
 
@@ -414,7 +419,12 @@ async def token(
     JSONResponse
         Token response per RFC 6749 §5.1 or error per §5.2.
     """
-    supported_grants = {"authorization_code", "client_credentials", "password"}
+    supported_grants = {
+        "authorization_code",
+        "client_credentials",
+        "password",
+        "refresh_token",
+    }
     if grant_type not in supported_grants:
         return JSONResponse(
             status_code=400,
@@ -454,6 +464,11 @@ async def token(
     if grant_type == "password":
         return await _handle_password_grant(
             token_svc, authenticated_client, username, password, scope
+        )
+
+    if grant_type == "refresh_token":
+        return await _handle_refresh_token(
+            token_svc, authenticated_client, refresh_token
         )
 
     # authorization_code grant
@@ -599,6 +614,68 @@ async def _handle_password_grant(
             password=password,
             client_id=client.client_id,
             scope=scope or None,
+        )
+    except TokenError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": exc.error,
+                "error_description": exc.description,
+            },
+        )
+
+    return JSONResponse(
+        content=response.to_dict(),
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+
+
+async def _handle_refresh_token(
+    token_svc: TokenService,
+    client: Any,
+    refresh_token: str,
+) -> JSONResponse:
+    """Handle refresh_token grant per RFC 6749 §6.
+
+    Parameters
+    ----------
+    token_svc : TokenService
+        Token service instance.
+    client : OAuth2Client
+        The authenticated client.
+    refresh_token : str
+        The refresh token value.
+
+    Returns
+    -------
+    JSONResponse
+        Token response or error.
+    """
+    if not refresh_token:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_request",
+                "error_description": "refresh_token is required",
+            },
+        )
+
+    # Check grant_type is allowed for this client
+    if "refresh_token" not in (client.grant_types or []):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "unauthorized_client",
+                "error_description": (
+                    "Client is not authorized for refresh_token grant"
+                ),
+            },
+        )
+
+    try:
+        response = await token_svc.rotate_refresh_token(
+            refresh_token=refresh_token,
+            client_id=client.client_id,
         )
     except TokenError as exc:
         return JSONResponse(
