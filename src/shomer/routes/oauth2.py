@@ -690,3 +690,69 @@ async def _handle_refresh_token(
         content=response.to_dict(),
         headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
     )
+
+
+@router.post("/revoke")
+async def revoke(
+    request: Request,
+    db: DbSession,
+    token: str = Form(...),
+    token_type_hint: str = Form(""),
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+) -> JSONResponse:
+    """Revoke a token per RFC 7009.
+
+    Always returns 200 OK, even if the token is unknown or already
+    revoked (no information leakage).
+
+    Parameters
+    ----------
+    request : Request
+        Incoming request (for Authorization header).
+    db : DbSession
+        Database session.
+    token : str
+        The token to revoke.
+    token_type_hint : str
+        ``access_token`` or ``refresh_token`` (optional).
+    client_id : str
+        Client identifier.
+    client_secret : str
+        Client secret.
+
+    Returns
+    -------
+    JSONResponse
+        Always 200 OK.
+    """
+    # Authenticate client
+    client_svc = OAuth2ClientService(db)
+    auth_header = request.headers.get("authorization")
+    try:
+        authenticated_client = await client_svc.authenticate_client(
+            authorization_header=auth_header,
+            body_client_id=client_id or None,
+            body_client_secret=client_secret or None,
+        )
+    except InvalidClientError as exc:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "invalid_client",
+                "error_description": str(exc),
+            },
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    from shomer.services.revocation_service import RevocationService
+
+    svc = RevocationService(db)
+    await svc.revoke(
+        token=token,
+        token_type_hint=token_type_hint or None,
+        client_id=authenticated_client.client_id,
+    )
+
+    # RFC 7009 §2.1: always return 200
+    return JSONResponse(content={}, status_code=200)
