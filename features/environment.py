@@ -14,12 +14,16 @@ MAILCATCHER_URL = os.getenv("MAILCATCHER_URL", "http://localhost:1080")
 
 
 def before_scenario(context, scenario):
-    """Clear MailCatcher inbox before each scenario."""
+    """Clear state before each scenario."""
+    # Clear MailCatcher inbox
     try:
         req = urllib.request.Request(MAILCATCHER_URL + "/messages", method="DELETE")
         urllib.request.urlopen(req, timeout=2)
     except Exception:
         pass
+    # Clear auth state from previous scenarios
+    context.bearer_token = None
+    context.session_cookie = None
 
 
 def before_all(context):
