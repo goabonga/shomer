@@ -75,6 +75,19 @@ def step_post_request_with_json(context, path):
     _send(context, "POST", path, data=data)
 
 
+@when('I send a PUT request to "{path}"')
+def step_put_request(context, path):
+    data = getattr(context, "json_payload", None)
+    _send(context, "PUT", path, data=data)
+    context.json_payload = None
+
+
+@when('I send a PUT request to "{path}" with JSON')
+def step_put_request_with_json(context, path):
+    data = json.loads(context.text)
+    _send(context, "PUT", path, data=data)
+
+
 def _send_form(context, path, form_data):
     """Send a form-encoded POST request."""
     url = context.base_url + path
