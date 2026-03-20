@@ -5,7 +5,7 @@
 
 import asyncio
 import inspect
-from typing import get_type_hints
+from typing import Annotated, get_type_hints
 
 from fastapi.params import Depends as DependsClass
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -112,3 +112,17 @@ class TestGetDbRollback:
                 mock_session.rollback.assert_awaited_once()
 
         asyncio.run(_run())
+
+
+class TestBearerTokenType:
+    """Tests for BearerToken annotated type."""
+
+    def test_bearer_token_is_annotated(self) -> None:
+        from typing import get_args, get_origin
+
+        from shomer.deps import BearerToken
+
+        assert get_origin(BearerToken) is Annotated
+        args = get_args(BearerToken)
+        assert args[0] is str
+        assert any(isinstance(a, DependsClass) for a in args[1:])

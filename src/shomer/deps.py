@@ -18,7 +18,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shomer.core.database import async_session
@@ -78,3 +78,32 @@ Config = Annotated[Settings, Depends(get_config)]
 
 #: Annotated type for the current tenant ID (may be None).
 TenantId = Annotated[uuid.UUID | None, Depends(get_current_tenant)]
+
+
+async def get_bearer_token(request: Request) -> str:
+    """Extract Bearer token from the Authorization header.
+
+    Delegates to :func:`shomer.middleware.bearer.extract_bearer_token`.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+
+    Returns
+    -------
+    str
+        The raw Bearer token.
+
+    Raises
+    ------
+    HTTPException
+        401 with ``WWW-Authenticate: Bearer`` if absent or malformed.
+    """
+    from shomer.middleware.bearer import extract_bearer_token
+
+    return await extract_bearer_token(request)
+
+
+#: Annotated type for an extracted Bearer token from the Authorization header.
+BearerToken = Annotated[str, Depends(get_bearer_token)]
