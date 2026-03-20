@@ -1,14 +1,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""Unit tests for GET /api/me profile endpoint."""
+"""Unit tests for /api/me profile and email management endpoints."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from fastapi import HTTPException
 
 from shomer.auth import CurrentUserInfo
 from shomer.routes.profile import _build_profile, get_me
@@ -164,5 +167,247 @@ class TestGetMe:
             resp = await get_me(user, _mock_db())
             body = json.loads(bytes(resp.body))
             assert "user_id" in body
+
+        asyncio.run(_run())
+
+
+class TestUpdateProfile:
+    """Tests for PUT /api/me/profile."""
+
+    def test_creates_profile_if_missing(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import ProfileUpdateRequest, update_profile
+
+            user = _user()
+            db = AsyncMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            db.execute.return_value = result
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            body = ProfileUpdateRequest(name="Jane Doe")
+            resp = await update_profile(body, user, db)
+            body_json = json.loads(bytes(resp.body))
+            assert body_json["message"] == "Profile updated"
+            db.add.assert_called_once()
+
+        asyncio.run(_run())
+
+    def test_updates_existing_profile(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import ProfileUpdateRequest, update_profile
+
+            user = _user()
+            db = AsyncMock()
+            mock_profile = MagicMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_profile
+            db.execute.return_value = result
+            db.flush = AsyncMock()
+
+            body = ProfileUpdateRequest(name="Updated", locale="en-US")
+            await update_profile(body, user, db)
+            assert mock_profile.name == "Updated"
+            assert mock_profile.locale == "en-US"
+
+        asyncio.run(_run())
+
+    def test_only_updates_provided_fields(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import ProfileUpdateRequest, update_profile
+
+            user = _user()
+            db = AsyncMock()
+            mock_profile = MagicMock()
+            mock_profile.name = "Original"
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_profile
+            db.execute.return_value = result
+            db.flush = AsyncMock()
+
+            body = ProfileUpdateRequest(locale="fr-FR")
+            await update_profile(body, user, db)
+            assert mock_profile.locale == "fr-FR"
+            # name should not be changed (not in update_data)
+
+        asyncio.run(_run())
+
+
+class TestAddEmail:
+    """Tests for POST /api/me/emails."""
+
+    @patch("shomer.tasks.email.send_email_task")
+    def test_add_email_success(self, mock_task: MagicMock) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import AddEmailRequest, add_email
+
+            user = _user()
+            db = AsyncMock()
+            # email not existing
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            db.execute.return_value = result
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            body = AddEmailRequest(email="new@example.com")
+            resp = await add_email(body, user, db)
+            assert resp.status_code == 201
+            mock_task.delay.assert_called_once()
+
+        asyncio.run(_run())
+
+    def test_add_duplicate_email_409(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import AddEmailRequest, add_email
+
+            user = _user()
+            db = AsyncMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = MagicMock()  # exists
+            db.execute.return_value = result
+
+            body = AddEmailRequest(email="dupe@example.com")
+            with pytest.raises(HTTPException) as exc_info:
+                await add_email(body, user, db)
+            assert exc_info.value.status_code == 409
+
+        asyncio.run(_run())
+
+
+class TestDeleteEmail:
+    """Tests for DELETE /api/me/emails/{id}."""
+
+    def test_delete_success(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import delete_email
+
+            user = _user()
+            db = AsyncMock()
+            mock_email = MagicMock()
+            mock_email.is_primary = False
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_email
+            db.execute.return_value = result
+            db.delete = AsyncMock()
+            db.flush = AsyncMock()
+
+            resp = await delete_email(str(uuid.uuid4()), user, db)
+            body = json.loads(bytes(resp.body))
+            assert body["message"] == "Email removed"
+
+        asyncio.run(_run())
+
+    def test_delete_primary_400(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import delete_email
+
+            user = _user()
+            db = AsyncMock()
+            mock_email = MagicMock()
+            mock_email.is_primary = True
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = mock_email
+            db.execute.return_value = result
+
+            with pytest.raises(HTTPException) as exc_info:
+                await delete_email(str(uuid.uuid4()), user, db)
+            assert exc_info.value.status_code == 400
+
+        asyncio.run(_run())
+
+    def test_delete_not_found_404(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import delete_email
+
+            user = _user()
+            db = AsyncMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            db.execute.return_value = result
+
+            with pytest.raises(HTTPException) as exc_info:
+                await delete_email(str(uuid.uuid4()), user, db)
+            assert exc_info.value.status_code == 404
+
+        asyncio.run(_run())
+
+    def test_delete_invalid_id_400(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import delete_email
+
+            with pytest.raises(HTTPException) as exc_info:
+                await delete_email("not-a-uuid", _user(), AsyncMock())
+            assert exc_info.value.status_code == 400
+
+        asyncio.run(_run())
+
+
+class TestSetPrimaryEmail:
+    """Tests for PUT /api/me/emails/{id}/primary."""
+
+    def test_set_primary_success(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import set_primary_email
+
+            user = _user()
+            eid = uuid.uuid4()
+            db = AsyncMock()
+
+            target = MagicMock()
+            target.id = eid
+            target.is_verified = True
+            target_result = MagicMock()
+            target_result.scalar_one_or_none.return_value = target
+
+            other = MagicMock()
+            other.id = uuid.uuid4()
+            all_result = MagicMock()
+            all_result.scalars.return_value.all.return_value = [target, other]
+
+            db.execute.side_effect = [target_result, all_result]
+            db.flush = AsyncMock()
+
+            resp = await set_primary_email(str(eid), user, db)
+            body = json.loads(bytes(resp.body))
+            assert body["message"] == "Primary email updated"
+            assert target.is_primary is True
+            assert other.is_primary is False
+
+        asyncio.run(_run())
+
+    def test_set_unverified_400(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import set_primary_email
+
+            user = _user()
+            db = AsyncMock()
+            target = MagicMock()
+            target.is_verified = False
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = target
+            db.execute.return_value = result
+
+            with pytest.raises(HTTPException) as exc_info:
+                await set_primary_email(str(uuid.uuid4()), user, db)
+            assert exc_info.value.status_code == 400
+            assert "unverified" in str(exc_info.value.detail).lower()
+
+        asyncio.run(_run())
+
+    def test_set_not_found_404(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.profile import set_primary_email
+
+            user = _user()
+            db = AsyncMock()
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            db.execute.return_value = result
+
+            with pytest.raises(HTTPException) as exc_info:
+                await set_primary_email(str(uuid.uuid4()), user, db)
+            assert exc_info.value.status_code == 404
 
         asyncio.run(_run())

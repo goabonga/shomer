@@ -20,3 +20,29 @@ Feature: User profile endpoint
     Then the response status code should be 200
     And the response should have JSON key "user_id"
     And the response body should contain "me-session@example.com"
+
+  # --- Profile update ---
+
+  Scenario: PUT /api/me/profile without auth returns 401
+    When I send a PUT request to "/api/me/profile"
+    Then the response status code should be 401
+
+  Scenario: PUT /api/me/profile with Bearer updates profile
+    Given a verified user and an OAuth2 client with all grants
+    And I have a Bearer token for the OAuth2 client
+    When I send a PUT request to "/api/me/profile" with JSON
+      """
+      {"name": "Updated Name", "locale": "fr-FR"}
+      """
+    Then the response status code should be 200
+    And the response body should contain "Profile updated"
+
+  # --- Email management ---
+
+  Scenario: POST /api/me/emails without auth returns 401
+    When I send a POST request to "/api/me/emails"
+    Then the response status code should be 401
+
+  Scenario: DELETE /api/me/emails without auth returns 401
+    When I send a DELETE request to "/api/me/emails/00000000-0000-0000-0000-000000000000"
+    Then the response status code should be 401
