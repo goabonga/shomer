@@ -995,3 +995,61 @@ class TestRotateRefreshToken:
             assert db.add.call_count >= 2
 
         asyncio.run(_run())
+
+    def test_id_token_included_with_openid_scope(self) -> None:
+        """Refresh rotation includes id_token when openid scope is present."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_rt = MagicMock()
+            mock_rt.revoked = False
+            mock_rt.family_id = uuid.uuid4()
+            mock_rt.user_id = uuid.uuid4()
+            mock_rt.client_id = "test-client"
+            mock_rt.scopes = "openid profile"
+            mock_rt.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+
+            rt_result = MagicMock()
+            rt_result.scalar_one_or_none.return_value = mock_rt
+            db.execute.return_value = rt_result
+
+            svc = TokenService(db, _settings())
+            resp = await svc.rotate_refresh_token(
+                refresh_token="tok",
+                client_id="test-client",
+            )
+            assert resp.id_token is not None
+
+        asyncio.run(_run())
+
+    def test_no_id_token_without_openid_scope(self) -> None:
+        """Refresh rotation excludes id_token without openid scope."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_rt = MagicMock()
+            mock_rt.revoked = False
+            mock_rt.family_id = uuid.uuid4()
+            mock_rt.user_id = uuid.uuid4()
+            mock_rt.client_id = "test-client"
+            mock_rt.scopes = "profile"
+            mock_rt.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+
+            rt_result = MagicMock()
+            rt_result.scalar_one_or_none.return_value = mock_rt
+            db.execute.return_value = rt_result
+
+            svc = TokenService(db, _settings())
+            resp = await svc.rotate_refresh_token(
+                refresh_token="tok",
+                client_id="test-client",
+            )
+            assert resp.id_token is None
+
+        asyncio.run(_run())
