@@ -123,7 +123,7 @@ def step_setup_oauth2_full(context):
         f"'{escaped_hash}', "
         "'BDD Full App', 'CONFIDENTIAL', "
         "'[\"https://app.example.com/callback\"]'::jsonb, "
-        '\'["authorization_code", "client_credentials", "password"]\'::jsonb, '
+        '\'["authorization_code", "client_credentials", "password", "refresh_token"]\'::jsonb, '
         "'[\"code\"]'::jsonb, "
         '\'["openid", "profile", "email"]\'::jsonb, '
         "'[]'::jsonb, "
@@ -131,7 +131,7 @@ def step_setup_oauth2_full(context):
         ") ON CONFLICT (client_id) DO UPDATE SET "
         f"client_secret_hash = '{escaped_hash}', "
         "grant_types = "
-        '\'["authorization_code", "client_credentials", "password"]\'::jsonb;'
+        '\'["authorization_code", "client_credentials", "password", "refresh_token"]\'::jsonb;'
     )
 
     context.oauth2_client_id = "bdd-full-client"

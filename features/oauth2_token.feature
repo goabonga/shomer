@@ -142,3 +142,40 @@ Feature: OAuth2 token endpoint
       """
     Then the response status code should be 401
     And the response body should contain "invalid_client"
+
+  # --- refresh_token grant ---
+
+  Scenario: refresh_token without client auth returns 401
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "refresh_token", "refresh_token": "fake"}
+      """
+    Then the response status code should be 401
+    And the response body should contain "invalid_client"
+
+  Scenario: refresh_token with unknown client returns 401
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "refresh_token", "refresh_token": "fake", "client_id": "unknown", "client_secret": "wrong"}
+      """
+    Then the response status code should be 401
+    And the response body should contain "invalid_client"
+
+  Scenario: refresh_token with invalid token returns 400
+    Given a verified user and an OAuth2 client with all grants
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "refresh_token", "refresh_token": "nonexistent", "client_id": "bdd-full-client", "client_secret": "bdd-test-secret-value"}
+      """
+    Then the response status code should be 400
+    And the response body should contain "invalid_grant"
+
+  Scenario: refresh_token error uses RFC 6749 format
+    Given a verified user and an OAuth2 client with all grants
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "refresh_token", "refresh_token": "bad", "client_id": "bdd-full-client", "client_secret": "bdd-test-secret-value"}
+      """
+    Then the response status code should be 400
+    And the response should have JSON key "error"
+    And the response should have JSON key "error_description"

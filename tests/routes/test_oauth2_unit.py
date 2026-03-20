@@ -426,3 +426,61 @@ class TestRenderOAuth2Error:
         assert "server_error" in _FRIENDLY_ERROR_MESSAGES
         for msg in _FRIENDLY_ERROR_MESSAGES.values():
             assert len(msg) > 0
+
+
+class TestHandleRefreshToken:
+    """Unit tests for _handle_refresh_token."""
+
+    def test_missing_refresh_token(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_refresh_token
+
+            client = _mock_client(grant_types=["refresh_token"])
+            svc = AsyncMock()
+            resp = await _handle_refresh_token(svc, client, "")
+            assert resp.status_code == 400
+            assert b"required" in resp.body
+
+        asyncio.run(_run())
+
+    def test_grant_not_allowed(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_refresh_token
+
+            client = _mock_client(grant_types=["authorization_code"])
+            svc = AsyncMock()
+            resp = await _handle_refresh_token(svc, client, "tok")
+            assert resp.status_code == 400
+            assert b"not authorized" in resp.body
+
+        asyncio.run(_run())
+
+    def test_success(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_refresh_token
+
+            client = _mock_client(grant_types=["refresh_token"])
+            svc = AsyncMock()
+            svc.rotate_refresh_token.return_value = TokenResponse(
+                access_token="new-at", refresh_token="new-rt"
+            )
+            resp = await _handle_refresh_token(svc, client, "old-rt")
+            assert resp.status_code == 200
+            assert b"new-at" in resp.body
+
+        asyncio.run(_run())
+
+    def test_token_error(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_refresh_token
+
+            client = _mock_client(grant_types=["refresh_token"])
+            svc = AsyncMock()
+            svc.rotate_refresh_token.side_effect = TokenError(
+                "invalid_grant", "expired"
+            )
+            resp = await _handle_refresh_token(svc, client, "tok")
+            assert resp.status_code == 400
+            assert b"invalid_grant" in resp.body
+
+        asyncio.run(_run())
