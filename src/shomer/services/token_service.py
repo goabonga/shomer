@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""OAuth2 token endpoint service (RFC 6749 §4.1.3, §4.3 and §4.4)."""
+"""OAuth2 token endpoint service (RFC 6749 §4.1.3, §4.3, §4.4 and §6)."""
 
 from __future__ import annotations
 
@@ -392,6 +392,115 @@ class TokenService:
             access_token=access_jwt,
             expires_in=self.settings.jwt_access_token_exp,
             refresh_token=raw_refresh,
+            scope=" ".join(scopes),
+        )
+
+    async def rotate_refresh_token(
+        self,
+        *,
+        refresh_token: str,
+        client_id: str,
+    ) -> TokenResponse:
+        """Exchange a refresh token for new tokens (RFC 6749 §6).
+
+        Performs mandatory rotation: the old token is revoked and a new
+        refresh token is issued. If a revoked token is presented (reuse
+        detection), the entire token family is revoked.
+
+        Parameters
+        ----------
+        refresh_token : str
+            The raw refresh token value.
+        client_id : str
+            The authenticated client identifier.
+
+        Returns
+        -------
+        TokenResponse
+            New access_token and refresh_token.
+
+        Raises
+        ------
+        TokenError
+            If the token is invalid, expired, revoked, or client mismatches.
+        """
+        from sqlalchemy import update
+
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        stmt = select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+        result = await self.session.execute(stmt)
+        rt = result.scalar_one_or_none()
+
+        if rt is None:
+            raise TokenError("invalid_grant", "Invalid refresh token")
+
+        # Reuse detection: if token is already revoked, revoke entire family
+        if rt.revoked:
+            revoke_stmt = (
+                update(RefreshToken)
+                .where(RefreshToken.family_id == rt.family_id)
+                .values(revoked=True)
+            )
+            await self.session.execute(revoke_stmt)
+            await self.session.flush()
+            raise TokenError("invalid_grant", "Refresh token reuse detected")
+
+        # Check expiration
+        now = datetime.now(timezone.utc)
+        expires_at = rt.expires_at
+        if expires_at.tzinfo is None:  # pragma: no cover — SQLite compat
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            raise TokenError("invalid_grant", "Refresh token expired")
+
+        # Check client matches
+        if rt.client_id != client_id:
+            raise TokenError("invalid_grant", "Client mismatch")
+
+        # Revoke old token
+        rt.revoked = True
+
+        # Issue new refresh token (same family)
+        new_raw = uuid.uuid4().hex
+        new_hash = hashlib.sha256(new_raw.encode()).hexdigest()
+        new_rt = RefreshToken(
+            token_hash=new_hash,
+            family_id=rt.family_id,
+            user_id=rt.user_id,
+            client_id=client_id,
+            scopes=rt.scopes,
+            expires_at=now + timedelta(days=30),
+        )
+        self.session.add(new_rt)
+
+        # Point old token to new one
+        rt.replaced_by = new_rt.id
+
+        # Issue new access token
+        scopes = rt.scopes.split() if rt.scopes else []
+        jti = uuid.uuid4().hex
+
+        access_token_record = AccessToken(
+            jti=jti,
+            user_id=rt.user_id,
+            client_id=client_id,
+            scopes=rt.scopes,
+            expires_at=now + timedelta(seconds=self.settings.jwt_access_token_exp),
+        )
+        self.session.add(access_token_record)
+        await self.session.flush()
+
+        access_jwt = self._build_access_jwt(
+            sub=str(rt.user_id),
+            aud=client_id,
+            jti=jti,
+            scopes=scopes,
+        )
+
+        return TokenResponse(
+            access_token=access_jwt,
+            expires_in=self.settings.jwt_access_token_exp,
+            refresh_token=new_raw,
             scope=" ".join(scopes),
         )
 

@@ -834,3 +834,164 @@ class TestVerifyPKCEPlain:
     def test_unknown_method(self) -> None:
         """Unknown PKCE method returns False."""
         assert TokenService._verify_pkce("v", "c", "unknown") is False
+
+
+class TestRotateRefreshToken:
+    """Tests for TokenService.rotate_refresh_token()."""
+
+    def test_successful_rotation(self) -> None:
+        """Valid refresh token returns new access_token + refresh_token."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_rt = MagicMock()
+            mock_rt.token_hash = hashlib.sha256(b"raw-token").hexdigest()
+            mock_rt.family_id = uuid.uuid4()
+            mock_rt.user_id = uuid.uuid4()
+            mock_rt.client_id = "test-client"
+            mock_rt.scopes = "openid profile"
+            mock_rt.revoked = False
+            mock_rt.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+
+            rt_result = MagicMock()
+            rt_result.scalar_one_or_none.return_value = mock_rt
+            db.execute.return_value = rt_result
+
+            svc = TokenService(db, _settings())
+            resp = await svc.rotate_refresh_token(
+                refresh_token="raw-token",
+                client_id="test-client",
+            )
+            assert resp.access_token is not None
+            assert resp.refresh_token is not None
+            assert resp.refresh_token != "raw-token"
+            assert mock_rt.revoked is True
+
+        asyncio.run(_run())
+
+    def test_invalid_token_raises(self) -> None:
+        """Unknown refresh token raises TokenError."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            rt_result = MagicMock()
+            rt_result.scalar_one_or_none.return_value = None
+            db.execute.return_value = rt_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="Invalid refresh token"):
+                await svc.rotate_refresh_token(
+                    refresh_token="nonexistent",
+                    client_id="c",
+                )
+
+        asyncio.run(_run())
+
+    def test_reuse_detection_revokes_family(self) -> None:
+        """Already-revoked token triggers family-wide revocation."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            db.flush = AsyncMock()
+
+            mock_rt = MagicMock()
+            mock_rt.revoked = True
+            mock_rt.family_id = uuid.uuid4()
+
+            rt_result = MagicMock()
+            rt_result.scalar_one_or_none.return_value = mock_rt
+            db.execute.return_value = rt_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="reuse detected"):
+                await svc.rotate_refresh_token(
+                    refresh_token="reused-token",
+                    client_id="c",
+                )
+            # execute called twice: SELECT + UPDATE (family revocation)
+            assert db.execute.call_count == 2
+
+        asyncio.run(_run())
+
+    def test_expired_token_raises(self) -> None:
+        """Expired refresh token raises TokenError."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+
+            mock_rt = MagicMock()
+            mock_rt.revoked = False
+            mock_rt.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+
+            rt_result = MagicMock()
+            rt_result.scalar_one_or_none.return_value = mock_rt
+            db.execute.return_value = rt_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="expired"):
+                await svc.rotate_refresh_token(
+                    refresh_token="expired-token",
+                    client_id="c",
+                )
+
+        asyncio.run(_run())
+
+    def test_client_mismatch_raises(self) -> None:
+        """Token for a different client raises TokenError."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+
+            mock_rt = MagicMock()
+            mock_rt.revoked = False
+            mock_rt.client_id = "original-client"
+            mock_rt.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+
+            rt_result = MagicMock()
+            rt_result.scalar_one_or_none.return_value = mock_rt
+            db.execute.return_value = rt_result
+
+            svc = TokenService(db, _settings())
+            with pytest.raises(TokenError, match="Client mismatch"):
+                await svc.rotate_refresh_token(
+                    refresh_token="tok",
+                    client_id="wrong-client",
+                )
+
+        asyncio.run(_run())
+
+    def test_old_token_gets_replaced_by(self) -> None:
+        """After rotation, old token's replaced_by is set."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            db.add = MagicMock()
+            db.flush = AsyncMock()
+
+            mock_rt = MagicMock()
+            mock_rt.revoked = False
+            mock_rt.family_id = uuid.uuid4()
+            mock_rt.user_id = uuid.uuid4()
+            mock_rt.client_id = "test-client"
+            mock_rt.scopes = "openid"
+            mock_rt.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+            mock_rt.replaced_by = None
+
+            rt_result = MagicMock()
+            rt_result.scalar_one_or_none.return_value = mock_rt
+            db.execute.return_value = rt_result
+
+            svc = TokenService(db, _settings())
+            await svc.rotate_refresh_token(
+                refresh_token="tok",
+                client_id="test-client",
+            )
+            # Old token revoked and new token added
+            assert mock_rt.revoked is True
+            # db.add called for new RefreshToken + AccessToken
+            assert db.add.call_count >= 2
+
+        asyncio.run(_run())
