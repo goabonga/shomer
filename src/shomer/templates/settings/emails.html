@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Email Settings — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails" class="active">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+</nav>
+
+<h2>Email Addresses</h2>
+<ul class="email-list">
+{% for email in emails %}
+    <li>
+        <span class="email-address">{{ email.email }}</span>
+        {% if email.is_primary %}<span class="badge primary">Primary</span>{% endif %}
+        {% if email.is_verified %}<span class="badge verified">Verified</span>{% else %}<span class="badge unverified">Unverified</span>{% endif %}
+    </li>
+{% endfor %}
+</ul>
+
+<h3>Add Email</h3>
+<form method="post" action="/ui/settings/emails">
+    <input type="email" name="email" placeholder="new@example.com" required>
+    <button type="submit">Add Email</button>
+</form>
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .email-list { list-style: none; padding: 0; }
+    .email-list li { padding: 8px 0; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; }
+    .badge { font-size: 0.75em; padding: 2px 6px; border-radius: 3px; }
+    .badge.primary { background: #333; color: #fff; }
+    .badge.verified { background: #060; color: #fff; }
+    .badge.unverified { background: #c00; color: #fff; }
+</style>
+{% endblock %}

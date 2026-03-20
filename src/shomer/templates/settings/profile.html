@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Profile Settings — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings/profile" class="active">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+</nav>
+
+<h2>Profile</h2>
+{% if profile %}
+<form method="post" action="/ui/settings/profile">
+    <label>Name</label>
+    <input type="text" name="name" value="{{ profile.name or '' }}" placeholder="Full name">
+    <label>Nickname</label>
+    <input type="text" name="nickname" value="{{ profile.nickname or '' }}" placeholder="Nickname">
+    <label>Locale</label>
+    <input type="text" name="locale" value="{{ profile.locale or '' }}" placeholder="e.g. en-US">
+    <label>Timezone</label>
+    <input type="text" name="zoneinfo" value="{{ profile.zoneinfo or '' }}" placeholder="e.g. Europe/Paris">
+    <button type="submit">Save Profile</button>
+</form>
+{% else %}
+<p>No profile yet. Fill in your details:</p>
+<form method="post" action="/ui/settings/profile">
+    <label>Name</label>
+    <input type="text" name="name" placeholder="Full name">
+    <label>Nickname</label>
+    <input type="text" name="nickname" placeholder="Nickname">
+    <label>Locale</label>
+    <input type="text" name="locale" placeholder="e.g. en-US">
+    <label>Timezone</label>
+    <input type="text" name="zoneinfo" placeholder="e.g. Europe/Paris">
+    <button type="submit">Save Profile</button>
+</form>
+{% endif %}
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    label { font-weight: 500; margin-top: 8px; }
+</style>
+{% endblock %}

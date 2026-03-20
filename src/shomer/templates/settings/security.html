@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Security Settings — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security" class="active">Security</a>
+</nav>
+
+<h2>Security</h2>
+
+<div class="security-section">
+    <h3>Password</h3>
+    <p><a href="/ui/password/change">Change Password</a></p>
+</div>
+
+<div class="security-section">
+    <h3>Active Sessions</h3>
+    <p>You have <strong>{{ active_sessions }}</strong> active session(s).</p>
+</div>
+
+<div class="security-section">
+    <h3>Multi-Factor Authentication</h3>
+    <p class="mfa-status">MFA is not yet available.</p>
+</div>
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .security-section { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+    .mfa-status { color: #999; }
+</style>
+{% endblock %}
