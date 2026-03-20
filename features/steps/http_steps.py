@@ -116,10 +116,13 @@ def _send_form(context, path, form_data):
 @when('I send a form POST to "{path}" with')
 def step_post_form(context, path):
     text = context.text
-    # Substitute context variables (e.g. ${auth_code})
+    # Substitute context variables
     auth_code = getattr(context, "oauth2_auth_code", None)
     if auth_code and "${auth_code}" in text:
         text = text.replace("${auth_code}", auth_code)
+    bearer = getattr(context, "bearer_token", None)
+    if bearer and "${bearer_token}" in text:
+        text = text.replace("${bearer_token}", bearer)
     form_data = json.loads(text)
     _send_form(context, path, form_data)
 
