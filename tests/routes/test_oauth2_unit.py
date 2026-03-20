@@ -19,6 +19,7 @@ from shomer.routes.oauth2 import (
     authorize_consent,
 )
 from shomer.services.authorize_service import AuthorizeError
+from shomer.services.oauth2_client_service import InvalidClientError
 from shomer.services.token_service import TokenError, TokenResponse
 
 
@@ -482,5 +483,54 @@ class TestHandleRefreshToken:
             resp = await _handle_refresh_token(svc, client, "tok")
             assert resp.status_code == 400
             assert b"invalid_grant" in resp.body
+
+        asyncio.run(_run())
+
+
+class TestRevokeEndpoint:
+    """Unit tests for POST /oauth2/revoke."""
+
+    def test_revoke_returns_200(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import revoke
+
+            with (
+                patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls,
+                patch("shomer.services.revocation_service.RevocationService") as mock_rev_cls,
+            ):
+                mock_client = MagicMock()
+                mock_client.client_id = "c"
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.return_value = mock_client
+                mock_cls.return_value = mock_svc
+
+                mock_rev = AsyncMock()
+                mock_rev_cls.return_value = mock_rev
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await revoke(req, db, "tok", "refresh_token", "c", "s")
+                assert resp.status_code == 200
+                mock_rev.revoke.assert_awaited_once()
+
+        asyncio.run(_run())
+
+    def test_revoke_invalid_client_returns_401(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import revoke
+
+            with patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.side_effect = InvalidClientError("bad")
+                mock_cls.return_value = mock_svc
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await revoke(req, db, "tok", "", "", "")
+                assert resp.status_code == 401
 
         asyncio.run(_run())
