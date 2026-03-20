@@ -207,10 +207,14 @@ class TokenService:
         # Build ID token if openid scope
         id_token: str | None = None
         if "openid" in scopes:
-            id_token = self._build_id_token(
+            from shomer.services.id_token_service import IDTokenService
+
+            id_svc = IDTokenService(self.settings)
+            id_token = id_svc.build_id_token(
                 sub=str(auth_code.user_id),
                 aud=client_id,
                 nonce=auth_code.nonce,
+                scopes=scopes,
             )
 
         return TokenResponse(
@@ -497,11 +501,24 @@ class TokenService:
             scopes=scopes,
         )
 
+        # Build ID token if openid scope (refresh keeps original scopes)
+        id_token: str | None = None
+        if "openid" in scopes:
+            from shomer.services.id_token_service import IDTokenService
+
+            id_svc = IDTokenService(self.settings)
+            id_token = id_svc.build_id_token(
+                sub=str(rt.user_id),
+                aud=client_id,
+                scopes=scopes,
+            )
+
         return TokenResponse(
             access_token=access_jwt,
             expires_in=self.settings.jwt_access_token_exp,
             refresh_token=new_raw,
             scope=" ".join(scopes),
+            id_token=id_token,
         )
 
     async def _get_authorization_code(self, code: str) -> AuthorizationCode | None:
