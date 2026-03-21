@@ -71,6 +71,9 @@ def _substitute_vars(context, text):
     par_uri = getattr(context, "par_request_uri", None)
     if par_uri and "${request_uri}" in text:
         text = text.replace("${request_uri}", urllib.parse.quote(par_uri, safe=""))
+    jar_jwt = getattr(context, "jar_request_jwt", None)
+    if jar_jwt and "${jar_request_jwt}" in text:
+        text = text.replace("${jar_request_jwt}", urllib.parse.quote(jar_jwt, safe=""))
     return text
 
 
