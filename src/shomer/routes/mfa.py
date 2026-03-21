@@ -1,18 +1,25 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""MFA setup and management API endpoints."""
+"""MFA setup, management, and verification API endpoints."""
 
 from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from shomer.deps import Config, CurrentUser, DbSession
+from shomer.models.mfa_email_code import MFAEmailCode
 from shomer.models.user_mfa import UserMFA
 from shomer.services.mfa_service import MFAService
+
+#: Rate limit: max email sends per user in a 5-minute window.
+EMAIL_SEND_RATE_LIMIT = 3
+EMAIL_SEND_WINDOW = timedelta(minutes=5)
 
 router = APIRouter(prefix="/mfa", tags=["mfa"])
 
@@ -313,6 +320,196 @@ async def mfa_regenerate_backup_codes(
             "message": "Backup codes regenerated. Save them securely.",
         }
     )
+
+
+class MFAVerifyRequest(BaseModel):
+    """Request body for MFA verification during login challenge.
+
+    Attributes
+    ----------
+    code : str
+        TOTP code or backup code.
+    method : str
+        Verification method: ``totp`` or ``backup``.
+    """
+
+    code: str
+    method: str = "totp"
+
+
+class EmailCodeRequest(BaseModel):
+    """Request body for email code verification.
+
+    Attributes
+    ----------
+    code : str
+        The 6-digit email verification code.
+    """
+
+    code: str
+
+
+@router.post("/verify")
+async def mfa_verify(
+    body: MFAVerifyRequest, user: CurrentUser, db: DbSession, config: Config
+) -> JSONResponse:
+    """Verify an MFA code (TOTP or backup) during login challenge.
+
+    Parameters
+    ----------
+    body : MFAVerifyRequest
+        The code and verification method.
+    user : CurrentUser
+        The authenticated user.
+    db : DbSession
+        Database session.
+    config : Config
+        Application settings.
+
+    Returns
+    -------
+    JSONResponse
+        Verification result.
+    """
+    svc = MFAService(db, config)
+
+    mfa = await _get_user_mfa(db, user.user_id)
+    if mfa is None or not mfa.is_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled for this user.",
+        )
+
+    if body.method == "backup":
+        valid = await svc.verify_backup_code(mfa.id, body.code)
+        if not valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid backup code.",
+            )
+        return JSONResponse(content={"verified": True, "method": "backup"})
+
+    # Default: TOTP verification
+    secret = svc.decrypt_totp_secret(mfa.totp_secret_encrypted or "")
+    if not MFAService.verify_totp_code(secret, body.code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid TOTP code.",
+        )
+    return JSONResponse(content={"verified": True, "method": "totp"})
+
+
+@router.post("/email/send")
+async def mfa_email_send(
+    user: CurrentUser, db: DbSession, config: Config
+) -> JSONResponse:
+    """Send a 6-digit MFA code to the user's primary email.
+
+    Rate-limited to prevent abuse.
+
+    Parameters
+    ----------
+    user : CurrentUser
+        The authenticated user.
+    db : DbSession
+        Database session.
+    config : Config
+        Application settings.
+
+    Returns
+    -------
+    JSONResponse
+        Confirmation that the code was sent.
+    """
+    mfa = await _get_user_mfa(db, user.user_id)
+    if mfa is None or not mfa.is_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled for this user.",
+        )
+
+    # Rate limiting: check recent sends
+    cutoff = datetime.now(timezone.utc) - EMAIL_SEND_WINDOW
+    stmt = (
+        select(func.count())
+        .select_from(MFAEmailCode)
+        .where(
+            MFAEmailCode.user_id == user.user_id,
+            MFAEmailCode.created_at >= cutoff,
+        )
+    )
+    result = await db.execute(stmt)
+    recent_count = result.scalar() or 0
+    if recent_count >= EMAIL_SEND_RATE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many email code requests. Try again later.",
+        )
+
+    # Get primary email
+    from shomer.models.user_email import UserEmail
+
+    email_stmt = select(UserEmail).where(
+        UserEmail.user_id == user.user_id,
+        UserEmail.is_primary == True,  # noqa: E712
+    )
+    email_result = await db.execute(email_stmt)
+    primary_email = email_result.scalar_one_or_none()
+    if primary_email is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No primary email found.",
+        )
+
+    svc = MFAService(db, config)
+    await svc.send_email_code(user_id=user.user_id, email=primary_email.email)
+
+    return JSONResponse(
+        content={
+            "sent": True,
+            "message": "Verification code sent to your email.",
+        }
+    )
+
+
+@router.post("/email/verify")
+async def mfa_email_verify(
+    body: EmailCodeRequest, user: CurrentUser, db: DbSession, config: Config
+) -> JSONResponse:
+    """Verify an email MFA code.
+
+    Parameters
+    ----------
+    body : EmailCodeRequest
+        The 6-digit code.
+    user : CurrentUser
+        The authenticated user.
+    db : DbSession
+        Database session.
+    config : Config
+        Application settings.
+
+    Returns
+    -------
+    JSONResponse
+        Verification result.
+    """
+    mfa = await _get_user_mfa(db, user.user_id)
+    if mfa is None or not mfa.is_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled for this user.",
+        )
+
+    svc = MFAService(db, config)
+    valid = await svc.verify_email_code(user_id=user.user_id, code=body.code)
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired email code.",
+        )
+
+    return JSONResponse(content={"verified": True, "method": "email"})
 
 
 async def _get_user_mfa(db: object, user_id: object) -> UserMFA | None:
