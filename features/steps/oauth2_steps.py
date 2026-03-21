@@ -172,3 +172,49 @@ def step_create_auth_code(context):
     )
 
     context.oauth2_auth_code = code
+
+
+@given("an approved device code for the OAuth2 client")
+def step_create_approved_device_code(context):
+    """Create a device code via API, then approve it in the DB.
+
+    Requires ``a verified user and an OAuth2 client with all grants``
+    to have run first. Stores the device_code on ``context.device_code``.
+    """
+    import json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    # 1. Create device code via POST /oauth2/device
+    form_data = urllib.parse.urlencode(
+        {
+            "scope": "openid profile",
+            "client_id": context.oauth2_client_id,
+            "client_secret": context.oauth2_client_secret,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        context.base_url + "/oauth2/device",
+        data=form_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    resp = urllib.request.urlopen(req, timeout=10)
+    body = json.loads(resp.read().decode())
+    device_code = body["device_code"]
+    context.device_code = device_code
+
+    # 2. Get user_id
+    user_id = _psql(
+        "SELECT u.id FROM users u "
+        "JOIN user_emails ue ON ue.user_id = u.id "
+        f"WHERE ue.email = '{context.oauth2_user_email}';"
+    )
+    assert user_id, "User not found in DB"
+
+    # 3. Approve the device code in the DB
+    _psql(
+        f"UPDATE device_codes SET status = 'APPROVED', user_id = '{user_id}' "
+        f"WHERE device_code = '{device_code}';"
+    )
