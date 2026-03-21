@@ -1274,3 +1274,159 @@ class TestPAREndpoint:
                 assert resp.headers.get("cache-control") == "no-store"
 
         asyncio.run(_run())
+
+
+class TestTokenExchangeGrant:
+    """Unit tests for _handle_token_exchange."""
+
+    def test_missing_subject_token(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_token_exchange
+
+            svc = AsyncMock()
+            client = _mock_client()
+            resp = await _handle_token_exchange(
+                svc,
+                client,
+                "",
+                "urn:ietf:params:oauth:token-type:access_token",
+                "",
+                "",
+                "",
+                "",
+                AsyncMock(),
+                MagicMock(),
+            )
+            assert resp.status_code == 400
+            assert b"subject_token is required" in resp.body
+
+        asyncio.run(_run())
+
+    def test_missing_subject_token_type(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_token_exchange
+
+            svc = AsyncMock()
+            client = _mock_client()
+            resp = await _handle_token_exchange(
+                svc,
+                client,
+                "some-token",
+                "",
+                "",
+                "",
+                "",
+                "",
+                AsyncMock(),
+                MagicMock(),
+            )
+            assert resp.status_code == 400
+            assert b"subject_token_type is required" in resp.body
+
+        asyncio.run(_run())
+
+    def test_invalid_subject_token_type(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_token_exchange
+
+            svc = AsyncMock()
+            client = _mock_client()
+            resp = await _handle_token_exchange(
+                svc,
+                client,
+                "some-token",
+                "bad:type",
+                "",
+                "",
+                "",
+                "",
+                AsyncMock(),
+                MagicMock(),
+            )
+            assert resp.status_code == 400
+            assert b"Unsupported" in resp.body
+
+        asyncio.run(_run())
+
+    def test_exchange_error_returns_400(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_token_exchange
+            from shomer.services.token_exchange_service import TokenExchangeError
+
+            with patch(
+                "shomer.services.token_exchange_service.TokenExchangeService"
+            ) as mock_cls:
+                mock_exc_svc = AsyncMock()
+                mock_exc_svc.validate_exchange.side_effect = TokenExchangeError(
+                    "unauthorized_client", "not authorized"
+                )
+                mock_cls.return_value = mock_exc_svc
+
+                svc = AsyncMock()
+                client = _mock_client()
+                settings = MagicMock()
+                resp = await _handle_token_exchange(
+                    svc,
+                    client,
+                    "tok",
+                    "urn:ietf:params:oauth:token-type:access_token",
+                    "",
+                    "",
+                    "",
+                    "",
+                    AsyncMock(),
+                    settings,
+                )
+                assert resp.status_code == 400
+                assert b"unauthorized_client" in resp.body
+
+        asyncio.run(_run())
+
+    def test_success_returns_access_token_and_issued_type(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_token_exchange
+            from shomer.services.token_exchange_service import ExchangeResult
+
+            with patch(
+                "shomer.services.token_exchange_service.TokenExchangeService"
+            ) as mock_cls:
+                mock_exc_svc = AsyncMock()
+                mock_exc_svc.validate_exchange.return_value = ExchangeResult(
+                    subject="00000000-0000-0000-0000-000000000001",
+                    scopes=["openid", "profile"],
+                    audience="target-svc",
+                )
+                mock_cls.return_value = mock_exc_svc
+
+                svc = MagicMock()
+                svc._build_access_jwt.return_value = "new-jwt"
+                client = _mock_client()
+                client.client_id = "c"
+                settings = MagicMock()
+                settings.jwt_access_token_exp = 3600
+                db = AsyncMock()
+
+                resp = await _handle_token_exchange(
+                    svc,
+                    client,
+                    "tok",
+                    "urn:ietf:params:oauth:token-type:access_token",
+                    "",
+                    "",
+                    "openid",
+                    "",
+                    db,
+                    settings,
+                )
+                assert resp.status_code == 200
+                import json
+
+                body = json.loads(bytes(resp.body))
+                assert body["access_token"] == "new-jwt"
+                assert body["token_type"] == "Bearer"
+                assert body["issued_token_type"] == (
+                    "urn:ietf:params:oauth:token-type:access_token"
+                )
+                assert body["scope"] == "openid profile"
+
+        asyncio.run(_run())
