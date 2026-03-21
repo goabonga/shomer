@@ -77,6 +77,17 @@ def _substitute_vars(context, text):
     exc_tok = getattr(context, "exchange_subject_token", None)
     if exc_tok and "${exchange_subject_token}" in text:
         text = text.replace("${exchange_subject_token}", exc_tok)
+    # MFA: generate a fresh TOTP code on demand
+    mfa_secret = getattr(context, "mfa_totp_secret", None)
+    if mfa_secret and "${mfa_totp_code}" in text:
+        from shomer.services.mfa_service import MFAService
+
+        text = text.replace(
+            "${mfa_totp_code}", MFAService.generate_totp_code(mfa_secret)
+        )
+    mfa_backup = getattr(context, "mfa_backup_codes", None)
+    if mfa_backup and "${mfa_backup_code}" in text:
+        text = text.replace("${mfa_backup_code}", mfa_backup[0])
     return text
 
 
@@ -95,7 +106,8 @@ def step_post_request(context, path):
 
 @when('I send a POST request to "{path}" with JSON')
 def step_post_request_with_json(context, path):
-    data = json.loads(context.text)
+    text = _substitute_vars(context, context.text)
+    data = json.loads(text)
     _send(context, "POST", path, data=data)
 
 
