@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}MFA Verification — Shomer{% endblock %}
+{% block content %}
+<h1>MFA Verification</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+
+{% if method == "email" %}
+<p>Enter the 6-digit code sent to your email.</p>
+<form method="post" action="/ui/mfa/challenge">
+    <input type="hidden" name="mfa_token" value="{{ mfa_token }}">
+    <input type="hidden" name="method" value="email">
+    <input type="text" name="code" placeholder="Email code" maxlength="6" pattern="[0-9]{6}" required>
+    <button type="submit">Verify</button>
+</form>
+{% elif method == "backup" %}
+<p>Enter one of your backup codes.</p>
+<form method="post" action="/ui/mfa/challenge">
+    <input type="hidden" name="mfa_token" value="{{ mfa_token }}">
+    <input type="hidden" name="method" value="backup">
+    <input type="text" name="code" placeholder="Backup code" required>
+    <button type="submit">Verify</button>
+</form>
+{% else %}
+<p>Enter the 6-digit code from your authenticator app.</p>
+<form method="post" action="/ui/mfa/challenge">
+    <input type="hidden" name="mfa_token" value="{{ mfa_token }}">
+    <input type="hidden" name="method" value="totp">
+    <input type="text" name="code" placeholder="TOTP code" maxlength="6" pattern="[0-9]{6}" required>
+    <button type="submit">Verify</button>
+</form>
+{% endif %}
+
+<hr>
+<p>
+{% if method != "email" %}
+    <a href="/ui/mfa/challenge?mfa_token={{ mfa_token }}&method=email">Use email code instead</a> |
+{% endif %}
+{% if method != "backup" %}
+    <a href="/ui/mfa/challenge?mfa_token={{ mfa_token }}&method=backup">Use backup code</a> |
+{% endif %}
+{% if method != "totp" %}
+    <a href="/ui/mfa/challenge?mfa_token={{ mfa_token }}&method=totp">Use authenticator app</a> |
+{% endif %}
+</p>
+{% endblock %}
