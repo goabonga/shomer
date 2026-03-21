@@ -24,6 +24,7 @@ def before_scenario(context, scenario):
     # Clear auth state from previous scenarios
     context.bearer_token = None
     context.session_cookie = None
+    context.par_request_uri = None
 
 
 def before_all(context):

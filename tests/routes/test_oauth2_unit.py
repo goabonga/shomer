@@ -318,6 +318,117 @@ class TestAuthorizeRoute:
         asyncio.run(_run())
 
 
+class TestAuthorizeWithRequestUri:
+    """Unit tests for GET /oauth2/authorize with request_uri (RFC 9126)."""
+
+    @patch("shomer.routes.oauth2._render_oauth2_error")
+    def test_request_uri_without_client_id_returns_error(
+        self, mock_render: MagicMock
+    ) -> None:
+        """request_uri without client_id renders error page."""
+
+        async def _run() -> None:
+            mock_render.return_value = MagicMock(status_code=400)
+            req = MagicMock()
+            db = AsyncMock()
+            resp = await authorize(
+                req,
+                db,
+                request_uri="urn:ietf:params:oauth:request_uri:abc",
+            )
+            mock_render.assert_called_once()
+            assert resp.status_code == 400
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.oauth2._render_oauth2_error")
+    @patch("shomer.services.par_service.PARService")
+    def test_request_uri_unknown_renders_error(
+        self, mock_par_cls: MagicMock, mock_render: MagicMock
+    ) -> None:
+        """Unknown request_uri renders error page."""
+
+        async def _run() -> None:
+            from shomer.services.par_service import PARError
+
+            mock_par = AsyncMock()
+            mock_par.resolve_request_uri.side_effect = PARError(
+                "invalid_request", "Unknown or already used request_uri"
+            )
+            mock_par_cls.return_value = mock_par
+            mock_render.return_value = MagicMock(status_code=400)
+            req = MagicMock()
+            db = AsyncMock()
+            resp = await authorize(
+                req,
+                db,
+                client_id="c",
+                request_uri="urn:ietf:params:oauth:request_uri:bad",
+            )
+            mock_render.assert_called_once()
+            assert resp.status_code == 400
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.oauth2.SessionService")
+    @patch("shomer.routes.oauth2.AuthorizeService")
+    @patch("shomer.services.par_service.PARService")
+    def test_request_uri_resolves_to_stored_params(
+        self,
+        mock_par_cls: MagicMock,
+        mock_auth_cls: MagicMock,
+        mock_sess_cls: MagicMock,
+    ) -> None:
+        """Valid request_uri resolves parameters and passes to validate_request."""
+
+        async def _run() -> None:
+            # PAR resolves to stored params
+            mock_par = AsyncMock()
+            mock_par.resolve_request_uri.return_value = {
+                "client_id": "c",
+                "redirect_uri": "https://app.example.com/cb",
+                "response_type": "code",
+                "scope": "openid",
+                "state": "xyz",
+                "nonce": None,
+                "code_challenge": None,
+                "code_challenge_method": None,
+            }
+            mock_par_cls.return_value = mock_par
+
+            # AuthorizeService validates
+            mock_auth_svc = AsyncMock()
+            mock_auth_svc.validate_request.return_value = MagicMock()
+            mock_auth_cls.return_value = mock_auth_svc
+
+            # No session → redirect to login
+            mock_sess = AsyncMock()
+            mock_sess.validate.return_value = None
+            mock_sess_cls.return_value = mock_sess
+
+            req = MagicMock()
+            req.cookies.get.return_value = None
+            req.url = "http://test/oauth2/authorize?client_id=c&request_uri=urn:x"
+            db = AsyncMock()
+
+            resp = await authorize(
+                req,
+                db,
+                client_id="c",
+                request_uri="urn:ietf:params:oauth:request_uri:abc",
+            )
+            # Should redirect to login (params resolved, but no session)
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+            # Validate was called with resolved params
+            mock_auth_svc.validate_request.assert_awaited_once()
+            call_kwargs = mock_auth_svc.validate_request.call_args[1]
+            assert call_kwargs["redirect_uri"] == "https://app.example.com/cb"
+            assert call_kwargs["response_type"] == "code"
+
+        asyncio.run(_run())
+
+
 class TestAuthorizeConsent:
     """Unit tests for POST /oauth2/authorize (consent)."""
 

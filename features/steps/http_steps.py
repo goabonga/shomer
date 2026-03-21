@@ -57,8 +57,26 @@ def step_set_json_payload(context):
     context.json_payload = json.loads(context.text)
 
 
+def _substitute_vars(context, text):
+    """Replace ${variable} placeholders with context values."""
+    auth_code = getattr(context, "oauth2_auth_code", None)
+    if auth_code and "${auth_code}" in text:
+        text = text.replace("${auth_code}", auth_code)
+    bearer = getattr(context, "bearer_token", None)
+    if bearer and "${bearer_token}" in text:
+        text = text.replace("${bearer_token}", bearer)
+    dc = getattr(context, "device_code", None)
+    if dc and "${device_code}" in text:
+        text = text.replace("${device_code}", dc)
+    par_uri = getattr(context, "par_request_uri", None)
+    if par_uri and "${request_uri}" in text:
+        text = text.replace("${request_uri}", urllib.parse.quote(par_uri, safe=""))
+    return text
+
+
 @when('I send a GET request to "{path}"')
 def step_get_request(context, path):
+    path = _substitute_vars(context, path)
     _send(context, "GET", path)
 
 
@@ -115,17 +133,7 @@ def _send_form(context, path, form_data):
 
 @when('I send a form POST to "{path}" with')
 def step_post_form(context, path):
-    text = context.text
-    # Substitute context variables
-    auth_code = getattr(context, "oauth2_auth_code", None)
-    if auth_code and "${auth_code}" in text:
-        text = text.replace("${auth_code}", auth_code)
-    bearer = getattr(context, "bearer_token", None)
-    if bearer and "${bearer_token}" in text:
-        text = text.replace("${bearer_token}", bearer)
-    dc = getattr(context, "device_code", None)
-    if dc and "${device_code}" in text:
-        text = text.replace("${device_code}", dc)
+    text = _substitute_vars(context, context.text)
     form_data = json.loads(text)
     _send_form(context, path, form_data)
 

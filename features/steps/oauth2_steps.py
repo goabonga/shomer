@@ -218,3 +218,36 @@ def step_create_approved_device_code(context):
         f"UPDATE device_codes SET status = 'APPROVED', user_id = '{user_id}' "
         f"WHERE device_code = '{device_code}';"
     )
+
+
+@given("a pushed authorization request for the OAuth2 client")
+def step_create_par_request(context):
+    """Create a PAR request via POST /oauth2/par.
+
+    Requires ``a verified user and an OAuth2 client with all grants``
+    to have run first. Stores the request_uri on ``context.par_request_uri``.
+    """
+    import json
+    import urllib.parse
+    import urllib.request
+
+    form_data = urllib.parse.urlencode(
+        {
+            "response_type": "code",
+            "redirect_uri": "https://app.example.com/callback",
+            "scope": "openid profile",
+            "state": "par-bdd-state",
+            "client_id": context.oauth2_client_id,
+            "client_secret": context.oauth2_client_secret,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        context.base_url + "/oauth2/par",
+        data=form_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    resp = urllib.request.urlopen(req, timeout=10)
+    assert resp.status == 201, f"PAR request failed: {resp.status}"
+    body = json.loads(resp.read().decode())
+    context.par_request_uri = body["request_uri"]
