@@ -77,14 +77,12 @@ def _substitute_vars(context, text):
     exc_tok = getattr(context, "exchange_subject_token", None)
     if exc_tok and "${exchange_subject_token}" in text:
         text = text.replace("${exchange_subject_token}", exc_tok)
-    # MFA: generate a fresh TOTP code on demand
+    # MFA: generate a fresh TOTP code on demand (stdlib only)
     mfa_secret = getattr(context, "mfa_totp_secret", None)
     if mfa_secret and "${mfa_totp_code}" in text:
-        from shomer.services.mfa_service import MFAService
+        from features.steps.mfa_steps import _generate_totp_code
 
-        text = text.replace(
-            "${mfa_totp_code}", MFAService.generate_totp_code(mfa_secret)
-        )
+        text = text.replace("${mfa_totp_code}", _generate_totp_code(mfa_secret))
     mfa_backup = getattr(context, "mfa_backup_codes", None)
     if mfa_backup and "${mfa_backup_code}" in text:
         text = text.replace("${mfa_backup_code}", mfa_backup[0])
