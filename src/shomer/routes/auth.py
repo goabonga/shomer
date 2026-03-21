@@ -206,6 +206,34 @@ async def login(body: LoginRequest, request: Request, db: DbSession) -> JSONResp
             detail="Email not verified",
         )
 
+    # Check if user has MFA enabled
+    from sqlalchemy import select
+
+    from shomer.models.user_mfa import UserMFA
+
+    mfa_stmt = select(UserMFA).where(
+        UserMFA.user_id == user.id,
+    )
+    mfa_result = await db.execute(mfa_stmt)
+    user_mfa = mfa_result.scalar_one_or_none()
+
+    if user_mfa is not None and user_mfa.is_enabled:
+        # MFA required: delete the session we just created (don't finalize)
+        session_svc = SessionService(db)
+        await session_svc.delete(session.id)
+
+        # Issue a short-lived mfa_token
+        mfa_token = _build_mfa_token(str(user.id), get_settings())
+
+        return JSONResponse(
+            content={
+                "mfa_required": True,
+                "mfa_token": mfa_token,
+                "methods": user_mfa.methods,
+                "message": "MFA verification required.",
+            },
+        )
+
     settings = get_settings()
     policy = get_cookie_policy(settings)
     response = JSONResponse(
@@ -233,6 +261,67 @@ async def login(body: LoginRequest, request: Request, db: DbSession) -> JSONResp
         max_age=86400,
     )
     return response
+
+
+#: MFA token expiration in seconds (5 minutes).
+MFA_TOKEN_EXP = 300
+
+
+def _build_mfa_token(user_id: str, settings: object) -> str:
+    """Build a short-lived JWT for MFA challenge.
+
+    Parameters
+    ----------
+    user_id : str
+        The user's UUID as string.
+    settings : Settings
+        Application settings.
+
+    Returns
+    -------
+    str
+        Encoded JWT with 5-minute expiration.
+    """
+    import time
+
+    import jwt as pyjwt
+
+    now = int(time.time())
+    payload = {
+        "sub": user_id,
+        "purpose": "mfa_challenge",
+        "iat": now,
+        "exp": now + MFA_TOKEN_EXP,
+    }
+    key = getattr(settings, "jwk_encryption_key", None) or "dev-secret"
+    return pyjwt.encode(payload, key, algorithm="HS256")
+
+
+def verify_mfa_token(token: str, settings: object) -> str | None:
+    """Verify an MFA challenge token.
+
+    Parameters
+    ----------
+    token : str
+        The MFA JWT token.
+    settings : Settings
+        Application settings.
+
+    Returns
+    -------
+    str or None
+        The user_id if valid, None if invalid/expired.
+    """
+    import jwt as pyjwt
+
+    key = getattr(settings, "jwk_encryption_key", None) or "dev-secret"
+    try:
+        payload = pyjwt.decode(token, key, algorithms=["HS256"])
+        if payload.get("purpose") != "mfa_challenge":
+            return None
+        return payload.get("sub")
+    except pyjwt.exceptions.PyJWTError:
+        return None
 
 
 @router.post("/logout", response_model=MessageResponse)

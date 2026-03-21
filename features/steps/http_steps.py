@@ -40,6 +40,7 @@ def _send(context, method, path, data=None):
         context.response = None
         context.response_status = 0
         context.response_body = str(e)
+    _capture_mfa_token(context)
 
 
 def _capture_session_cookie(context, response):
@@ -50,6 +51,18 @@ def _capture_session_cookie(context, response):
             value = cookie.split("session_id=")[1].split(";")[0]
             if value and value != '""':
                 context.session_cookie = value
+
+
+def _capture_mfa_token(context):
+    """Extract mfa_token from response body if present."""
+    body = getattr(context, "response_body", "")
+    if body and '"mfa_token"' in body:
+        try:
+            data = json.loads(body)
+            if "mfa_token" in data:
+                context.mfa_login_token = data["mfa_token"]
+        except (json.JSONDecodeError, ValueError):
+            pass
 
 
 @given("I have a JSON payload")
@@ -86,6 +99,12 @@ def _substitute_vars(context, text):
     mfa_backup = getattr(context, "mfa_backup_codes", None)
     if mfa_backup and "${mfa_backup_code}" in text:
         text = text.replace("${mfa_backup_code}", mfa_backup[0])
+    mfa_email = getattr(context, "mfa_user_email", None)
+    if mfa_email and "${mfa_user_email}" in text:
+        text = text.replace("${mfa_user_email}", mfa_email)
+    mfa_login_tok = getattr(context, "mfa_login_token", None)
+    if mfa_login_tok and "${mfa_login_token}" in text:
+        text = text.replace("${mfa_login_token}", mfa_login_tok)
     return text
 
 

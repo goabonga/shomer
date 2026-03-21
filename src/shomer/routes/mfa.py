@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -335,6 +335,128 @@ class MFAVerifyRequest(BaseModel):
 
     code: str
     method: str = "totp"
+
+
+class MFAChallengeRequest(BaseModel):
+    """Request body for the two-step MFA login challenge.
+
+    Attributes
+    ----------
+    mfa_token : str
+        Short-lived JWT from the login response.
+    code : str
+        TOTP code or backup code.
+    method : str
+        Verification method: ``totp`` or ``backup``.
+    """
+
+    mfa_token: str
+    code: str
+    method: str = "totp"
+
+
+@router.post("/verify-challenge")
+async def mfa_verify_challenge(
+    body: MFAChallengeRequest, request: Request, db: DbSession, config: Config
+) -> JSONResponse:
+    """Complete the two-step MFA login challenge.
+
+    Verifies the mfa_token (from login) and the MFA code, then creates
+    a session and returns session cookies.
+
+    Parameters
+    ----------
+    body : MFAChallengeRequest
+        MFA token, code, and method.
+    request : Request
+        FastAPI request (for client metadata and cookies).
+    db : DbSession
+        Database session.
+    config : Config
+        Application settings.
+
+    Returns
+    -------
+    JSONResponse
+        Login confirmation with session cookie.
+    """
+    from shomer.routes.auth import verify_mfa_token
+
+    user_id_str = verify_mfa_token(body.mfa_token, config)
+    if user_id_str is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired MFA token.",
+        )
+
+    import uuid
+
+    user_id = uuid.UUID(user_id_str)
+
+    # Look up user MFA
+    mfa = await _get_user_mfa(db, user_id)
+    if mfa is None or not mfa.is_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled for this user.",
+        )
+
+    svc = MFAService(db, config)
+
+    # Verify the code
+    if body.method == "backup":
+        valid = await svc.verify_backup_code(mfa.id, body.code)
+        if not valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid backup code.",
+            )
+    else:
+        secret = svc.decrypt_totp_secret(mfa.totp_secret_encrypted or "")
+        if not MFAService.verify_totp_code(secret, body.code):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid TOTP code.",
+            )
+
+    # MFA verified — create session
+    from shomer.middleware.cookies import get_cookie_policy
+    from shomer.services.session_service import SessionService
+
+    session_svc = SessionService(db)
+    session, raw_token = await session_svc.create(
+        user_id=user_id,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.flush()
+
+    policy = get_cookie_policy(config)
+    response = JSONResponse(
+        content={
+            "message": "MFA verification successful. Login complete.",
+            "user_id": user_id_str,
+        },
+    )
+    response.set_cookie(
+        key="session_id",
+        value=raw_token,
+        httponly=policy.httponly,
+        secure=policy.secure,
+        samesite=policy.samesite,
+        domain=policy.domain or None,
+        max_age=86400,
+    )
+    response.set_cookie(
+        key="csrf_token",
+        value=session.csrf_token,
+        httponly=False,
+        secure=policy.secure,
+        samesite=policy.samesite,
+        domain=policy.domain or None,
+        max_age=86400,
+    )
+    return response
 
 
 class EmailCodeRequest(BaseModel):

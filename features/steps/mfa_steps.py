@@ -96,3 +96,4 @@ def step_setup_user_with_mfa(context):
     assert status_code == 200, f"MFA enable failed: {status_code} {enable_body}"
     assert enable_body["mfa_enabled"] is True
     context.mfa_backup_codes = enable_body.get("backup_codes", [])
+    context.mfa_user_email = email
