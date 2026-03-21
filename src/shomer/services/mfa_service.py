@@ -163,6 +163,20 @@ class MFAService:
                 return True
         return False
 
+    def _get_encryption(self) -> AESEncryption:
+        """Get an AES encryption instance, with dev fallback.
+
+        Returns
+        -------
+        AESEncryption
+            Encryption instance.
+        """
+        key = self.settings.jwk_encryption_key
+        if key:
+            return AESEncryption.from_base64(key)
+        # Dev fallback: deterministic 32-byte key
+        return AESEncryption(b"dev-mfa-encryption-key-32bytes!!")
+
     def encrypt_totp_secret(self, secret: str) -> str:
         """Encrypt a TOTP secret with AES-256-GCM.
 
@@ -176,7 +190,7 @@ class MFAService:
         str
             Base64-encoded encrypted secret.
         """
-        enc = AESEncryption.from_base64(self.settings.jwk_encryption_key)
+        enc = self._get_encryption()
         encrypted = enc.encrypt(secret.encode("utf-8"))
         return base64.b64encode(encrypted).decode("ascii")
 
@@ -193,7 +207,7 @@ class MFAService:
         str
             Base32-encoded TOTP secret (plaintext).
         """
-        enc = AESEncryption.from_base64(self.settings.jwk_encryption_key)
+        enc = self._get_encryption()
         data = base64.b64decode(encrypted)
         return enc.decrypt(data).decode("utf-8")
 
