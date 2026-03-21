@@ -82,6 +82,9 @@ class OAuth2Client(Base, UUIDMixin, TimestampMixin):
         Contact email addresses (JSON array).
     token_endpoint_auth_method : TokenEndpointAuthMethod
         How this client authenticates at the token endpoint.
+    jwks : dict or None
+        Client's JSON Web Key Set for JAR request object verification
+        (RFC 9101). Contains a ``keys`` array of JWK objects.
     is_active : bool
         Whether the client is active.
     created_at : datetime
@@ -159,6 +162,12 @@ class OAuth2Client(Base, UUIDMixin, TimestampMixin):
         ),
         default=TokenEndpointAuthMethod.CLIENT_SECRET_BASIC,
         nullable=False,
+    )
+
+    jwks: Mapped[dict | None] = mapped_column(  # type: ignore[type-arg]
+        JSON,
+        nullable=True,
+        default=None,
     )
 
     is_active: Mapped[bool] = mapped_column(
