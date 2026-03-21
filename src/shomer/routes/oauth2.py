@@ -829,6 +829,108 @@ async def introspect(
     return JSONResponse(content=result)
 
 
+@router.post("/par")
+async def pushed_authorization_request(
+    request: Request,
+    db: DbSession,
+    response_type: str = Form(""),
+    redirect_uri: str = Form(""),
+    scope: str = Form(""),
+    state: str = Form(""),
+    nonce: str = Form(""),
+    code_challenge: str = Form(""),
+    code_challenge_method: str = Form(""),
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+) -> JSONResponse:
+    """Pushed Authorization Request endpoint per RFC 9126 §2.
+
+    Accepts authorization parameters via authenticated POST, validates
+    them, stores the request, and returns a ``request_uri`` that the
+    client can use at ``/authorize``.
+
+    Parameters
+    ----------
+    request : Request
+        Incoming request (for Authorization header).
+    db : DbSession
+        Database session.
+    response_type : str
+        Requested response type.
+    redirect_uri : str
+        Requested redirect URI.
+    scope : str
+        Requested scopes.
+    state : str
+        CSRF state parameter.
+    nonce : str
+        OIDC nonce.
+    code_challenge : str
+        PKCE code challenge.
+    code_challenge_method : str
+        PKCE challenge method.
+    client_id : str
+        Client identifier.
+    client_secret : str
+        Client secret.
+
+    Returns
+    -------
+    JSONResponse
+        RFC 9126 §2.2 response with ``request_uri`` and ``expires_in``.
+    """
+    # Authenticate client
+    client_svc = OAuth2ClientService(db)
+    auth_header = request.headers.get("authorization")
+    try:
+        authenticated_client = await client_svc.authenticate_client(
+            authorization_header=auth_header,
+            body_client_id=client_id or None,
+            body_client_secret=client_secret or None,
+        )
+    except InvalidClientError as exc:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "invalid_client",
+                "error_description": str(exc),
+            },
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    from shomer.services.par_service import PARError, PARService
+
+    svc = PARService(db)
+    try:
+        par_response = await svc.push_authorization_request(
+            client_id=authenticated_client.client_id,
+            redirect_uri=redirect_uri or None,
+            response_type=response_type or None,
+            scope=scope or None,
+            state=state or None,
+            nonce=nonce or None,
+            code_challenge=code_challenge or None,
+            code_challenge_method=code_challenge_method or None,
+        )
+    except PARError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": exc.error,
+                "error_description": exc.description,
+            },
+        )
+
+    return JSONResponse(
+        status_code=201,
+        content={
+            "request_uri": par_response.request_uri,
+            "expires_in": par_response.expires_in,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.post("/device")
 async def device_authorization(
     request: Request,
