@@ -12,6 +12,7 @@ from shomer.models.authorization_code import AuthorizationCode as AuthorizationC
 from shomer.models.device_code import DeviceCode as DeviceCode
 from shomer.models.jwk import JWK as JWK
 from shomer.models.oauth2_client import OAuth2Client as OAuth2Client
+from shomer.models.par_request import PARRequest as PARRequest
 from shomer.models.password_reset_token import PasswordResetToken as PasswordResetToken
 from shomer.models.refresh_token import RefreshToken as RefreshToken
 from shomer.models.session import Session as Session
