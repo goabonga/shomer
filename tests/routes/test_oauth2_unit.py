@@ -590,3 +590,68 @@ class TestIntrospectEndpoint:
                 assert resp.status_code == 401
 
         asyncio.run(_run())
+
+
+class TestDeviceAuthEndpoint:
+    """Unit tests for POST /oauth2/device."""
+
+    def test_device_auth_success(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import device_authorization
+            from shomer.services.device_auth_service import DeviceAuthResponse
+
+            with (
+                patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls,
+                patch(
+                    "shomer.services.device_auth_service.DeviceAuthService"
+                ) as mock_da_cls,
+            ):
+                mock_client = MagicMock()
+                mock_client.client_id = "tv-app"
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.return_value = mock_client
+                mock_cls.return_value = mock_svc
+
+                mock_da = AsyncMock()
+                mock_da.create_device_code.return_value = DeviceAuthResponse(
+                    device_code="dev-123",
+                    user_code="ABCD-EFGH",
+                    verification_uri="https://auth.local/ui/device",
+                    verification_uri_complete="https://auth.local/ui/device?user_code=ABCD-EFGH",
+                )
+                mock_da_cls.return_value = mock_da
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await device_authorization(req, db, "openid", "tv-app", "secret")
+                assert resp.status_code == 200
+                import json
+
+                body = json.loads(bytes(resp.body))
+                assert body["device_code"] == "dev-123"
+                assert body["user_code"] == "ABCD-EFGH"
+                assert "verification_uri" in body
+                assert "expires_in" in body
+                assert "interval" in body
+
+        asyncio.run(_run())
+
+    def test_device_auth_invalid_client(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import device_authorization
+
+            with patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.side_effect = InvalidClientError("bad")
+                mock_cls.return_value = mock_svc
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await device_authorization(req, db, "", "", "")
+                assert resp.status_code == 401
+
+        asyncio.run(_run())
