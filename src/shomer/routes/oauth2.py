@@ -820,3 +820,79 @@ async def introspect(
     )
 
     return JSONResponse(content=result)
+
+
+@router.post("/device")
+async def device_authorization(
+    request: Request,
+    db: DbSession,
+    scope: str = Form(""),
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+) -> JSONResponse:
+    """Device Authorization endpoint per RFC 8628 §3.1.
+
+    Initiates a device authorization flow by generating a device_code
+    and user_code for the client to display to the user.
+
+    Parameters
+    ----------
+    request : Request
+        Incoming request (for Authorization header).
+    db : DbSession
+        Database session.
+    scope : str
+        Requested scopes.
+    client_id : str
+        Client identifier.
+    client_secret : str
+        Client secret.
+
+    Returns
+    -------
+    JSONResponse
+        RFC 8628 §3.2 device authorization response.
+    """
+    # Authenticate client
+    client_svc = OAuth2ClientService(db)
+    auth_header = request.headers.get("authorization")
+    try:
+        authenticated_client = await client_svc.authenticate_client(
+            authorization_header=auth_header,
+            body_client_id=client_id or None,
+            body_client_secret=client_secret or None,
+        )
+    except InvalidClientError as exc:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "invalid_client",
+                "error_description": str(exc),
+            },
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    from shomer.core.settings import get_settings
+    from shomer.services.device_auth_service import DeviceAuthService
+
+    settings = get_settings()
+    verification_uri = f"{settings.jwt_issuer}/ui/device"
+
+    svc = DeviceAuthService(db)
+    resp = await svc.create_device_code(
+        client_id=authenticated_client.client_id,
+        scopes=scope,
+        verification_uri=verification_uri,
+    )
+
+    return JSONResponse(
+        content={
+            "device_code": resp.device_code,
+            "user_code": resp.user_code,
+            "verification_uri": resp.verification_uri,
+            "verification_uri_complete": resp.verification_uri_complete,
+            "expires_in": resp.expires_in,
+            "interval": resp.interval,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
