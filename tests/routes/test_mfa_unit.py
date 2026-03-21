@@ -12,12 +12,17 @@ import pytest
 from fastapi import HTTPException
 
 from shomer.routes.mfa import (
+    EmailCodeRequest,
+    MFAVerifyRequest,
     TOTPCodeRequest,
     mfa_disable,
+    mfa_email_send,
+    mfa_email_verify,
     mfa_enable,
     mfa_regenerate_backup_codes,
     mfa_setup,
     mfa_status,
+    mfa_verify,
 )
 
 
@@ -340,5 +345,277 @@ class TestMFABackupCodes:
                 body = json.loads(bytes(resp.body))
                 assert len(body["backup_codes"]) == 2
                 db.delete.assert_awaited_once_with(mock_old_code)
+
+        asyncio.run(_run())
+
+
+class TestMFAVerify:
+    """Unit tests for POST /mfa/verify."""
+
+    def test_verify_mfa_not_enabled_returns_400(self) -> None:
+        async def _run() -> None:
+            with patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m:
+                m.return_value = None
+                with pytest.raises(HTTPException) as exc_info:
+                    await mfa_verify(
+                        MFAVerifyRequest(code="123456"),
+                        _mock_user(),
+                        AsyncMock(),
+                        MagicMock(),
+                    )
+                assert exc_info.value.status_code == 400
+
+        asyncio.run(_run())
+
+    def test_verify_totp_success(self) -> None:
+        async def _run() -> None:
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+            mock_mfa.totp_secret_encrypted = "enc"
+
+            with (
+                patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m,
+                patch("shomer.routes.mfa.MFAService") as svc_cls,
+            ):
+                m.return_value = mock_mfa
+                mock_svc = MagicMock()
+                mock_svc.decrypt_totp_secret.return_value = "SECRET"
+                svc_cls.return_value = mock_svc
+                svc_cls.verify_totp_code.return_value = True
+
+                resp = await mfa_verify(
+                    MFAVerifyRequest(code="123456", method="totp"),
+                    _mock_user(),
+                    AsyncMock(),
+                    MagicMock(),
+                )
+                assert resp.status_code == 200
+                import json
+
+                body = json.loads(bytes(resp.body))
+                assert body["verified"] is True
+                assert body["method"] == "totp"
+
+        asyncio.run(_run())
+
+    def test_verify_totp_wrong_code_returns_400(self) -> None:
+        async def _run() -> None:
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+            mock_mfa.totp_secret_encrypted = "enc"
+
+            with (
+                patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m,
+                patch("shomer.routes.mfa.MFAService") as svc_cls,
+            ):
+                m.return_value = mock_mfa
+                mock_svc = MagicMock()
+                mock_svc.decrypt_totp_secret.return_value = "SECRET"
+                svc_cls.return_value = mock_svc
+                svc_cls.verify_totp_code.return_value = False
+
+                with pytest.raises(HTTPException) as exc_info:
+                    await mfa_verify(
+                        MFAVerifyRequest(code="000000"),
+                        _mock_user(),
+                        AsyncMock(),
+                        MagicMock(),
+                    )
+                assert exc_info.value.status_code == 400
+
+        asyncio.run(_run())
+
+    def test_verify_backup_success(self) -> None:
+        async def _run() -> None:
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+            mock_mfa.id = "mfa-id"
+
+            with (
+                patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m,
+                patch("shomer.routes.mfa.MFAService") as svc_cls,
+            ):
+                m.return_value = mock_mfa
+                mock_svc = MagicMock()
+                mock_svc.verify_backup_code = AsyncMock(return_value=True)
+                svc_cls.return_value = mock_svc
+
+                resp = await mfa_verify(
+                    MFAVerifyRequest(code="ABCD1234", method="backup"),
+                    _mock_user(),
+                    AsyncMock(),
+                    MagicMock(),
+                )
+                assert resp.status_code == 200
+                import json
+
+                body = json.loads(bytes(resp.body))
+                assert body["method"] == "backup"
+
+        asyncio.run(_run())
+
+    def test_verify_backup_invalid_returns_400(self) -> None:
+        async def _run() -> None:
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+            mock_mfa.id = "mfa-id"
+
+            with (
+                patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m,
+                patch("shomer.routes.mfa.MFAService") as svc_cls,
+            ):
+                m.return_value = mock_mfa
+                mock_svc = MagicMock()
+                mock_svc.verify_backup_code = AsyncMock(return_value=False)
+                svc_cls.return_value = mock_svc
+
+                with pytest.raises(HTTPException) as exc_info:
+                    await mfa_verify(
+                        MFAVerifyRequest(code="WRONG", method="backup"),
+                        _mock_user(),
+                        AsyncMock(),
+                        MagicMock(),
+                    )
+                assert exc_info.value.status_code == 400
+
+        asyncio.run(_run())
+
+
+class TestMFAEmailSend:
+    """Unit tests for POST /mfa/email/send."""
+
+    def test_email_send_mfa_not_enabled_returns_400(self) -> None:
+        async def _run() -> None:
+            with patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m:
+                m.return_value = None
+                with pytest.raises(HTTPException) as exc_info:
+                    await mfa_email_send(_mock_user(), AsyncMock(), MagicMock())
+                assert exc_info.value.status_code == 400
+
+        asyncio.run(_run())
+
+    def test_email_send_rate_limited_returns_429(self) -> None:
+        async def _run() -> None:
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+
+            mock_count_result = MagicMock()
+            mock_count_result.scalar.return_value = 5
+
+            db = AsyncMock()
+            db.execute.return_value = mock_count_result
+
+            with patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m:
+                m.return_value = mock_mfa
+                with pytest.raises(HTTPException) as exc_info:
+                    await mfa_email_send(_mock_user(), db, MagicMock())
+                assert exc_info.value.status_code == 429
+
+        asyncio.run(_run())
+
+    def test_email_send_success(self) -> None:
+        async def _run() -> None:
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+
+            mock_count_result = MagicMock()
+            mock_count_result.scalar.return_value = 0
+
+            mock_email = MagicMock()
+            mock_email.email = "user@example.com"
+            mock_email_result = MagicMock()
+            mock_email_result.scalar_one_or_none.return_value = mock_email
+
+            db = AsyncMock()
+            db.execute.side_effect = [mock_count_result, mock_email_result]
+
+            with (
+                patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m,
+                patch("shomer.routes.mfa.MFAService") as svc_cls,
+            ):
+                m.return_value = mock_mfa
+                mock_svc = MagicMock()
+                mock_svc.send_email_code = AsyncMock(return_value="123456")
+                svc_cls.return_value = mock_svc
+
+                resp = await mfa_email_send(_mock_user(), db, MagicMock())
+                assert resp.status_code == 200
+                import json
+
+                body = json.loads(bytes(resp.body))
+                assert body["sent"] is True
+
+        asyncio.run(_run())
+
+
+class TestMFAEmailVerify:
+    """Unit tests for POST /mfa/email/verify."""
+
+    def test_email_verify_mfa_not_enabled_returns_400(self) -> None:
+        async def _run() -> None:
+            with patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m:
+                m.return_value = None
+                with pytest.raises(HTTPException) as exc_info:
+                    await mfa_email_verify(
+                        EmailCodeRequest(code="123456"),
+                        _mock_user(),
+                        AsyncMock(),
+                        MagicMock(),
+                    )
+                assert exc_info.value.status_code == 400
+
+        asyncio.run(_run())
+
+    def test_email_verify_success(self) -> None:
+        async def _run() -> None:
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+
+            with (
+                patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m,
+                patch("shomer.routes.mfa.MFAService") as svc_cls,
+            ):
+                m.return_value = mock_mfa
+                mock_svc = MagicMock()
+                mock_svc.verify_email_code = AsyncMock(return_value=True)
+                svc_cls.return_value = mock_svc
+
+                resp = await mfa_email_verify(
+                    EmailCodeRequest(code="123456"),
+                    _mock_user(),
+                    AsyncMock(),
+                    MagicMock(),
+                )
+                assert resp.status_code == 200
+                import json
+
+                body = json.loads(bytes(resp.body))
+                assert body["verified"] is True
+                assert body["method"] == "email"
+
+        asyncio.run(_run())
+
+    def test_email_verify_invalid_returns_400(self) -> None:
+        async def _run() -> None:
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+
+            with (
+                patch("shomer.routes.mfa._get_user_mfa", new_callable=AsyncMock) as m,
+                patch("shomer.routes.mfa.MFAService") as svc_cls,
+            ):
+                m.return_value = mock_mfa
+                mock_svc = MagicMock()
+                mock_svc.verify_email_code = AsyncMock(return_value=False)
+                svc_cls.return_value = mock_svc
+
+                with pytest.raises(HTTPException) as exc_info:
+                    await mfa_email_verify(
+                        EmailCodeRequest(code="000000"),
+                        _mock_user(),
+                        AsyncMock(),
+                        MagicMock(),
+                    )
+                assert exc_info.value.status_code == 400
 
         asyncio.run(_run())
