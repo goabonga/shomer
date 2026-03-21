@@ -253,6 +253,78 @@ def step_create_par_request(context):
     context.par_request_uri = body["request_uri"]
 
 
+@given("a verified user and an OAuth2 client with token-exchange grant")
+def step_setup_oauth2_token_exchange(context):
+    """Create a verified user and a client authorized for token exchange.
+
+    Stores client_id, client_secret, and a Bearer token on context.
+    """
+    import json as _json
+    import urllib.parse
+    import urllib.request
+
+    email = "exchange-bdd@example.com"
+    password = "securepassword123"
+
+    _psql(
+        "DELETE FROM users WHERE id IN "
+        "(SELECT user_id FROM user_emails WHERE email = 'exchange-bdd@example.com');"
+    )
+
+    register_and_verify_user(context, email, password)
+
+    secret = "bdd-exchange-secret"
+    secret_hash = _hash_secret(secret)
+    escaped_hash = secret_hash.replace("'", "''")
+
+    _psql(
+        "INSERT INTO oauth2_clients "
+        "(id, client_id, client_secret_hash, client_name, client_type, "
+        "redirect_uris, grant_types, response_types, scopes, contacts, "
+        "token_endpoint_auth_method, is_active, created_at, updated_at) "
+        "VALUES ("
+        "gen_random_uuid(), 'bdd-exchange-client', "
+        f"'{escaped_hash}', "
+        "'BDD Exchange App', 'CONFIDENTIAL', "
+        "'[\"https://app.example.com/callback\"]'::jsonb, "
+        '\'["password", "urn:ietf:params:oauth:grant-type:token-exchange"]\'::jsonb, '
+        "'[\"code\"]'::jsonb, "
+        '\'["openid", "profile", "email"]\'::jsonb, '
+        "'[]'::jsonb, "
+        "'CLIENT_SECRET_POST', true, NOW(), NOW()"
+        ") ON CONFLICT (client_id) DO UPDATE SET "
+        f"client_secret_hash = '{escaped_hash}', "
+        "grant_types = "
+        '\'["password", "urn:ietf:params:oauth:grant-type:token-exchange"]\'::jsonb;'
+    )
+
+    context.oauth2_client_id = "bdd-exchange-client"
+    context.oauth2_client_secret = secret
+    context.oauth2_user_email = email
+    context.oauth2_user_password = password
+
+    # Obtain a Bearer token via password grant to use as subject_token
+    form_data = urllib.parse.urlencode(
+        {
+            "grant_type": "password",
+            "username": email,
+            "password": password,
+            "client_id": "bdd-exchange-client",
+            "client_secret": secret,
+            "scope": "openid profile",
+        }
+    ).encode()
+    req = urllib.request.Request(
+        context.base_url + "/oauth2/token",
+        data=form_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    resp = urllib.request.urlopen(req, timeout=10)
+    body = _json.loads(resp.read().decode())
+    context.exchange_subject_token = body["access_token"]
+
+
 @given("a verified user and an OAuth2 client with JWKS")
 def step_setup_oauth2_with_jwks(context):
     """Create a verified user, a confidential OAuth2 client, and register a JWKS.

@@ -220,6 +220,9 @@ class TokenExchangeService:
     async def _validate_subject_token(self, request: ExchangeRequest) -> dict[str, Any]:
         """Validate the subject token via JWT verification.
 
+        Tries HS256 verification first (server-issued tokens), then
+        falls back to RS256 kid-based validation via JWTValidationService.
+
         Parameters
         ----------
         request : ExchangeRequest
@@ -235,6 +238,23 @@ class TokenExchangeService:
         TokenExchangeError
             If the subject token is invalid.
         """
+        import jwt as pyjwt
+
+        # Try HS256 first (server-issued tokens)
+        secret = self.settings.jwk_encryption_key or "dev-secret"
+        try:
+            claims: dict[str, Any] = pyjwt.decode(
+                request.subject_token,
+                secret,
+                algorithms=["HS256"],
+                issuer=self.settings.jwt_issuer,
+                options={"verify_aud": False},
+            )
+            return claims
+        except pyjwt.exceptions.PyJWTError:
+            pass
+
+        # Fall back to RS256 kid-based validation
         result = await self.jwt_validation.validate(request.subject_token)
 
         if not result.valid:
@@ -317,15 +337,32 @@ class TokenExchangeService:
                 "actor_token_type is required when actor_token is provided",
             )
 
-        result = await self.jwt_validation.validate(request.actor_token)
+        # Try HS256 first (server-issued tokens)
+        import jwt as pyjwt
 
-        if not result.valid:
-            raise TokenExchangeError(
-                "invalid_grant",
-                f"Actor token is invalid: {result.error_message}",
+        secret = self.settings.jwk_encryption_key or "dev-secret"
+        actor_claims: dict[str, Any] | None = None
+        try:
+            actor_claims = pyjwt.decode(
+                request.actor_token,
+                secret,
+                algorithms=["HS256"],
+                issuer=self.settings.jwt_issuer,
+                options={"verify_aud": False},
             )
+        except pyjwt.exceptions.PyJWTError:
+            pass
 
-        actor_sub = (result.claims or {}).get("sub")
+        if actor_claims is None:
+            result = await self.jwt_validation.validate(request.actor_token)
+            if not result.valid:
+                raise TokenExchangeError(
+                    "invalid_grant",
+                    f"Actor token is invalid: {result.error_message}",
+                )
+            actor_claims = result.claims or {}
+
+        actor_sub = actor_claims.get("sub")
         if not actor_sub:
             raise TokenExchangeError("invalid_grant", "Actor token missing sub claim")
 

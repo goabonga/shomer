@@ -74,6 +74,9 @@ def _substitute_vars(context, text):
     jar_jwt = getattr(context, "jar_request_jwt", None)
     if jar_jwt and "${jar_request_jwt}" in text:
         text = text.replace("${jar_request_jwt}", urllib.parse.quote(jar_jwt, safe=""))
+    exc_tok = getattr(context, "exchange_subject_token", None)
+    if exc_tok and "${exchange_subject_token}" in text:
+        text = text.replace("${exchange_subject_token}", exc_tok)
     return text
 
 

@@ -43,3 +43,24 @@ Feature: OAuth2 Token Exchange grant (RFC 8693)
       """
     Then the response status code should be 400
     And the response body should contain "unauthorized_client"
+
+  Scenario: Token exchange with valid subject_token returns access_token
+    Given a verified user and an OAuth2 client with token-exchange grant
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "subject_token": "${exchange_subject_token}", "subject_token_type": "urn:ietf:params:oauth:token-type:access_token", "scope": "openid profile", "client_id": "bdd-exchange-client", "client_secret": "bdd-exchange-secret"}
+      """
+    Then the response status code should be 200
+    And the response should have JSON key "access_token"
+    And the response should have JSON key "issued_token_type"
+    And the response body should contain "urn:ietf:params:oauth:token-type:access_token"
+    And the response body should contain "Bearer"
+
+  Scenario: Token exchange response includes scope
+    Given a verified user and an OAuth2 client with token-exchange grant
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "subject_token": "${exchange_subject_token}", "subject_token_type": "urn:ietf:params:oauth:token-type:access_token", "scope": "openid", "client_id": "bdd-exchange-client", "client_secret": "bdd-exchange-secret"}
+      """
+    Then the response status code should be 200
+    And the response body should contain "openid"
