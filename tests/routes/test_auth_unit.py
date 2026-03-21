@@ -13,6 +13,7 @@ import pytest
 from fastapi import HTTPException
 
 from shomer.routes.auth import (
+    _build_mfa_token,
     login,
     logout,
     password_change,
@@ -21,6 +22,7 @@ from shomer.routes.auth import (
     register,
     resend,
     verify,
+    verify_mfa_token,
 )
 from shomer.services.auth_service import (
     EmailNotFoundError,
@@ -170,7 +172,12 @@ class TestLoginRoute:
             mock_svc.login.return_value = (mock_user, mock_session, "raw-token")
             mock_cls.return_value = mock_svc
             body = MagicMock(email="a@b.com", password="pw")
-            resp = await login(body, _mock_request(), _mock_db())
+            # Mock MFA query to return no MFA
+            mock_mfa_result = MagicMock()
+            mock_mfa_result.scalar_one_or_none.return_value = None
+            db = AsyncMock()
+            db.execute.return_value = mock_mfa_result
+            resp = await login(body, _mock_request(), db)
             assert resp.status_code == 200
 
         asyncio.run(_run())
@@ -380,3 +387,136 @@ class TestPasswordChangeRoute:
             assert exc_info.value.status_code == 401
 
         asyncio.run(_run())
+
+
+class TestMFALoginChallenge:
+    """Unit tests for MFA two-step login challenge."""
+
+    def test_login_with_mfa_returns_mfa_required(self) -> None:
+        """Login with MFA-enabled user returns mfa_token."""
+
+        async def _run() -> None:
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+            mock_session = MagicMock()
+            mock_session.id = uuid.uuid4()
+            mock_session.csrf_token = "csrf"
+
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+            mock_mfa.methods = ["totp", "backup"]
+
+            mock_mfa_result = MagicMock()
+            mock_mfa_result.scalar_one_or_none.return_value = mock_mfa
+
+            with (
+                patch("shomer.routes.auth.AuthService") as mock_auth_cls,
+                patch("shomer.routes.auth.SessionService") as mock_sess_cls,
+            ):
+                mock_auth = AsyncMock()
+                mock_auth.login.return_value = (mock_user, mock_session, "tok")
+                mock_auth_cls.return_value = mock_auth
+
+                mock_sess_svc = AsyncMock()
+                mock_sess_cls.return_value = mock_sess_svc
+
+                body = MagicMock(email="u@b.com", password="pw")
+                req = MagicMock()
+                req.headers.get.return_value = "ua"
+                req.client.host = "127.0.0.1"
+
+                db = AsyncMock()
+                db.execute.return_value = mock_mfa_result
+
+                resp = await login(body, req, db)
+                import json
+
+                data = json.loads(bytes(resp.body))
+                assert data["mfa_required"] is True
+                assert "mfa_token" in data
+                assert "totp" in data["methods"]
+                mock_sess_svc.delete.assert_awaited_once_with(mock_session.id)
+
+        asyncio.run(_run())
+
+    def test_login_without_mfa_returns_session(self) -> None:
+        """Login without MFA returns normal session."""
+
+        async def _run() -> None:
+            mock_user = MagicMock()
+            mock_user.id = uuid.uuid4()
+            mock_session = MagicMock()
+            mock_session.csrf_token = "csrf"
+
+            mock_mfa_result = MagicMock()
+            mock_mfa_result.scalar_one_or_none.return_value = None
+
+            with patch("shomer.routes.auth.AuthService") as mock_auth_cls:
+                mock_auth = AsyncMock()
+                mock_auth.login.return_value = (mock_user, mock_session, "tok")
+                mock_auth_cls.return_value = mock_auth
+
+                body = MagicMock(email="u@b.com", password="pw")
+                req = MagicMock()
+                req.headers.get.return_value = "ua"
+                req.client.host = "127.0.0.1"
+
+                db = AsyncMock()
+                db.execute.return_value = mock_mfa_result
+
+                resp = await login(body, req, db)
+                import json
+
+                data = json.loads(bytes(resp.body))
+                assert data["message"] == "Login successful"
+                assert "mfa_required" not in data
+
+        asyncio.run(_run())
+
+
+class TestMFATokenHelpers:
+    """Unit tests for MFA token build/verify."""
+
+    def test_build_and_verify_roundtrip(self) -> None:
+        settings = MagicMock()
+        settings.jwk_encryption_key = "test-key"
+        token = _build_mfa_token("user-123", settings)
+        result = verify_mfa_token(token, settings)
+        assert result == "user-123"
+
+    def test_verify_expired_token(self) -> None:
+        import time
+
+        import jwt as pyjwt
+
+        payload = {
+            "sub": "user-123",
+            "purpose": "mfa_challenge",
+            "iat": int(time.time()) - 600,
+            "exp": int(time.time()) - 300,
+        }
+        token = pyjwt.encode(payload, "test-key", algorithm="HS256")
+        settings = MagicMock()
+        settings.jwk_encryption_key = "test-key"
+        assert verify_mfa_token(token, settings) is None
+
+    def test_verify_wrong_purpose(self) -> None:
+        import time
+
+        import jwt as pyjwt
+
+        payload = {
+            "sub": "user-123",
+            "purpose": "wrong",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 300,
+        }
+        token = pyjwt.encode(payload, "test-key", algorithm="HS256")
+        settings = MagicMock()
+        settings.jwk_encryption_key = "test-key"
+        assert verify_mfa_token(token, settings) is None
+
+    def test_verify_invalid_token(self) -> None:
+        settings = MagicMock()
+        settings.jwk_encryption_key = "test-key"
+        assert verify_mfa_token("garbage", settings) is None
