@@ -378,13 +378,14 @@ async def token(
     password: str = Form(""),
     client_id: str = Form(""),
     client_secret: str = Form(""),
+    device_code: str = Form(""),
     refresh_token: str = Form(""),
     code_verifier: str = Form(""),
 ) -> JSONResponse:
-    """OAuth2 token endpoint per RFC 6749 §4.1.3, §4.3, §4.4 and §6.
+    """OAuth2 token endpoint per RFC 6749 §4.1.3, §4.3, §4.4, §6 and RFC 8628.
 
-    Supports ``authorization_code``, ``client_credentials``, ``password``
-    and ``refresh_token`` grants.
+    Supports ``authorization_code``, ``client_credentials``, ``password``,
+    ``refresh_token`` and ``urn:ietf:params:oauth:grant-type:device_code`` grants.
 
     Parameters
     ----------
@@ -424,6 +425,7 @@ async def token(
         "client_credentials",
         "password",
         "refresh_token",
+        "urn:ietf:params:oauth:grant-type:device_code",
     }
     if grant_type not in supported_grants:
         return JSONResponse(
@@ -469,6 +471,11 @@ async def token(
     if grant_type == "refresh_token":
         return await _handle_refresh_token(
             token_svc, authenticated_client, refresh_token
+        )
+
+    if grant_type == "urn:ietf:params:oauth:grant-type:device_code":
+        return await _handle_device_code_grant(
+            token_svc, authenticated_client, device_code, db
         )
 
     # authorization_code grant
@@ -895,4 +902,164 @@ async def device_authorization(
             "interval": resp.interval,
         },
         headers={"Cache-Control": "no-store"},
+    )
+
+
+async def _handle_device_code_grant(
+    token_svc: TokenService,
+    client: Any,
+    device_code: str,
+    db: Any,
+) -> JSONResponse:
+    """Handle device_code grant per RFC 8628 §3.4-3.5.
+
+    Parameters
+    ----------
+    token_svc : TokenService
+        Token service instance.
+    client : OAuth2Client
+        The authenticated client.
+    device_code : str
+        The device code from polling.
+    db : AsyncSession
+        Database session.
+
+    Returns
+    -------
+    JSONResponse
+        Token response, or RFC 8628 error (authorization_pending,
+        slow_down, access_denied, expired_token).
+    """
+    if not device_code:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_request",
+                "error_description": "device_code is required",
+            },
+        )
+
+    from shomer.models.device_code import DeviceCodeStatus
+    from shomer.services.device_auth_service import DeviceAuthError, DeviceAuthService
+
+    svc = DeviceAuthService(db)
+    try:
+        dc = await svc.check_status(device_code=device_code)
+    except DeviceAuthError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": exc.error,
+                "error_description": exc.description,
+            },
+        )
+
+    # Check client matches
+    if dc.client_id != client.client_id:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_grant",
+                "error_description": "Client mismatch",
+            },
+        )
+
+    if dc.status == DeviceCodeStatus.PENDING:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "authorization_pending",
+                "error_description": "The user has not yet completed authorization",
+            },
+        )
+
+    if dc.status == DeviceCodeStatus.DENIED:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "access_denied",
+                "error_description": "The user denied the authorization request",
+            },
+        )
+
+    if dc.status != DeviceCodeStatus.APPROVED:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_grant",
+                "error_description": f"Unexpected device code status: {dc.status.value}",
+            },
+        )
+
+    # Approved — issue tokens
+    import hashlib
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    from shomer.core.settings import get_settings
+    from shomer.models.access_token import AccessToken
+    from shomer.models.refresh_token import RefreshToken
+    from shomer.services.token_service import TokenResponse
+
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    scopes = dc.scopes.split() if dc.scopes else []
+    jti = uuid.uuid4().hex
+
+    access_token_record = AccessToken(
+        jti=jti,
+        user_id=dc.user_id,
+        client_id=client.client_id,
+        scopes=dc.scopes,
+        expires_at=now + timedelta(seconds=settings.jwt_access_token_exp),
+    )
+    db.add(access_token_record)
+
+    raw_refresh = uuid.uuid4().hex
+    refresh_hash = hashlib.sha256(raw_refresh.encode()).hexdigest()
+    family_id = uuid.uuid4()
+    refresh_record = RefreshToken(
+        token_hash=refresh_hash,
+        family_id=family_id,
+        user_id=dc.user_id,
+        client_id=client.client_id,
+        scopes=dc.scopes,
+        expires_at=now + timedelta(days=30),
+    )
+    db.add(refresh_record)
+
+    # Mark device code as consumed (set to expired to prevent reuse)
+    dc.status = DeviceCodeStatus.EXPIRED
+    await db.flush()
+
+    access_jwt = token_svc._build_access_jwt(
+        sub=str(dc.user_id),
+        aud=client.client_id,
+        jti=jti,
+        scopes=scopes,
+    )
+
+    # Build ID token if openid scope
+    id_token = None
+    if "openid" in scopes:
+        from shomer.services.id_token_service import IDTokenService
+
+        id_svc = IDTokenService(settings)
+        id_token = id_svc.build_id_token(
+            sub=str(dc.user_id),
+            aud=client.client_id,
+            scopes=scopes,
+        )
+
+    response = TokenResponse(
+        access_token=access_jwt,
+        expires_in=settings.jwt_access_token_exp,
+        refresh_token=raw_refresh,
+        scope=" ".join(scopes),
+        id_token=id_token,
+    )
+
+    return JSONResponse(
+        content=response.to_dict(),
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
     )

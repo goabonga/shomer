@@ -123,6 +123,9 @@ def step_post_form(context, path):
     bearer = getattr(context, "bearer_token", None)
     if bearer and "${bearer_token}" in text:
         text = text.replace("${bearer_token}", bearer)
+    dc = getattr(context, "device_code", None)
+    if dc and "${device_code}" in text:
+        text = text.replace("${device_code}", dc)
     form_data = json.loads(text)
     _send_form(context, path, form_data)
 

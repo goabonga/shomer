@@ -179,3 +179,43 @@ Feature: OAuth2 token endpoint
     Then the response status code should be 400
     And the response should have JSON key "error"
     And the response should have JSON key "error_description"
+
+  # --- device_code grant ---
+
+  Scenario: device_code grant without client auth returns 401
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": "fake"}
+      """
+    Then the response status code should be 401
+    And the response body should contain "invalid_client"
+
+  Scenario: device_code grant with unknown device_code returns 400
+    Given a verified user and an OAuth2 client with all grants
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": "nonexistent", "client_id": "bdd-full-client", "client_secret": "bdd-test-secret-value"}
+      """
+    Then the response status code should be 400
+    And the response body should contain "invalid_grant"
+
+  Scenario: device_code grant missing device_code returns 400
+    Given a verified user and an OAuth2 client with all grants
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "client_id": "bdd-full-client", "client_secret": "bdd-test-secret-value"}
+      """
+    Then the response status code should be 400
+    And the response body should contain "device_code is required"
+
+  Scenario: device_code grant with approved code returns access_token
+    Given a verified user and an OAuth2 client with all grants
+    And an approved device code for the OAuth2 client
+    When I send a form POST to "/oauth2/token" with
+      """
+      {"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": "${device_code}", "client_id": "bdd-full-client", "client_secret": "bdd-test-secret-value"}
+      """
+    Then the response status code should be 200
+    And the response should have JSON key "access_token"
+    And the response should have JSON key "refresh_token"
+    And the response body should contain "Bearer"

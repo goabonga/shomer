@@ -655,3 +655,120 @@ class TestDeviceAuthEndpoint:
                 assert resp.status_code == 401
 
         asyncio.run(_run())
+
+
+class TestDeviceCodeGrant:
+    """Unit tests for device_code grant handler."""
+
+    def test_missing_device_code(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_device_code_grant
+
+            svc = AsyncMock()
+            client = _mock_client()
+            resp = await _handle_device_code_grant(svc, client, "", AsyncMock())
+            assert resp.status_code == 400
+            assert b"device_code is required" in resp.body
+
+        asyncio.run(_run())
+
+    def test_pending_returns_authorization_pending(self) -> None:
+        async def _run() -> None:
+            from shomer.models.device_code import DeviceCodeStatus
+            from shomer.routes.oauth2 import _handle_device_code_grant
+
+            mock_dc = MagicMock()
+            mock_dc.status = DeviceCodeStatus.PENDING
+            mock_dc.client_id = "c"
+
+            with patch(
+                "shomer.services.device_auth_service.DeviceAuthService"
+            ) as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.check_status.return_value = mock_dc
+                mock_cls.return_value = mock_svc
+
+                client = _mock_client()
+                client.client_id = "c"
+                resp = await _handle_device_code_grant(
+                    AsyncMock(), client, "dev-code", AsyncMock()
+                )
+                assert resp.status_code == 400
+                assert b"authorization_pending" in resp.body
+
+        asyncio.run(_run())
+
+    def test_denied_returns_access_denied(self) -> None:
+        async def _run() -> None:
+            from shomer.models.device_code import DeviceCodeStatus
+            from shomer.routes.oauth2 import _handle_device_code_grant
+
+            mock_dc = MagicMock()
+            mock_dc.status = DeviceCodeStatus.DENIED
+            mock_dc.client_id = "c"
+
+            with patch(
+                "shomer.services.device_auth_service.DeviceAuthService"
+            ) as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.check_status.return_value = mock_dc
+                mock_cls.return_value = mock_svc
+
+                client = _mock_client()
+                client.client_id = "c"
+                resp = await _handle_device_code_grant(
+                    AsyncMock(), client, "dev-code", AsyncMock()
+                )
+                assert resp.status_code == 400
+                assert b"access_denied" in resp.body
+
+        asyncio.run(_run())
+
+    def test_expired_returns_error(self) -> None:
+        async def _run() -> None:
+            from shomer.routes.oauth2 import _handle_device_code_grant
+            from shomer.services.device_auth_service import DeviceAuthError
+
+            with patch(
+                "shomer.services.device_auth_service.DeviceAuthService"
+            ) as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.check_status.side_effect = DeviceAuthError(
+                    "expired_token", "expired"
+                )
+                mock_cls.return_value = mock_svc
+
+                client = _mock_client()
+                resp = await _handle_device_code_grant(
+                    AsyncMock(), client, "dev-code", AsyncMock()
+                )
+                assert resp.status_code == 400
+                assert b"expired_token" in resp.body
+
+        asyncio.run(_run())
+
+    def test_client_mismatch(self) -> None:
+        async def _run() -> None:
+            from shomer.models.device_code import DeviceCodeStatus
+            from shomer.routes.oauth2 import _handle_device_code_grant
+
+            mock_dc = MagicMock()
+            mock_dc.status = DeviceCodeStatus.PENDING
+            mock_dc.client_id = "other-client"
+
+            with patch(
+                "shomer.services.device_auth_service.DeviceAuthService"
+            ) as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.check_status.return_value = mock_dc
+                mock_cls.return_value = mock_svc
+
+                client = _mock_client()
+                client.client_id = "my-client"
+                resp = await _handle_device_code_grant(
+                    AsyncMock(), client, "dev-code", AsyncMock()
+                )
+                assert resp.status_code == 400
+                assert b"Client mismatch" in resp.body
+
+        asyncio.run(_run())
