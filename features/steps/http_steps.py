@@ -164,6 +164,7 @@ def _send_form(context, path, form_data):
         context.response = None
         context.response_status = 0
         context.response_body = str(e)
+    _capture_mfa_token(context)
 
 
 @when('I send a form POST to "{path}" with')
