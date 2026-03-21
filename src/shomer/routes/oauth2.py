@@ -478,11 +478,17 @@ async def token(
     device_code: str = Form(""),
     refresh_token: str = Form(""),
     code_verifier: str = Form(""),
+    subject_token: str = Form(""),
+    subject_token_type: str = Form(""),
+    actor_token: str = Form(""),
+    actor_token_type: str = Form(""),
+    audience: str = Form(""),
 ) -> JSONResponse:
-    """OAuth2 token endpoint per RFC 6749 §4.1.3, §4.3, §4.4, §6 and RFC 8628.
+    """OAuth2 token endpoint per RFC 6749 §4.1.3, §4.3, §4.4, §6, RFC 8628, and RFC 8693.
 
     Supports ``authorization_code``, ``client_credentials``, ``password``,
-    ``refresh_token`` and ``urn:ietf:params:oauth:grant-type:device_code`` grants.
+    ``refresh_token``, ``urn:ietf:params:oauth:grant-type:device_code``,
+    and ``urn:ietf:params:oauth:grant-type:token-exchange`` grants.
 
     Parameters
     ----------
@@ -491,14 +497,13 @@ async def token(
     db : DbSession
         Injected async database session.
     grant_type : str
-        ``authorization_code``, ``client_credentials``, ``password``
-        or ``refresh_token``.
+        One of the supported grant types.
     code : str
         The authorization code (authorization_code grant only).
     redirect_uri : str
         Must match the original redirect_uri (authorization_code grant only).
     scope : str
-        Requested scopes (client_credentials and password grants).
+        Requested scopes.
     username : str
         Resource owner email (password grant).
     password : str
@@ -511,6 +516,16 @@ async def token(
         The refresh token (refresh_token grant only).
     code_verifier : str
         PKCE code verifier (authorization_code grant only).
+    subject_token : str
+        Token to exchange (token-exchange grant only).
+    subject_token_type : str
+        Type of subject_token (token-exchange grant only).
+    actor_token : str
+        Optional actor token for delegation (token-exchange grant only).
+    actor_token_type : str
+        Type of actor_token (token-exchange grant only).
+    audience : str
+        Target audience (token-exchange grant only).
 
     Returns
     -------
@@ -523,6 +538,7 @@ async def token(
         "password",
         "refresh_token",
         "urn:ietf:params:oauth:grant-type:device_code",
+        "urn:ietf:params:oauth:grant-type:token-exchange",
     }
     if grant_type not in supported_grants:
         return JSONResponse(
@@ -573,6 +589,20 @@ async def token(
     if grant_type == "urn:ietf:params:oauth:grant-type:device_code":
         return await _handle_device_code_grant(
             token_svc, authenticated_client, device_code, db
+        )
+
+    if grant_type == "urn:ietf:params:oauth:grant-type:token-exchange":
+        return await _handle_token_exchange(
+            token_svc,
+            authenticated_client,
+            subject_token,
+            subject_token_type,
+            actor_token,
+            actor_token_type,
+            scope,
+            audience,
+            db,
+            settings,
         )
 
     # authorization_code grant
@@ -1260,5 +1290,155 @@ async def _handle_device_code_grant(
 
     return JSONResponse(
         content=response.to_dict(),
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+
+
+async def _handle_token_exchange(
+    token_svc: TokenService,
+    client: Any,
+    subject_token: str,
+    subject_token_type: str,
+    actor_token: str,
+    actor_token_type: str,
+    scope: str,
+    audience: str,
+    db: Any,
+    settings: Any,
+) -> JSONResponse:
+    """Handle token exchange grant per RFC 8693.
+
+    Parameters
+    ----------
+    token_svc : TokenService
+        Token service instance.
+    client : OAuth2Client
+        The authenticated client.
+    subject_token : str
+        The token to exchange.
+    subject_token_type : str
+        Type URI of the subject token.
+    actor_token : str
+        Optional actor token for delegation.
+    actor_token_type : str
+        Type URI of the actor token.
+    scope : str
+        Requested scopes.
+    audience : str
+        Target audience.
+    db : AsyncSession
+        Database session.
+    settings : Settings
+        Application settings.
+
+    Returns
+    -------
+    JSONResponse
+        RFC 8693 token exchange response with ``issued_token_type``.
+    """
+    if not subject_token:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_request",
+                "error_description": "subject_token is required",
+            },
+        )
+
+    if not subject_token_type:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_request",
+                "error_description": "subject_token_type is required",
+            },
+        )
+
+    from shomer.services.token_exchange_service import (
+        ExchangeRequest,
+        TokenExchangeError,
+        TokenExchangeService,
+        TokenType,
+    )
+
+    # Parse token types
+    try:
+        parsed_subject_type = TokenExchangeService.parse_token_type(subject_token_type)
+    except TokenExchangeError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"error": exc.error, "error_description": exc.description},
+        )
+
+    try:
+        parsed_actor_type = TokenExchangeService.parse_token_type(
+            actor_token_type or None
+        )
+    except TokenExchangeError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"error": exc.error, "error_description": exc.description},
+        )
+
+    exchange_request = ExchangeRequest(
+        subject_token=subject_token,
+        subject_token_type=parsed_subject_type or TokenType.ACCESS_TOKEN,
+        actor_token=actor_token or None,
+        actor_token_type=parsed_actor_type,
+        scope=scope or None,
+        audience=audience or None,
+    )
+
+    exchange_svc = TokenExchangeService(settings, db)
+    try:
+        result = await exchange_svc.validate_exchange(
+            request=exchange_request,
+            client_id=client.client_id,
+            client_grant_types=client.grant_types or [],
+            client_scopes=client.scopes or [],
+        )
+    except TokenExchangeError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"error": exc.error, "error_description": exc.description},
+        )
+
+    # Issue new access token
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    from shomer.models.access_token import AccessToken
+
+    now = datetime.now(timezone.utc)
+    jti = uuid.uuid4().hex
+
+    access_token_record = AccessToken(
+        jti=jti,
+        user_id=uuid.UUID(result.subject) if result.subject else None,
+        client_id=client.client_id,
+        scopes=" ".join(result.scopes),
+        expires_at=now + timedelta(seconds=settings.jwt_access_token_exp),
+    )
+    db.add(access_token_record)
+    await db.flush()
+
+    access_jwt = token_svc._build_access_jwt(
+        sub=result.subject,
+        aud=result.audience,
+        jti=jti,
+        scopes=result.scopes,
+    )
+
+    response_body: dict[str, Any] = {
+        "access_token": access_jwt,
+        "token_type": "Bearer",
+        "expires_in": settings.jwt_access_token_exp,
+        "issued_token_type": TokenType.ACCESS_TOKEN.value,
+    }
+    if result.scopes:
+        response_body["scope"] = " ".join(result.scopes)
+
+    return JSONResponse(
+        content=response_body,
         headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
     )
