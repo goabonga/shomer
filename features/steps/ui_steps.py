@@ -63,7 +63,9 @@ def step_click_button(context, text):
         context.page.wait_for_selector(f"button:has-text('{text}')", timeout=5000)
         # Use expect_navigation to wait for any triggered navigation
         try:
-            with context.page.expect_navigation(timeout=15000, wait_until="networkidle"):
+            with context.page.expect_navigation(
+                timeout=15000, wait_until="networkidle"
+            ):
                 context.page.click(f"button:has-text('{text}')")
         except Exception:
             # No navigation occurred (e.g. form validation error on same page)
