@@ -9,6 +9,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shomer.models.par_request import PARRequest
@@ -161,3 +162,58 @@ class PARService:
             request_uri=request_uri,
             expires_in=int(PAR_TTL.total_seconds()),
         )
+
+    async def resolve_request_uri(
+        self,
+        *,
+        request_uri: str,
+        client_id: str,
+    ) -> dict[str, str | None]:
+        """Resolve a request_uri to stored authorization parameters.
+
+        Looks up the PARRequest, verifies the client_id matches,
+        checks expiration, and marks the request as used (single-use)
+        by deleting it.
+
+        Parameters
+        ----------
+        request_uri : str
+            The ``urn:ietf:params:oauth:request_uri:...`` to resolve.
+        client_id : str
+            The client_id from the authorize request (must match).
+
+        Returns
+        -------
+        dict[str, str | None]
+            The stored authorization parameters.
+
+        Raises
+        ------
+        PARError
+            If the request_uri is unknown, expired, or client mismatch.
+        """
+        stmt = select(PARRequest).where(PARRequest.request_uri == request_uri)
+        result = await self.session.execute(stmt)
+        par = result.scalar_one_or_none()
+
+        if par is None:
+            raise PARError("invalid_request", "Unknown or already used request_uri")
+
+        # Verify client_id matches
+        if par.client_id != client_id:
+            raise PARError("invalid_request", "client_id mismatch with request_uri")
+
+        # Check expiration
+        now = datetime.now(timezone.utc)
+        if par.expires_at < now:
+            # Clean up expired request
+            await self.session.delete(par)
+            await self.session.flush()
+            raise PARError("invalid_request", "request_uri has expired")
+
+        # Single-use: delete after retrieval
+        parameters: dict[str, str | None] = par.parameters
+        await self.session.delete(par)
+        await self.session.flush()
+
+        return parameters

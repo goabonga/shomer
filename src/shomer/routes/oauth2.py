@@ -37,11 +37,15 @@ async def authorize(
     login_hint: str | None = None,
     code_challenge: str | None = None,
     code_challenge_method: str | None = None,
+    request_uri: str | None = None,
 ) -> Any:
-    """OAuth2 authorization endpoint per RFC 6749 §4.1.1.
+    """OAuth2 authorization endpoint per RFC 6749 §4.1.1 and RFC 9126.
 
     Validates the request, checks authentication, and either redirects
     to login, shows consent, or issues an authorization code.
+
+    When ``request_uri`` is provided, the stored PAR parameters are
+    resolved and used instead of the query parameters (RFC 9126 §4).
 
     Parameters
     ----------
@@ -69,12 +73,43 @@ async def authorize(
         PKCE code challenge.
     code_challenge_method : str or None
         PKCE challenge method.
+    request_uri : str or None
+        PAR request_uri (RFC 9126). Overrides query parameters.
 
     Returns
     -------
     RedirectResponse
         Redirect to login, consent, or callback with code.
     """
+    # RFC 9126 §4: resolve request_uri to stored parameters
+    if request_uri:
+        if not client_id:
+            return _render_oauth2_error(
+                request, "invalid_request", "client_id is required with request_uri"
+            )
+        from shomer.services.par_service import PARError, PARService
+
+        par_svc = PARService(db)
+        try:
+            params = await par_svc.resolve_request_uri(
+                request_uri=request_uri,
+                client_id=client_id,
+            )
+        except PARError as exc:
+            return _render_oauth2_error(request, exc.error, exc.description)
+
+        # Override query params with stored PAR parameters
+        client_id = params.get("client_id") or client_id
+        redirect_uri = params.get("redirect_uri") or redirect_uri
+        response_type = params.get("response_type") or response_type
+        scope = params.get("scope") or scope
+        state = params.get("state") or state
+        nonce = params.get("nonce") or nonce
+        code_challenge = params.get("code_challenge") or code_challenge
+        code_challenge_method = (
+            params.get("code_challenge_method") or code_challenge_method
+        )
+
     svc = AuthorizeService(db)
 
     # Validate request parameters
