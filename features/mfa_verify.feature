@@ -44,3 +44,39 @@ Feature: MFA verification and email fallback API
       """
     Then the response status code should be 400
     And the response body should contain "not enabled"
+
+  Scenario: POST /mfa/verify with valid TOTP code returns verified
+    Given a user with MFA enabled
+    When I send a POST request to "/mfa/verify" with JSON
+      """
+      {"code": "${mfa_totp_code}", "method": "totp"}
+      """
+    Then the response status code should be 200
+    And the response should have JSON key "verified"
+    And the response body should contain "true"
+    And the response body should contain "totp"
+
+  Scenario: POST /mfa/verify with valid backup code returns verified
+    Given a user with MFA enabled
+    When I send a POST request to "/mfa/verify" with JSON
+      """
+      {"code": "${mfa_backup_code}", "method": "backup"}
+      """
+    Then the response status code should be 200
+    And the response should have JSON key "verified"
+    And the response body should contain "backup"
+
+  Scenario: POST /mfa/verify with wrong TOTP code returns 400
+    Given a user with MFA enabled
+    When I send a POST request to "/mfa/verify" with JSON
+      """
+      {"code": "000000", "method": "totp"}
+      """
+    Then the response status code should be 400
+    And the response body should contain "Invalid TOTP"
+
+  Scenario: POST /mfa/email/send with MFA enabled sends code
+    Given a user with MFA enabled
+    When I send a POST request to "/mfa/email/send"
+    Then the response status code should be 200
+    And the response body should contain "sent"
