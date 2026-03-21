@@ -251,3 +251,92 @@ def step_create_par_request(context):
     assert resp.status == 201, f"PAR request failed: {resp.status}"
     body = json.loads(resp.read().decode())
     context.par_request_uri = body["request_uri"]
+
+
+@given("a verified user and an OAuth2 client with JWKS")
+def step_setup_oauth2_with_jwks(context):
+    """Create a verified user, a confidential OAuth2 client, and register a JWKS.
+
+    Generates an RSA keypair, stores the public JWKS on the client,
+    and keeps the private key on context for signing JWT request objects.
+    """
+    import json as _json
+
+    from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+    from jwt.algorithms import RSAAlgorithm
+
+    email = "jar-bdd@example.com"
+    password = "securepassword123"
+
+    _psql(
+        "DELETE FROM users WHERE id IN "
+        "(SELECT user_id FROM user_emails WHERE email = 'jar-bdd@example.com');"
+    )
+
+    register_and_verify_user(context, email, password)
+
+    secret = "bdd-jar-secret-value"
+    secret_hash = _hash_secret(secret)
+    escaped_hash = secret_hash.replace("'", "''")
+
+    # Generate RSA keypair for JAR
+    private_key = _rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_key = private_key.public_key()
+    pub_jwk = _json.loads(RSAAlgorithm.to_jwk(public_key))
+    pub_jwk["kid"] = "bdd-jar-kid"
+    pub_jwk["use"] = "sig"
+    pub_jwk["alg"] = "RS256"
+    jwks = {"keys": [pub_jwk]}
+    jwks_json = _json.dumps(jwks).replace("'", "''")
+
+    _psql(
+        "INSERT INTO oauth2_clients "
+        "(id, client_id, client_secret_hash, client_name, client_type, "
+        "redirect_uris, grant_types, response_types, scopes, contacts, "
+        "token_endpoint_auth_method, jwks, is_active, created_at, updated_at) "
+        "VALUES ("
+        "gen_random_uuid(), 'bdd-jar-client', "
+        f"'{escaped_hash}', "
+        "'BDD JAR App', 'CONFIDENTIAL', "
+        "'[\"https://app.example.com/callback\"]'::jsonb, "
+        "'[\"authorization_code\"]'::jsonb, "
+        "'[\"code\"]'::jsonb, "
+        '\'["openid", "profile"]\'::jsonb, '
+        "'[]'::jsonb, "
+        f"'CLIENT_SECRET_POST', '{jwks_json}'::jsonb, true, NOW(), NOW()"
+        ") ON CONFLICT (client_id) DO UPDATE SET "
+        f"client_secret_hash = '{escaped_hash}', "
+        f"jwks = '{jwks_json}'::jsonb;"
+    )
+
+    context.oauth2_client_id = "bdd-jar-client"
+    context.oauth2_client_secret = secret
+    context.oauth2_user_email = email
+    context.oauth2_user_password = password
+    context.jar_private_key = private_key
+
+
+@given("a signed JWT request object for the OAuth2 client")
+def step_create_jar_request(context):
+    """Sign a JWT request object with the client's private key.
+
+    Requires ``a verified user and an OAuth2 client with JWKS``
+    to have run first. Stores the JWT on ``context.jar_request_jwt``.
+    """
+    import jwt as _jwt
+
+    claims = {
+        "iss": context.oauth2_client_id,
+        "aud": "https://auth.shomer.local",
+        "response_type": "code",
+        "client_id": context.oauth2_client_id,
+        "redirect_uri": "https://app.example.com/callback",
+        "scope": "openid profile",
+        "state": "jar-bdd-state",
+    }
+    context.jar_request_jwt = _jwt.encode(
+        claims,
+        context.jar_private_key,
+        algorithm="RS256",
+        headers={"kid": "bdd-jar-kid"},
+    )
