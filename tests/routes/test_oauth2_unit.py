@@ -772,3 +772,184 @@ class TestDeviceCodeGrant:
                 assert b"Client mismatch" in resp.body
 
         asyncio.run(_run())
+
+
+class TestPAREndpoint:
+    """Unit tests for POST /oauth2/par."""
+
+    def test_par_success(self) -> None:
+        """Valid PAR request returns 201 with request_uri and expires_in."""
+
+        async def _run() -> None:
+            from shomer.routes.oauth2 import pushed_authorization_request
+            from shomer.services.par_service import PARResponse
+
+            with (
+                patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls,
+                patch("shomer.services.par_service.PARService") as mock_par_cls,
+            ):
+                mock_client = MagicMock()
+                mock_client.client_id = "test-client"
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.return_value = mock_client
+                mock_cls.return_value = mock_svc
+
+                mock_par = AsyncMock()
+                mock_par.push_authorization_request.return_value = PARResponse(
+                    request_uri="urn:ietf:params:oauth:request_uri:abc123",
+                    expires_in=60,
+                )
+                mock_par_cls.return_value = mock_par
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await pushed_authorization_request(
+                    req,
+                    db,
+                    "code",
+                    "https://app.example.com/cb",
+                    "openid",
+                    "xyz",
+                    "",
+                    "",
+                    "",
+                    "test-client",
+                    "secret",
+                )
+                assert resp.status_code == 201
+                import json
+
+                body = json.loads(bytes(resp.body))
+                assert body["request_uri"] == "urn:ietf:params:oauth:request_uri:abc123"
+                assert body["expires_in"] == 60
+
+        asyncio.run(_run())
+
+    def test_par_invalid_client(self) -> None:
+        """Invalid client returns 401."""
+
+        async def _run() -> None:
+            from shomer.routes.oauth2 import pushed_authorization_request
+
+            with patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.side_effect = InvalidClientError("bad")
+                mock_cls.return_value = mock_svc
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await pushed_authorization_request(
+                    req,
+                    db,
+                    "code",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                )
+                assert resp.status_code == 401
+                assert b"invalid_client" in resp.body
+
+        asyncio.run(_run())
+
+    def test_par_validation_error(self) -> None:
+        """Invalid parameters return 400 with error details."""
+
+        async def _run() -> None:
+            from shomer.routes.oauth2 import pushed_authorization_request
+            from shomer.services.par_service import PARError
+
+            with (
+                patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls,
+                patch("shomer.services.par_service.PARService") as mock_par_cls,
+            ):
+                mock_client = MagicMock()
+                mock_client.client_id = "c"
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.return_value = mock_client
+                mock_cls.return_value = mock_svc
+
+                mock_par = AsyncMock()
+                mock_par.push_authorization_request.side_effect = PARError(
+                    "invalid_request", "redirect_uri is required"
+                )
+                mock_par_cls.return_value = mock_par
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await pushed_authorization_request(
+                    req,
+                    db,
+                    "code",
+                    "",
+                    "openid",
+                    "xyz",
+                    "",
+                    "",
+                    "",
+                    "c",
+                    "s",
+                )
+                assert resp.status_code == 400
+                import json
+
+                body = json.loads(bytes(resp.body))
+                assert body["error"] == "invalid_request"
+                assert "redirect_uri" in body["error_description"]
+
+        asyncio.run(_run())
+
+    def test_par_response_has_cache_control(self) -> None:
+        """PAR response has Cache-Control: no-store header."""
+
+        async def _run() -> None:
+            from shomer.routes.oauth2 import pushed_authorization_request
+            from shomer.services.par_service import PARResponse
+
+            with (
+                patch("shomer.routes.oauth2.OAuth2ClientService") as mock_cls,
+                patch("shomer.services.par_service.PARService") as mock_par_cls,
+            ):
+                mock_client = MagicMock()
+                mock_client.client_id = "c"
+                mock_svc = AsyncMock()
+                mock_svc.authenticate_client.return_value = mock_client
+                mock_cls.return_value = mock_svc
+
+                mock_par = AsyncMock()
+                mock_par.push_authorization_request.return_value = PARResponse(
+                    request_uri="urn:ietf:params:oauth:request_uri:x",
+                    expires_in=60,
+                )
+                mock_par_cls.return_value = mock_par
+
+                req = MagicMock()
+                req.headers.get.return_value = None
+                db = AsyncMock()
+
+                resp = await pushed_authorization_request(
+                    req,
+                    db,
+                    "code",
+                    "https://a.com/cb",
+                    "openid",
+                    "xyz",
+                    "",
+                    "",
+                    "",
+                    "c",
+                    "s",
+                )
+                assert resp.headers.get("cache-control") == "no-store"
+
+        asyncio.run(_run())
