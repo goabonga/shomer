@@ -2223,10 +2223,9 @@ windows-terminal = ["colorama (>=0.4.6)"]
 name = "pyjwt"
 version = "2.12.1"
 description = "JSON Web Token implementation in Python"
-optional = true
+optional = false
 python-versions = ">=3.9"
-groups = ["main"]
-markers = "extra == \"server\""
+groups = ["main", "test"]
 files = [
     {file = "pyjwt-2.12.1-py3-none-any.whl", hash = "sha256:28ca37c070cad8ba8cd9790cd940535d40274d22f80ab87f3ac6a713e6e8454c"},
     {file = "pyjwt-2.12.1.tar.gz", hash = "sha256:c74a7a2adf861c04d002db713dd85f84beb242228e671280bf709d765b03672b"},
@@ -3210,4 +3209,4 @@ worker = ["celery"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "0bc7e71aff6098d60976f7c585a1835746e1e0a7687c5d89d4ad10f68f625000"
+content-hash = "e2d58b98dd0ebb0819d0732cddf236d1f9412bc5fd791535e09076aba2be5c12"
