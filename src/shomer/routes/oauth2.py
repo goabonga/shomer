@@ -38,14 +38,18 @@ async def authorize(
     code_challenge: str | None = None,
     code_challenge_method: str | None = None,
     request_uri: str | None = None,
+    request_object: str | None = None,
 ) -> Any:
-    """OAuth2 authorization endpoint per RFC 6749 §4.1.1 and RFC 9126.
+    """OAuth2 authorization endpoint per RFC 6749 §4.1.1, RFC 9126, and RFC 9101.
 
     Validates the request, checks authentication, and either redirects
     to login, shows consent, or issues an authorization code.
 
     When ``request_uri`` is provided, the stored PAR parameters are
     resolved and used instead of the query parameters (RFC 9126 §4).
+
+    When ``request`` (JWT) is provided, the JWT is validated via the
+    JAR service and the parameters are merged (JWT wins on conflict).
 
     Parameters
     ----------
@@ -75,12 +79,70 @@ async def authorize(
         PKCE challenge method.
     request_uri : str or None
         PAR request_uri (RFC 9126). Overrides query parameters.
+    request_object : str or None
+        JWT request object (RFC 9101). Mapped from ``request`` query param.
 
     Returns
     -------
     RedirectResponse
         Redirect to login, consent, or callback with code.
     """
+    # RFC 9101: "request" query param is mapped to request_object by FastAPI
+    # (since "request" collides with the FastAPI Request parameter).
+    # Also check the raw query string for the "request" param.
+    if request_object is None:
+        raw_request_param = request.query_params.get("request")
+        if raw_request_param:
+            request_object = raw_request_param
+
+    # RFC 9101 §4: validate JWT request object
+    if request_object:
+        if not client_id:
+            return _render_oauth2_error(
+                request, "invalid_request", "client_id is required with request param"
+            )
+
+        # Look up client to get JWKS
+        client_svc = OAuth2ClientService(db)
+        jar_client = await client_svc.get_by_client_id(client_id)
+        if jar_client is None:
+            return _render_oauth2_error(request, "invalid_request", "Unknown client_id")
+        if not jar_client.jwks:
+            return _render_oauth2_error(
+                request,
+                "invalid_request",
+                "Client has no JWKS registered for request object verification",
+            )
+
+        from shomer.core.settings import get_settings
+        from shomer.services.jar_validation_service import (
+            JARError,
+            JARValidationService,
+        )
+
+        jar_svc = JARValidationService(get_settings().jwt_issuer)
+        try:
+            jar_result = jar_svc.validate_request_object(
+                request_jwt=request_object,
+                client_id=client_id,
+                client_jwks=jar_client.jwks,
+            )
+        except JARError as exc:
+            return _render_oauth2_error(request, exc.error, exc.description)
+
+        # Merge JWT params with query params (JWT wins on conflict)
+        jar_params = jar_result.parameters
+        client_id = jar_params.get("client_id") or client_id
+        redirect_uri = jar_params.get("redirect_uri") or redirect_uri
+        response_type = jar_params.get("response_type") or response_type
+        scope = jar_params.get("scope") or scope
+        state = jar_params.get("state") or state
+        nonce = jar_params.get("nonce") or nonce
+        code_challenge = jar_params.get("code_challenge") or code_challenge
+        code_challenge_method = (
+            jar_params.get("code_challenge_method") or code_challenge_method
+        )
+
     # RFC 9126 §4: resolve request_uri to stored parameters
     if request_uri:
         if not client_id:

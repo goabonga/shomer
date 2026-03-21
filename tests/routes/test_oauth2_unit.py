@@ -171,6 +171,7 @@ class TestAuthorizeRoute:
             )
             mock_cls.return_value = mock_svc
             req = MagicMock()
+            req.query_params.get.return_value = None
             db = AsyncMock()
             resp = await authorize(
                 req,
@@ -201,6 +202,7 @@ class TestAuthorizeRoute:
             mock_cls.return_value = mock_svc
             mock_render.return_value = MagicMock(status_code=400)
             req = MagicMock()
+            req.query_params.get.return_value = None
             db = AsyncMock()
             resp = await authorize(
                 req,
@@ -233,6 +235,7 @@ class TestAuthorizeRoute:
             mock_sess_cls.return_value = mock_sess
 
             req = MagicMock()
+            req.query_params.get.return_value = None
             req.cookies.get.return_value = None
             req.url = "http://test/oauth2/authorize?client_id=c&state=x"
             db = AsyncMock()
@@ -295,6 +298,7 @@ class TestAuthorizeRoute:
             mock_sess_cls.return_value = mock_sess
 
             req = MagicMock()
+            req.query_params.get.return_value = None
             req.cookies.get.return_value = "valid-token"
             db = AsyncMock()
 
@@ -330,6 +334,7 @@ class TestAuthorizeWithRequestUri:
         async def _run() -> None:
             mock_render.return_value = MagicMock(status_code=400)
             req = MagicMock()
+            req.query_params.get.return_value = None
             db = AsyncMock()
             resp = await authorize(
                 req,
@@ -358,6 +363,7 @@ class TestAuthorizeWithRequestUri:
             mock_par_cls.return_value = mock_par
             mock_render.return_value = MagicMock(status_code=400)
             req = MagicMock()
+            req.query_params.get.return_value = None
             db = AsyncMock()
             resp = await authorize(
                 req,
@@ -407,6 +413,7 @@ class TestAuthorizeWithRequestUri:
             mock_sess_cls.return_value = mock_sess
 
             req = MagicMock()
+            req.query_params.get.return_value = None
             req.cookies.get.return_value = None
             req.url = "http://test/oauth2/authorize?client_id=c&request_uri=urn:x"
             db = AsyncMock()
@@ -425,6 +432,209 @@ class TestAuthorizeWithRequestUri:
             call_kwargs = mock_auth_svc.validate_request.call_args[1]
             assert call_kwargs["redirect_uri"] == "https://app.example.com/cb"
             assert call_kwargs["response_type"] == "code"
+
+        asyncio.run(_run())
+
+
+class TestAuthorizeWithJAR:
+    """Unit tests for GET /oauth2/authorize with request param (RFC 9101)."""
+
+    @patch("shomer.routes.oauth2._render_oauth2_error")
+    def test_request_param_without_client_id_returns_error(
+        self, mock_render: MagicMock
+    ) -> None:
+        """request param without client_id renders error page."""
+
+        async def _run() -> None:
+            mock_render.return_value = MagicMock(status_code=400)
+            req = MagicMock()
+            req.query_params.get.return_value = "eyJhbGciOi..."
+            db = AsyncMock()
+            resp = await authorize(
+                req,
+                db,
+                request_object="eyJhbGciOi...",
+            )
+            mock_render.assert_called_once()
+            assert resp.status_code == 400
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.oauth2._render_oauth2_error")
+    @patch("shomer.routes.oauth2.OAuth2ClientService")
+    def test_request_param_unknown_client_returns_error(
+        self, mock_cls: MagicMock, mock_render: MagicMock
+    ) -> None:
+        """Unknown client_id with request param renders error."""
+
+        async def _run() -> None:
+            mock_svc = AsyncMock()
+            mock_svc.get_by_client_id.return_value = None
+            mock_cls.return_value = mock_svc
+            mock_render.return_value = MagicMock(status_code=400)
+
+            req = MagicMock()
+            req.query_params.get.return_value = None
+            db = AsyncMock()
+            resp = await authorize(
+                req,
+                db,
+                client_id="unknown",
+                request_object="eyJhbGciOi...",
+            )
+            mock_render.assert_called_once()
+            assert resp.status_code == 400
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.oauth2._render_oauth2_error")
+    @patch("shomer.routes.oauth2.OAuth2ClientService")
+    def test_request_param_client_no_jwks_returns_error(
+        self, mock_cls: MagicMock, mock_render: MagicMock
+    ) -> None:
+        """Client without JWKS renders error."""
+
+        async def _run() -> None:
+            mock_client = MagicMock()
+            mock_client.jwks = None
+            mock_svc = AsyncMock()
+            mock_svc.get_by_client_id.return_value = mock_client
+            mock_cls.return_value = mock_svc
+            mock_render.return_value = MagicMock(status_code=400)
+
+            req = MagicMock()
+            req.query_params.get.return_value = None
+            db = AsyncMock()
+            resp = await authorize(
+                req,
+                db,
+                client_id="c",
+                request_object="eyJhbGciOi...",
+            )
+            mock_render.assert_called_once()
+            assert resp.status_code == 400
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.oauth2._render_oauth2_error")
+    @patch("shomer.services.jar_validation_service.JARValidationService")
+    @patch("shomer.routes.oauth2.OAuth2ClientService")
+    def test_request_param_invalid_jwt_returns_error(
+        self,
+        mock_client_cls: MagicMock,
+        mock_jar_cls: MagicMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Invalid JWT request object renders error."""
+
+        async def _run() -> None:
+            from shomer.services.jar_validation_service import JARError
+
+            mock_client = MagicMock()
+            mock_client.jwks = {"keys": [{"kty": "RSA"}]}
+            mock_svc = AsyncMock()
+            mock_svc.get_by_client_id.return_value = mock_client
+            mock_client_cls.return_value = mock_svc
+
+            mock_jar = MagicMock()
+            mock_jar.validate_request_object.side_effect = JARError(
+                "invalid_request_object", "bad JWT"
+            )
+            mock_jar_cls.return_value = mock_jar
+            mock_render.return_value = MagicMock(status_code=400)
+
+            req = MagicMock()
+            req.query_params.get.return_value = None
+            db = AsyncMock()
+            resp = await authorize(
+                req,
+                db,
+                client_id="c",
+                request_object="bad-jwt",
+            )
+            mock_render.assert_called_once()
+            assert resp.status_code == 400
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.oauth2.SessionService")
+    @patch("shomer.routes.oauth2.AuthorizeService")
+    @patch("shomer.services.jar_validation_service.JARValidationService")
+    @patch("shomer.routes.oauth2.OAuth2ClientService")
+    def test_request_param_valid_jwt_merges_params(
+        self,
+        mock_client_cls: MagicMock,
+        mock_jar_cls: MagicMock,
+        mock_auth_cls: MagicMock,
+        mock_sess_cls: MagicMock,
+    ) -> None:
+        """Valid JWT merges parameters and proceeds to validate."""
+
+        async def _run() -> None:
+            from shomer.services.jar_validation_service import JARResult
+
+            mock_client = MagicMock()
+            mock_client.jwks = {"keys": [{"kty": "RSA"}]}
+            mock_svc = AsyncMock()
+            mock_svc.get_by_client_id.return_value = mock_client
+            mock_client_cls.return_value = mock_svc
+
+            mock_jar = MagicMock()
+            mock_jar.validate_request_object.return_value = JARResult(
+                parameters={
+                    "response_type": "code",
+                    "redirect_uri": "https://jar.example.com/cb",
+                    "scope": "openid profile",
+                    "state": "jar-state",
+                }
+            )
+            mock_jar_cls.return_value = mock_jar
+
+            mock_auth_svc = AsyncMock()
+            mock_auth_svc.validate_request.return_value = MagicMock()
+            mock_auth_cls.return_value = mock_auth_svc
+
+            mock_sess = AsyncMock()
+            mock_sess.validate.return_value = None
+            mock_sess_cls.return_value = mock_sess
+
+            req = MagicMock()
+            req.query_params.get.return_value = None
+            req.cookies.get.return_value = None
+            req.url = "http://test/oauth2/authorize?client_id=c&request=jwt"
+            db = AsyncMock()
+
+            resp = await authorize(
+                req,
+                db,
+                client_id="c",
+                request_object="valid-jwt",
+            )
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+            # Verify JAR params were used
+            call_kwargs = mock_auth_svc.validate_request.call_args[1]
+            assert call_kwargs["redirect_uri"] == "https://jar.example.com/cb"
+            assert call_kwargs["scope"] == "openid profile"
+            assert call_kwargs["state"] == "jar-state"
+
+        asyncio.run(_run())
+
+    def test_raw_request_query_param_detected(self) -> None:
+        """The 'request' query param is detected from raw query string."""
+
+        async def _run() -> None:
+            req = MagicMock()
+            req.query_params.get.return_value = "some-jwt"
+            db = AsyncMock()
+
+            with patch("shomer.routes.oauth2._render_oauth2_error") as mock_render:
+                mock_render.return_value = MagicMock(status_code=400)
+                await authorize(req, db)
+                # Should detect the request param and error on missing client_id
+                mock_render.assert_called_once()
+                call_args = mock_render.call_args
+                assert "client_id is required" in call_args[0][2]
 
         asyncio.run(_run())
 
