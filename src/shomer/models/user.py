@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from shomer.models.refresh_token import RefreshToken
     from shomer.models.session import Session
     from shomer.models.user_email import UserEmail
+    from shomer.models.user_mfa import UserMFA
     from shomer.models.user_password import UserPassword
     from shomer.models.user_profile import UserProfile
 
@@ -39,6 +40,8 @@ class User(Base, UUIDMixin, TimestampMixin):
         Last update timestamp (from TimestampMixin).
     profile : UserProfile or None
         One-to-one OIDC profile (lazy-loaded).
+    mfa : UserMFA or None
+        One-to-one MFA configuration (lazy-loaded).
     """
 
     __tablename__ = "users"
@@ -82,6 +85,11 @@ class User(Base, UUIDMixin, TimestampMixin):
     refresh_tokens: Mapped[list[RefreshToken]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+    mfa: Mapped[UserMFA | None] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
     def __repr__(self) -> str:
