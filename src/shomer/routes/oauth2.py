@@ -483,6 +483,8 @@ async def token(
     actor_token: str = Form(""),
     actor_token_type: str = Form(""),
     audience: str = Form(""),
+    mfa_token: str = Form(""),
+    mfa_code: str = Form(""),
 ) -> JSONResponse:
     """OAuth2 token endpoint per RFC 6749 §4.1.3, §4.3, §4.4, §6, RFC 8628, and RFC 8693.
 
@@ -578,7 +580,15 @@ async def token(
 
     if grant_type == "password":
         return await _handle_password_grant(
-            token_svc, authenticated_client, username, password, scope
+            token_svc,
+            authenticated_client,
+            username,
+            password,
+            scope,
+            mfa_token,
+            mfa_code,
+            db,
+            settings,
         )
 
     if grant_type == "refresh_token":
@@ -702,8 +712,16 @@ async def _handle_password_grant(
     username: str,
     password: str,
     scope: str,
+    mfa_token: str = "",
+    mfa_code: str = "",
+    db: Any = None,
+    settings: Any = None,
 ) -> JSONResponse:
     """Handle resource owner password credentials grant per RFC 6749 §4.3.
+
+    Supports MFA: if the user has MFA enabled and no ``mfa_code`` is
+    provided, returns ``error=mfa_required`` with a short-lived
+    ``mfa_token``. The client must resend with ``mfa_token`` + ``mfa_code``.
 
     Parameters
     ----------
@@ -717,6 +735,14 @@ async def _handle_password_grant(
         Resource owner password.
     scope : str
         Requested scopes (space-separated).
+    mfa_token : str
+        MFA challenge token (second request).
+    mfa_code : str
+        TOTP or backup code (second request).
+    db : AsyncSession
+        Database session.
+    settings : Settings
+        Application settings.
 
     Returns
     -------
@@ -733,6 +759,12 @@ async def _handle_password_grant(
             },
         )
 
+    # Step 2: MFA completion (mfa_token + mfa_code provided)
+    if mfa_token and mfa_code:
+        return await _complete_password_mfa(
+            token_svc, client, mfa_token, mfa_code, scope, db, settings
+        )
+
     if not username or not password:
         return JSONResponse(
             status_code=400,
@@ -742,6 +774,7 @@ async def _handle_password_grant(
             },
         )
 
+    # Step 1: Verify password, then check MFA
     try:
         response = await token_svc.issue_password_grant(
             username=username,
@@ -757,6 +790,172 @@ async def _handle_password_grant(
                 "error_description": exc.description,
             },
         )
+
+    # Check if user has MFA enabled
+    if db is not None:
+        from sqlalchemy import select
+
+        from shomer.models.queries import get_user_by_email
+        from shomer.models.user_mfa import UserMFA
+
+        user = await get_user_by_email(db, username)
+        if user is not None:
+            mfa_stmt = select(UserMFA).where(UserMFA.user_id == user.id)
+            mfa_result = await db.execute(mfa_stmt)
+            user_mfa = mfa_result.scalar_one_or_none()
+
+            if user_mfa is not None and user_mfa.is_enabled:
+                # MFA required: return challenge instead of tokens
+                from shomer.routes.auth import _build_mfa_token
+
+                mfa_challenge_token = _build_mfa_token(str(user.id), settings)
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "error": "mfa_required",
+                        "error_description": "MFA verification required",
+                        "mfa_token": mfa_challenge_token,
+                        "methods": user_mfa.methods,
+                    },
+                )
+
+    return JSONResponse(
+        content=response.to_dict(),
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+
+
+async def _complete_password_mfa(
+    token_svc: TokenService,
+    client: Any,
+    mfa_token: str,
+    mfa_code: str,
+    scope: str,
+    db: Any,
+    settings: Any,
+) -> JSONResponse:
+    """Complete the MFA step of a password grant.
+
+    Parameters
+    ----------
+    token_svc : TokenService
+        Token service instance.
+    client : OAuth2Client
+        The authenticated client.
+    mfa_token : str
+        The MFA challenge JWT.
+    mfa_code : str
+        TOTP or backup code.
+    scope : str
+        Requested scopes.
+    db : AsyncSession
+        Database session.
+    settings : Settings
+        Application settings.
+
+    Returns
+    -------
+    JSONResponse
+        Token response or error.
+    """
+    from shomer.routes.auth import verify_mfa_token
+
+    user_id_str = verify_mfa_token(mfa_token, settings)
+    if user_id_str is None:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_grant",
+                "error_description": "Invalid or expired MFA token",
+            },
+        )
+
+    import uuid
+
+    from sqlalchemy import select
+
+    from shomer.models.user_mfa import UserMFA
+    from shomer.services.mfa_service import MFAService
+
+    user_id = uuid.UUID(user_id_str)
+
+    mfa_stmt = select(UserMFA).where(UserMFA.user_id == user_id)
+    mfa_result = await db.execute(mfa_stmt)
+    user_mfa = mfa_result.scalar_one_or_none()
+
+    if user_mfa is None or not user_mfa.is_enabled:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_grant",
+                "error_description": "MFA is not enabled",
+            },
+        )
+
+    # Verify TOTP code
+    svc = MFAService(db, settings)
+    secret = svc.decrypt_totp_secret(user_mfa.totp_secret_encrypted or "")
+    if not MFAService.verify_totp_code(secret, mfa_code):
+        # Try backup code
+        backup_valid = await svc.verify_backup_code(user_mfa.id, mfa_code)
+        if not backup_valid:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "invalid_grant",
+                    "error_description": "Invalid MFA code",
+                },
+            )
+
+    # MFA verified — issue tokens for the user
+    import hashlib
+
+    from shomer.models.access_token import AccessToken
+    from shomer.models.refresh_token import RefreshToken
+
+    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    jti = uuid.uuid4().hex
+    scopes = (scope or "").split() if scope else []
+
+    access_token_record = AccessToken(
+        jti=jti,
+        user_id=user_id,
+        client_id=client.client_id,
+        scopes=" ".join(scopes),
+        expires_at=now
+        + __import__("datetime").timedelta(seconds=settings.jwt_access_token_exp),
+    )
+    db.add(access_token_record)
+
+    raw_refresh = uuid.uuid4().hex
+    refresh_hash = hashlib.sha256(raw_refresh.encode()).hexdigest()
+    family_id = uuid.uuid4()
+    refresh_record = RefreshToken(
+        token_hash=refresh_hash,
+        family_id=family_id,
+        user_id=user_id,
+        client_id=client.client_id,
+        scopes=" ".join(scopes),
+        expires_at=now + __import__("datetime").timedelta(days=30),
+    )
+    db.add(refresh_record)
+    await db.flush()
+
+    access_jwt = token_svc._build_access_jwt(
+        sub=user_id_str,
+        aud=client.client_id,
+        jti=jti,
+        scopes=scopes,
+    )
+
+    from shomer.services.token_service import TokenResponse
+
+    response = TokenResponse(
+        access_token=access_jwt,
+        expires_in=settings.jwt_access_token_exp,
+        refresh_token=raw_refresh,
+        scope=" ".join(scopes),
+    )
 
     return JSONResponse(
         content=response.to_dict(),

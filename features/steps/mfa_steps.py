@@ -97,3 +97,52 @@ def step_setup_user_with_mfa(context):
     assert enable_body["mfa_enabled"] is True
     context.mfa_backup_codes = enable_body.get("backup_codes", [])
     context.mfa_user_email = email
+
+
+@given("a user with MFA enabled and an OAuth2 client")
+def step_setup_user_mfa_and_client(context):
+    """Create a user with MFA enabled and ensure the BDD OAuth2 client exists.
+
+    Combines the MFA user setup with the OAuth2 client from
+    ``a verified user and an OAuth2 client with all grants``.
+    """
+    # First create the OAuth2 client (reuse the existing step)
+    from features.steps.oauth2_steps import step_setup_oauth2_full
+
+    step_setup_oauth2_full(context)
+
+    # Now create the MFA user using the same password
+    email = context.oauth2_user_email  # token-bdd@example.com
+    password = context.oauth2_user_password  # securepassword123
+
+    # Log in to get session cookie
+    login_data = json.dumps({"email": email, "password": password}).encode()
+    login_req = urllib.request.Request(
+        context.base_url + "/auth/login",
+        data=login_data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        login_resp = urllib.request.urlopen(login_req, timeout=10)
+        cookies = login_resp.headers.get_all("Set-Cookie") or []
+        for cookie in cookies:
+            if "session_id=" in cookie:
+                value = cookie.split("session_id=")[1].split(";")[0]
+                if value and value != '""':
+                    context.session_cookie = value
+    except urllib.error.HTTPError:
+        pass
+
+    # Setup MFA
+    status_code, setup_body = _mfa_api(context, "POST", "/mfa/setup")
+    assert status_code == 200, f"MFA setup failed: {status_code} {setup_body}"
+    context.mfa_totp_secret = setup_body["secret"]
+
+    totp_code = _generate_totp_code(context.mfa_totp_secret)
+    status_code, enable_body = _mfa_api(
+        context, "POST", "/mfa/enable", {"code": totp_code}
+    )
+    assert status_code == 200, f"MFA enable failed: {status_code} {enable_body}"
+    context.mfa_backup_codes = enable_body.get("backup_codes", [])
+    context.mfa_user_email = email

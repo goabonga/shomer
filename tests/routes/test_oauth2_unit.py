@@ -154,6 +154,124 @@ class TestHandlePasswordGrant:
 
         asyncio.run(_run())
 
+    def test_mfa_required_returns_403(self) -> None:
+        """User with MFA enabled gets mfa_required error."""
+
+        async def _run() -> None:
+            client = _mock_client(grant_types=["password"])
+            svc = AsyncMock()
+            svc.issue_password_grant.return_value = TokenResponse(access_token="tok")
+
+            mock_user = MagicMock()
+            mock_user.id = "00000000-0000-0000-0000-000000000001"
+
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+            mock_mfa.methods = ["totp"]
+            mock_mfa_result = MagicMock()
+            mock_mfa_result.scalar_one_or_none.return_value = mock_mfa
+
+            db = AsyncMock()
+            db.execute.return_value = mock_mfa_result
+
+            settings = MagicMock()
+            settings.jwk_encryption_key = "test-key"
+
+            with patch(
+                "shomer.models.queries.get_user_by_email",
+                new_callable=AsyncMock,
+                return_value=mock_user,
+            ):
+                resp = await _handle_password_grant(
+                    svc, client, "u@b.com", "pw", "", "", "", db, settings
+                )
+            assert resp.status_code == 403
+            import json
+
+            body = json.loads(bytes(resp.body))
+            assert body["error"] == "mfa_required"
+            assert "mfa_token" in body
+
+        asyncio.run(_run())
+
+    def test_mfa_completion_with_valid_code(self) -> None:
+        """Second request with mfa_token + mfa_code issues tokens."""
+
+        async def _run() -> None:
+            client = _mock_client(grant_types=["password"])
+            client.client_id = "c"
+            svc = MagicMock()
+            svc._build_access_jwt.return_value = "new-jwt"
+
+            settings = MagicMock()
+            settings.jwk_encryption_key = "test-key"
+            settings.jwt_access_token_exp = 3600
+
+            # Build a valid mfa_token
+            from shomer.routes.auth import _build_mfa_token
+
+            mfa_tok = _build_mfa_token("00000000-0000-0000-0000-000000000001", settings)
+
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+            mock_mfa.totp_secret_encrypted = "enc"
+            mock_mfa.id = "mfa-id"
+            mock_mfa_result = MagicMock()
+            mock_mfa_result.scalar_one_or_none.return_value = mock_mfa
+
+            db = AsyncMock()
+            db.execute.return_value = mock_mfa_result
+
+            with patch("shomer.services.mfa_service.MFAService") as mock_mfa_cls:
+                mock_mfa_svc = MagicMock()
+                mock_mfa_svc.decrypt_totp_secret.return_value = "SECRET"
+                mock_mfa_cls.return_value = mock_mfa_svc
+                mock_mfa_cls.verify_totp_code.return_value = True
+
+                resp = await _handle_password_grant(
+                    svc,
+                    client,
+                    "",
+                    "",
+                    "openid",
+                    mfa_tok,
+                    "123456",
+                    db,
+                    settings,
+                )
+            assert resp.status_code == 200
+            import json
+
+            body = json.loads(bytes(resp.body))
+            assert body["access_token"] == "new-jwt"
+
+        asyncio.run(_run())
+
+    def test_mfa_completion_invalid_token(self) -> None:
+        """Invalid mfa_token returns error."""
+
+        async def _run() -> None:
+            client = _mock_client(grant_types=["password"])
+            settings = MagicMock()
+            settings.jwk_encryption_key = "test-key"
+            svc = AsyncMock()
+
+            resp = await _handle_password_grant(
+                svc,
+                client,
+                "",
+                "",
+                "",
+                "bad-token",
+                "123456",
+                AsyncMock(),
+                settings,
+            )
+            assert resp.status_code == 400
+            assert b"invalid_grant" in resp.body
+
+        asyncio.run(_run())
+
 
 class TestAuthorizeRoute:
     """Unit tests for GET /oauth2/authorize."""
