@@ -157,12 +157,16 @@ class TestLoginPage:
 
     @patch("shomer.routes.auth_ui._render")
     def test_renders_login(self, mock_render: MagicMock) -> None:
-        asyncio.run(login_page(_req()))
+        req = _req()
+        req.state = MagicMock(spec=[])
+        asyncio.run(login_page(req, AsyncMock()))
         mock_render.assert_called_once()
 
     @patch("shomer.routes.auth_ui._render")
     def test_passes_next_param(self, mock_render: MagicMock) -> None:
-        asyncio.run(login_page(_req(), next="/dashboard"))
+        req = _req()
+        req.state = MagicMock(spec=[])
+        asyncio.run(login_page(req, AsyncMock(), next="/dashboard"))
         ctx = mock_render.call_args[0][2]
         assert ctx["next"] == "/dashboard"
 
