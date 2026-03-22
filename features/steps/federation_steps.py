@@ -56,7 +56,7 @@ def step_setup_tenant_with_idp(context):
         f"discovery_url, scopes, is_active, is_default, auto_provision, allow_linking, "
         f"display_order, created_at, updated_at) "
         f"VALUES ("
-        f"gen_random_uuid(), '{tenant_id}', 'BDD Google', 'google', "
+        f"gen_random_uuid(), '{tenant_id}', 'BDD Google', 'GOOGLE', "
         f"'bdd-google-client-id', "
         f"'https://accounts.google.com/.well-known/openid-configuration', "
         f'\'["openid", "profile", "email"]\'::jsonb, '
