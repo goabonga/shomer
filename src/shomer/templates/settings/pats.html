@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Personal Access Tokens — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+    <a href="/ui/settings/pats" class="active">Tokens</a>
+</nav>
+
+<h2>Personal Access Tokens</h2>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+
+{% if new_token %}
+<div class="token-created">
+    <h3>Token Created</h3>
+    <p>Copy this token now — it will not be shown again:</p>
+    <div class="token-display">
+        <code id="pat-value">{{ new_token }}</code>
+        <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('pat-value').textContent)">Copy</button>
+    </div>
+</div>
+{% endif %}
+
+<div class="create-section">
+    <h3>Create New Token</h3>
+    <form method="post" action="/ui/settings/pats">
+        <input type="hidden" name="action" value="create">
+        <input type="text" name="name" placeholder="Token name (e.g. CI deploy key)" required>
+        <input type="text" name="scopes" placeholder="Scopes (space-separated, e.g. api:read)">
+        <input type="date" name="expires_at" placeholder="Expiration (optional)">
+        <button type="submit">Create Token</button>
+    </form>
+</div>
+
+<div class="list-section">
+    <h3>Existing Tokens</h3>
+    {% if tokens %}
+    <table class="pat-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Prefix</th>
+                <th>Scopes</th>
+                <th>Last Used</th>
+                <th>Expires</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for pat in tokens %}
+            <tr class="{% if pat.is_revoked %}revoked{% endif %}">
+                <td>{{ pat.name }}</td>
+                <td><code>{{ pat.token_prefix }}...</code></td>
+                <td>{{ pat.scopes or "—" }}</td>
+                <td>{{ pat.last_used_at[:10] if pat.last_used_at else "Never" }}</td>
+                <td>{{ pat.expires_at[:10] if pat.expires_at else "Never" }}</td>
+                <td>{% if pat.is_revoked %}<span class="revoked-badge">Revoked</span>{% else %}<span class="active-badge">Active</span>{% endif %}</td>
+                <td>
+                    {% if not pat.is_revoked %}
+                    <form method="post" action="/ui/settings/pats" style="display:inline">
+                        <input type="hidden" name="action" value="revoke">
+                        <input type="hidden" name="pat_id" value="{{ pat.id }}">
+                        <button type="submit" class="revoke-btn">Revoke</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No personal access tokens yet.</p>
+    {% endif %}
+</div>
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .token-created { background: #e8f5e9; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
+    .token-display { display: flex; gap: 8px; align-items: center; background: #fff; padding: 8px; border-radius: 4px; margin-top: 8px; }
+    .token-display code { flex: 1; word-break: break-all; font-size: 0.9em; }
+    .create-section { margin-bottom: 32px; }
+    .pat-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    .pat-table th, .pat-table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
+    .revoked td { opacity: 0.5; }
+    .revoked-badge { color: #c00; font-size: 0.85em; }
+    .active-badge { color: #060; font-size: 0.85em; }
+    .revoke-btn { background: #c00; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.85em; }
+</style>
+{% endblock %}
