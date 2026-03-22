@@ -24,6 +24,9 @@ from shomer.models.role import Role as Role
 from shomer.models.role_scope import RoleScope as RoleScope
 from shomer.models.scope import Scope as Scope
 from shomer.models.session import Session as Session
+from shomer.models.tenant import Tenant as Tenant
+from shomer.models.tenant_custom_role import TenantCustomRole as TenantCustomRole
+from shomer.models.tenant_member import TenantMember as TenantMember
 from shomer.models.user import User as User
 from shomer.models.user_email import UserEmail as UserEmail
 from shomer.models.user_mfa import UserMFA as UserMFA
