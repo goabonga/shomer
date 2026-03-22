@@ -26,11 +26,34 @@ def upgrade() -> None:
         "tenant_brandings",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("tenant_id", sa.Uuid(), nullable=False),
+        # Logo and favicon
         sa.Column("logo_url", sa.String(2048), nullable=True),
+        sa.Column("logo_dark_url", sa.String(2048), nullable=True),
         sa.Column("favicon_url", sa.String(2048), nullable=True),
+        # Colors
         sa.Column("primary_color", sa.String(7), nullable=True),
         sa.Column("secondary_color", sa.String(7), nullable=True),
+        sa.Column("accent_color", sa.String(7), nullable=True),
+        sa.Column("background_color", sa.String(7), nullable=True),
+        sa.Column("surface_color", sa.String(7), nullable=True),
+        sa.Column("text_color", sa.String(7), nullable=True),
+        sa.Column("text_muted_color", sa.String(7), nullable=True),
+        sa.Column("error_color", sa.String(7), nullable=True),
+        sa.Column("success_color", sa.String(7), nullable=True),
+        sa.Column("border_color", sa.String(7), nullable=True),
+        sa.Column("warning_color", sa.String(7), nullable=True),
+        sa.Column("info_color", sa.String(7), nullable=True),
+        # Typography
+        sa.Column("font_family", sa.String(500), nullable=True),
+        sa.Column("font_url", sa.String(2048), nullable=True),
+        # Custom code
         sa.Column("custom_css", sa.Text(), nullable=True),
+        sa.Column("custom_js", sa.Text(), nullable=True),
+        # Settings
+        sa.Column(
+            "show_powered_by", sa.Boolean(), nullable=False, server_default="true"
+        ),
+        # Timestamps
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -53,8 +76,10 @@ def upgrade() -> None:
         "tenant_templates",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("tenant_id", sa.Uuid(), nullable=False),
-        sa.Column("template_type", sa.String(100), nullable=False),
-        sa.Column("template_content", sa.Text(), nullable=False),
+        sa.Column("template_name", sa.String(255), nullable=False),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -70,7 +95,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="CASCADE"),
         sa.UniqueConstraint(
-            "tenant_id", "template_type", name="uq_tenant_template_type"
+            "tenant_id", "template_name", name="uq_tenant_template_name"
         ),
     )
     op.create_index("ix_tenant_templates_tenant_id", "tenant_templates", ["tenant_id"])

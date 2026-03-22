@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -21,7 +21,8 @@ class TenantTemplate(Base, UUIDMixin, TimestampMixin):
     """Custom template override for a tenant.
 
     Allows tenants to provide custom Jinja2 content for specific
-    template types (login page, email verification, etc.).
+    templates. Templates can be deactivated without deletion via
+    ``is_active``.
 
     Attributes
     ----------
@@ -29,11 +30,15 @@ class TenantTemplate(Base, UUIDMixin, TimestampMixin):
         Primary key (from UUIDMixin).
     tenant_id : uuid.UUID
         Foreign key to the tenant.
-    template_type : str
-        Template identifier (e.g. ``login``, ``consent``,
-        ``email_verification``, ``email_password_reset``).
-    template_content : str
+    template_name : str
+        Template path matching the filesystem layout
+        (e.g. ``auth/login.html``, ``emails/mjml/password_reset.mjml``).
+    content : str
         Jinja2 template content.
+    description : str or None
+        Human-readable description of the customization.
+    is_active : bool
+        Whether this override is active.
     tenant : Tenant
         The associated tenant.
     created_at : datetime
@@ -44,7 +49,7 @@ class TenantTemplate(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "tenant_templates"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "template_type", name="uq_tenant_template_type"),
+        UniqueConstraint("tenant_id", "template_name", name="uq_tenant_template_name"),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -52,12 +57,21 @@ class TenantTemplate(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    template_type: Mapped[str] = mapped_column(
-        String(100),
+    template_name: Mapped[str] = mapped_column(
+        String(255),
         nullable=False,
     )
-    template_content: Mapped[str] = mapped_column(
+    content: Mapped[str] = mapped_column(
         Text,
+        nullable=False,
+    )
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
         nullable=False,
     )
 
@@ -65,4 +79,4 @@ class TenantTemplate(Base, UUIDMixin, TimestampMixin):
     tenant: Mapped[Tenant] = relationship()
 
     def __repr__(self) -> str:
-        return f"<TenantTemplate tenant_id={self.tenant_id} type={self.template_type}>"
+        return f"<TenantTemplate tenant_id={self.tenant_id} name={self.template_name}>"
