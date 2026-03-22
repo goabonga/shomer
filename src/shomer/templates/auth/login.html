@@ -4,6 +4,21 @@
 <h1>Login</h1>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 {% if success %}<p class="success">{{ success }}</p>{% endif %}
+
+{% if federation_providers %}
+<div class="federation-providers">
+    {% for provider in federation_providers %}
+    <a href="/federation/{{ provider.id }}/authorize{% if next %}?redirect_uri={{ next }}{% endif %}" class="federation-btn federation-{{ provider.provider_type }}">
+        {% if provider.icon_url %}
+        <img src="{{ provider.icon_url }}" alt="" class="federation-icon">
+        {% endif %}
+        {{ provider.button_text }}
+    </a>
+    {% endfor %}
+</div>
+<div class="divider"><span>or</span></div>
+{% endif %}
+
 <form method="post" action="/ui/login">
     <input type="hidden" name="next" value="{{ next or '' }}">
     <input type="email" name="email" placeholder="Email" required>
@@ -12,4 +27,17 @@
 </form>
 <p><a href="/ui/register">Create an account</a></p>
 <p><a href="/auth/password/reset">Forgot password?</a></p>
+
+<style>
+    .federation-providers { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .federation-btn { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border: 1px solid #ccc; border-radius: 4px; text-decoration: none; color: #333; background: #fff; cursor: pointer; font-size: 0.95em; }
+    .federation-btn:hover { background: #f5f5f5; border-color: #999; }
+    .federation-icon { width: 20px; height: 20px; }
+    .federation-google { border-color: #4285f4; }
+    .federation-github { border-color: #333; }
+    .federation-microsoft { border-color: #00a4ef; }
+    .divider { text-align: center; margin: 16px 0; position: relative; }
+    .divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; border-top: 1px solid #ccc; }
+    .divider span { background: #fff; padding: 0 12px; position: relative; color: #999; font-size: 0.85em; }
+</style>
 {% endblock %}

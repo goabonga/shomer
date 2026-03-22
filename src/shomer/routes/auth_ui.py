@@ -138,9 +138,70 @@ async def verify_resend(
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, next: str = "") -> Any:
-    """Render the login page."""
-    return _render(request, "auth/login.html", {"next": next})
+async def login_page(
+    request: Request,
+    db: DbSession,
+    next: str = "",
+    error: str = "",
+    message: str = "",
+) -> Any:
+    """Render the login page with optional federation provider buttons.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+    next : str
+        URL to redirect to after login.
+    error : str
+        Error code (e.g. from federation callback).
+    message : str
+        Error message to display.
+    """
+    # Fetch federation providers for the current tenant
+    providers: list[dict[str, str | None]] = []
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id:
+        from sqlalchemy import select
+
+        from shomer.models.tenant import Tenant
+
+        stmt = select(Tenant.slug).where(Tenant.id == tenant_id)
+        result = await db.execute(stmt)
+        slug = result.scalar_one_or_none()
+        if slug:
+            from shomer.services.federation_service import FederationService
+
+            svc = FederationService(db)
+            idps = await svc.get_tenant_identity_providers(slug)
+            providers = [
+                {
+                    "id": str(idp.id),
+                    "name": idp.name,
+                    "provider_type": (
+                        idp.provider_type.value
+                        if hasattr(idp.provider_type, "value")
+                        else str(idp.provider_type)
+                    ),
+                    "icon_url": idp.icon_url,
+                    "button_text": idp.button_text or f"Continue with {idp.name}",
+                }
+                for idp in idps
+            ]
+
+    error_msg = message or (error if error else "")
+
+    return _render(
+        request,
+        "auth/login.html",
+        {
+            "next": next,
+            "error": error_msg if error_msg else None,
+            "federation_providers": providers,
+        },
+    )
 
 
 @router.post("/login", response_class=HTMLResponse)
