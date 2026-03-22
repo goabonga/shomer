@@ -5,9 +5,10 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -34,6 +35,8 @@ class User(Base, UUIDMixin, TimestampMixin):
         Optional display name.
     is_active : bool
         Whether the account is active.
+    registration_tenant_id : uuid.UUID or None
+        The tenant where the user originally registered.
     created_at : datetime
         Row creation timestamp (from TimestampMixin).
     updated_at : datetime
@@ -54,6 +57,11 @@ class User(Base, UUIDMixin, TimestampMixin):
         Boolean,
         default=True,
         nullable=False,
+    )
+    registration_tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Relationships
