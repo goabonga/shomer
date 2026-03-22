@@ -105,6 +105,12 @@ def _substitute_vars(context, text):
     mfa_login_tok = getattr(context, "mfa_login_token", None)
     if mfa_login_tok and "${mfa_login_token}" in text:
         text = text.replace("${mfa_login_token}", mfa_login_tok)
+    fed_slug = getattr(context, "federation_tenant_slug", None)
+    if fed_slug and "${federation_tenant_slug}" in text:
+        text = text.replace("${federation_tenant_slug}", fed_slug)
+    fed_idp = getattr(context, "federation_idp_id", None)
+    if fed_idp and "${federation_idp_id}" in text:
+        text = text.replace("${federation_idp_id}", fed_idp)
     return text
 
 
