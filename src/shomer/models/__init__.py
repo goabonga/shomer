@@ -10,6 +10,8 @@ can resolve all relationships at configuration time.
 from shomer.models.access_token import AccessToken as AccessToken
 from shomer.models.authorization_code import AuthorizationCode as AuthorizationCode
 from shomer.models.device_code import DeviceCode as DeviceCode
+from shomer.models.federated_identity import FederatedIdentity as FederatedIdentity
+from shomer.models.identity_provider import IdentityProvider as IdentityProvider
 from shomer.models.jwk import JWK as JWK
 from shomer.models.mfa_backup_code import MFABackupCode as MFABackupCode
 from shomer.models.mfa_email_code import MFAEmailCode as MFAEmailCode
