@@ -165,6 +165,7 @@ CUSTOMIZABLE_TEMPLATES: list[str] = [
     "device/verify.html",
     "email/verification.html",
     "email/password_reset.html",
+    "email/mfa_code.html",
 ]
 
 
