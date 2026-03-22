@@ -18,12 +18,34 @@ class TestTenantTemplateModel:
         tid = uuid.uuid4()
         t = TenantTemplate(
             tenant_id=tid,
-            template_type="login",
-            template_content="<h1>Custom Login</h1>",
+            template_name="auth/login.html",
+            content="<h1>Custom Login</h1>",
+            is_active=True,
         )
         assert t.tenant_id == tid
-        assert t.template_type == "login"
-        assert t.template_content == "<h1>Custom Login</h1>"
+        assert t.template_name == "auth/login.html"
+        assert t.content == "<h1>Custom Login</h1>"
+        assert t.is_active is True
+        assert t.description is None
+
+    def test_with_description(self) -> None:
+        t = TenantTemplate(
+            tenant_id=uuid.uuid4(),
+            template_name="oauth2/consent.html",
+            content="<p>Custom consent</p>",
+            description="Custom consent page for Acme",
+            is_active=True,
+        )
+        assert t.description == "Custom consent page for Acme"
+
+    def test_inactive_template(self) -> None:
+        t = TenantTemplate(
+            tenant_id=uuid.uuid4(),
+            template_name="auth/register.html",
+            content="<p>Draft</p>",
+            is_active=False,
+        )
+        assert t.is_active is False
 
     def test_tenant_id_indexed(self) -> None:
         col = TenantTemplate.__table__.c.tenant_id
@@ -31,11 +53,16 @@ class TestTenantTemplateModel:
 
     def test_unique_constraint(self) -> None:
         names = [c.name for c in getattr(TenantTemplate.__table__, "constraints", [])]
-        assert "uq_tenant_template_type" in names
+        assert "uq_tenant_template_name" in names
 
     def test_repr(self) -> None:
         tid = uuid.uuid4()
-        t = TenantTemplate(tenant_id=tid, template_type="consent", template_content="")
+        t = TenantTemplate(
+            tenant_id=tid,
+            template_name="oauth2/consent.html",
+            content="",
+            is_active=True,
+        )
         r = repr(t)
         assert str(tid) in r
-        assert "consent" in r
+        assert "oauth2/consent.html" in r
