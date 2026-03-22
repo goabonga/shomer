@@ -16,6 +16,9 @@ from shomer.models.mfa_email_code import MFAEmailCode as MFAEmailCode
 from shomer.models.oauth2_client import OAuth2Client as OAuth2Client
 from shomer.models.par_request import PARRequest as PARRequest
 from shomer.models.password_reset_token import PasswordResetToken as PasswordResetToken
+from shomer.models.personal_access_token import (
+    PersonalAccessToken as PersonalAccessToken,
+)
 from shomer.models.refresh_token import RefreshToken as RefreshToken
 from shomer.models.role import Role as Role
 from shomer.models.role_scope import RoleScope as RoleScope
