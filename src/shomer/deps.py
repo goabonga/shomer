@@ -56,18 +56,23 @@ def get_config() -> Settings:
     return get_settings()
 
 
-async def get_current_tenant() -> uuid.UUID | None:
-    """Resolve the current tenant from the request.
+async def get_current_tenant(request: Request) -> uuid.UUID | None:
+    """Resolve the current tenant from the request state.
 
-    This is a placeholder that always returns ``None``. The real
-    implementation will be wired in M18 (multi-tenancy).
+    The tenant is resolved by :class:`TenantMiddleware` and stored
+    on ``request.state.tenant_id``.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
 
     Returns
     -------
     uuid.UUID or None
-        The tenant ID, or ``None`` when multi-tenancy is not active.
+        The tenant ID, or ``None`` when no tenant is resolved.
     """
-    return None
+    return getattr(request.state, "tenant_id", None)
 
 
 #: Annotated type for an injected async DB session.
