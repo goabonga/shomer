@@ -71,7 +71,11 @@ async def list_providers(
                 {
                     "id": str(idp.id),
                     "name": idp.name,
-                    "provider_type": idp.provider_type.value,
+                    "provider_type": (
+                        idp.provider_type.value
+                        if hasattr(idp.provider_type, "value")
+                        else str(idp.provider_type)
+                    ),
                     "icon_url": idp.icon_url,
                     "button_text": idp.button_text or f"Continue with {idp.name}",
                 }
