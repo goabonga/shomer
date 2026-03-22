@@ -12,6 +12,7 @@ from sqlalchemy import JSON, Boolean, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
+    from shomer.models.identity_provider import IdentityProvider
     from shomer.models.tenant_trusted_source import TenantTrustedSource
 
 from shomer.core.database import Base, TimestampMixin, UUIDMixin
@@ -119,6 +120,10 @@ class Tenant(Base, UUIDMixin, TimestampMixin):
     # Relationships
     trusted_sources: Mapped[list[TenantTrustedSource]] = relationship(
         foreign_keys="TenantTrustedSource.tenant_id",
+        cascade="all, delete-orphan",
+    )
+    identity_providers: Mapped[list[IdentityProvider]] = relationship(
+        back_populates="tenant",
         cascade="all, delete-orphan",
     )
 
