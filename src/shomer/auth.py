@@ -3,8 +3,9 @@
 
 """Unified authentication dependencies for protected routes.
 
-Resolves the current user from either a Bearer JWT token or a session
-cookie. Bearer takes priority if both are present.
+Resolves the current user from a Bearer JWT token, a Personal Access
+Token (``shm_pat_`` prefix), or a session cookie. Priority order:
+Bearer JWT > PAT > Session.
 
 Usage::
 
@@ -73,6 +74,12 @@ async def _try_bearer(request: Request, db: AsyncSession) -> CurrentUserInfo | N
 
     token = auth_header.split(" ", 1)[1].strip()
     if not token:
+        return None
+
+    # Skip PAT tokens — they are handled by _try_pat
+    from shomer.models.personal_access_token import PAT_PREFIX
+
+    if token.startswith(PAT_PREFIX):
         return None
 
     # Check if the token's jti is in the access_tokens table (not revoked)
@@ -159,12 +166,60 @@ async def _try_session(request: Request, db: AsyncSession) -> CurrentUserInfo | 
     )
 
 
+async def _try_pat(request: Request, db: AsyncSession) -> CurrentUserInfo | None:
+    """Try to authenticate via Personal Access Token.
+
+    Detects PATs by the ``shm_pat_`` prefix in the Bearer token.
+    Validates the token, updates last_used_at, and returns user context.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : AsyncSession
+        Database session.
+
+    Returns
+    -------
+    CurrentUserInfo or None
+        The authenticated user if the PAT is valid.
+    """
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return None
+
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        return None
+
+    from shomer.models.personal_access_token import PAT_PREFIX
+
+    if not token.startswith(PAT_PREFIX):
+        return None
+
+    from shomer.services.pat_service import PATError, PATService
+
+    svc = PATService(db)
+    try:
+        pat = await svc.validate(token)
+    except PATError:
+        return None
+
+    scopes = pat.scopes.split() if pat.scopes else []
+
+    return CurrentUserInfo(
+        user_id=pat.user_id,
+        scopes=scopes,
+        auth_method="pat",
+    )
+
+
 async def resolve_current_user(
     request: Request, db: AsyncSession
 ) -> CurrentUserInfo | None:
-    """Resolve the current user from Bearer token or session cookie.
+    """Resolve the current user from Bearer JWT, PAT, or session cookie.
 
-    Bearer token takes priority if both are present.
+    Priority: Bearer JWT > PAT > Session.
 
     Parameters
     ----------
@@ -178,8 +233,13 @@ async def resolve_current_user(
     CurrentUserInfo or None
         The authenticated user, or None if unauthenticated.
     """
-    # Try Bearer first
+    # Try Bearer JWT first
     user = await _try_bearer(request, db)
+    if user is not None:
+        return user
+
+    # Try PAT
+    user = await _try_pat(request, db)
     if user is not None:
         return user
 
