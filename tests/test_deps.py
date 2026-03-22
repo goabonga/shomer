@@ -49,10 +49,24 @@ class TestGetConfig:
 
 
 class TestGetCurrentTenant:
-    """Tests for get_current_tenant placeholder."""
+    """Tests for get_current_tenant from request state."""
 
-    def test_returns_none(self) -> None:
-        result = asyncio.run(get_current_tenant())
+    def test_returns_tenant_id_from_state(self) -> None:
+        import uuid
+        from unittest.mock import MagicMock
+
+        tid = uuid.uuid4()
+        req = MagicMock()
+        req.state.tenant_id = tid
+        result = asyncio.run(get_current_tenant(req))
+        assert result == tid
+
+    def test_returns_none_when_no_state(self) -> None:
+        from unittest.mock import MagicMock
+
+        req = MagicMock(spec=[])
+        req.state = MagicMock(spec=[])
+        result = asyncio.run(get_current_tenant(req))
         assert result is None
 
 
