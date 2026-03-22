@@ -63,6 +63,7 @@ def create_app() -> FastAPI:
     from shomer.routes.mfa_ui import router as mfa_ui_router
     from shomer.routes.oauth2 import router as oauth2_router
     from shomer.routes.password_ui import router as password_ui_router
+    from shomer.routes.pat import router as pat_router
     from shomer.routes.profile import router as profile_router
     from shomer.routes.settings_ui import router as settings_ui_router
     from shomer.routes.userinfo import router as userinfo_router
@@ -85,6 +86,7 @@ def create_app() -> FastAPI:
     application.include_router(device_ui_router)
     application.include_router(mfa_router)
     application.include_router(mfa_ui_router)
+    application.include_router(pat_router)
     application.include_router(views_router)
 
     return application
