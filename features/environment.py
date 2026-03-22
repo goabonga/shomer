@@ -46,8 +46,52 @@ def before_all(context):
             pass
         time.sleep(1)
 
+    # Warm up the Celery worker by sending a dummy registration
+    # and waiting for the email to arrive in MailCatcher.
+    _warmup_celery_worker(context.base_url)
+
     context.playwright = sync_playwright().start()
     context.browser = context.playwright.chromium.launch(headless=True)
+
+
+def _warmup_celery_worker(base_url):
+    """Send a dummy registration to ensure Celery worker is processing tasks."""
+    import json
+
+    data = json.dumps({
+        "email": "warmup-probe@example.com",
+        "password": "warmup12345678",
+    }).encode()
+    req = urllib.request.Request(
+        base_url + "/auth/register",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
+    # Wait for the email to arrive (proves the worker is warm)
+    for _ in range(30):
+        try:
+            resp = urllib.request.urlopen(
+                MAILCATCHER_URL + "/messages", timeout=5
+            )
+            messages = json.loads(resp.read().decode())
+            if messages:
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+
+    # Clear the warmup email
+    try:
+        req = urllib.request.Request(MAILCATCHER_URL + "/messages", method="DELETE")
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        pass
 
 
 def after_all(context):
