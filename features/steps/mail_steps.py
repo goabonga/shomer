@@ -141,12 +141,18 @@ def register_and_verify_user(context, email, password):
     except urllib.error.HTTPError:
         pass  # 201 or duplicate — both ok
 
-    # Wait for email and extract code
-    msg = get_latest_email(email)
-    assert msg is not None, f"No verification email received for {email}"
-    # Prefer HTML body (parsed by MailCatcher), fallback to raw source
-    body = msg.get("html", "") or msg.get("source", "") or msg.get("body", "")
-    code = extract_verification_code(body)
+    # Wait for email and extract code (with retry for empty body)
+    code = None
+    for attempt in range(3):
+        msg = get_latest_email(email)
+        assert msg is not None, f"No verification email received for {email}"
+        # Prefer HTML body (parsed by MailCatcher), fallback to raw source
+        body = msg.get("html", "") or msg.get("source", "") or msg.get("body", "")
+        code = extract_verification_code(body)
+        if code is not None:
+            break
+        # Body was empty — wait and re-fetch
+        time.sleep(2)
     assert code is not None, f"No verification code found in email: {body[:200]}"
 
     # Verify
