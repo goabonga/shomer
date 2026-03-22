@@ -223,7 +223,10 @@ def step_delete_request(context, path):
 
 @then("the response status code should be {status_code:d}")
 def step_check_status_code(context, status_code):
-    assert context.response_status == status_code
+    body_preview = getattr(context, "response_body", "")[:300]
+    assert context.response_status == status_code, (
+        f"Expected {status_code}, got {context.response_status}. Body: {body_preview}"
+    )
 
 
 @then('the response body should contain "{text}"')
