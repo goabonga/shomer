@@ -15,9 +15,11 @@ from fastapi import HTTPException
 from shomer.auth import (
     CurrentUserInfo,
     _try_bearer,
+    _try_pat,
     _try_session,
     get_current_user,
     get_optional_user,
+    resolve_current_user,
 )
 
 
@@ -280,15 +282,17 @@ class TestResolveCurrentUser:
         asyncio.run(_run())
 
     @patch("shomer.auth._try_session")
+    @patch("shomer.auth._try_pat")
     @patch("shomer.auth._try_bearer")
     def test_falls_back_to_session(
-        self, mock_bearer: AsyncMock, mock_session: AsyncMock
+        self, mock_bearer: AsyncMock, mock_pat: AsyncMock, mock_session: AsyncMock
     ) -> None:
         from shomer.auth import resolve_current_user
 
         async def _run() -> None:
             uid = uuid.uuid4()
             mock_bearer.return_value = None
+            mock_pat.return_value = None
             mock_session.return_value = CurrentUserInfo(
                 user_id=uid, auth_method="session"
             )
@@ -299,16 +303,159 @@ class TestResolveCurrentUser:
         asyncio.run(_run())
 
     @patch("shomer.auth._try_session")
+    @patch("shomer.auth._try_pat")
     @patch("shomer.auth._try_bearer")
-    def test_returns_none_when_both_fail(
-        self, mock_bearer: AsyncMock, mock_session: AsyncMock
+    def test_returns_none_when_all_fail(
+        self, mock_bearer: AsyncMock, mock_pat: AsyncMock, mock_session: AsyncMock
     ) -> None:
         from shomer.auth import resolve_current_user
 
         async def _run() -> None:
             mock_bearer.return_value = None
+            mock_pat.return_value = None
             mock_session.return_value = None
             result = await resolve_current_user(MagicMock(), AsyncMock())
             assert result is None
+
+        asyncio.run(_run())
+
+
+class TestTryPAT:
+    """Unit tests for _try_pat authentication."""
+
+    def test_no_auth_header_returns_none(self) -> None:
+        async def _run() -> None:
+            req = _req()
+            result = await _try_pat(req, AsyncMock())
+            assert result is None
+
+        asyncio.run(_run())
+
+    def test_non_pat_bearer_returns_none(self) -> None:
+        async def _run() -> None:
+            req = _req(auth_header="Bearer eyJhbGciOiJIUzI1NiJ9.xxx")
+            result = await _try_pat(req, AsyncMock())
+            assert result is None
+
+        asyncio.run(_run())
+
+    def test_valid_pat_returns_user_info(self) -> None:
+        async def _run() -> None:
+            uid = uuid.uuid4()
+            mock_pat = MagicMock()
+            mock_pat.user_id = uid
+            mock_pat.scopes = "api:read api:write"
+
+            with patch("shomer.services.pat_service.PATService") as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.validate.return_value = mock_pat
+                mock_cls.return_value = mock_svc
+
+                req = _req(auth_header="Bearer shm_pat_test-secret-123")
+                result = await _try_pat(req, AsyncMock())
+                assert result is not None
+                assert result.user_id == uid
+                assert result.auth_method == "pat"
+                assert "api:read" in result.scopes
+                assert "api:write" in result.scopes
+
+        asyncio.run(_run())
+
+    def test_invalid_pat_returns_none(self) -> None:
+        async def _run() -> None:
+            from shomer.services.pat_service import PATError
+
+            with patch("shomer.services.pat_service.PATService") as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.validate.side_effect = PATError("Invalid token")
+                mock_cls.return_value = mock_svc
+
+                req = _req(auth_header="Bearer shm_pat_bad-token")
+                result = await _try_pat(req, AsyncMock())
+                assert result is None
+
+        asyncio.run(_run())
+
+    def test_revoked_pat_returns_none(self) -> None:
+        async def _run() -> None:
+            from shomer.services.pat_service import PATError
+
+            with patch("shomer.services.pat_service.PATService") as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.validate.side_effect = PATError("Token has been revoked")
+                mock_cls.return_value = mock_svc
+
+                req = _req(auth_header="Bearer shm_pat_revoked-token")
+                result = await _try_pat(req, AsyncMock())
+                assert result is None
+
+        asyncio.run(_run())
+
+    def test_empty_scopes(self) -> None:
+        async def _run() -> None:
+            mock_pat = MagicMock()
+            mock_pat.user_id = uuid.uuid4()
+            mock_pat.scopes = ""
+
+            with patch("shomer.services.pat_service.PATService") as mock_cls:
+                mock_svc = AsyncMock()
+                mock_svc.validate.return_value = mock_pat
+                mock_cls.return_value = mock_svc
+
+                req = _req(auth_header="Bearer shm_pat_no-scopes")
+                result = await _try_pat(req, AsyncMock())
+                assert result is not None
+                assert result.scopes == []
+
+        asyncio.run(_run())
+
+
+class TestBearerSkipsPAT:
+    """Test that _try_bearer skips PAT tokens."""
+
+    def test_bearer_skips_pat_prefix(self) -> None:
+        async def _run() -> None:
+            req = _req(auth_header="Bearer shm_pat_some-token")
+            result = await _try_bearer(req, AsyncMock())
+            assert result is None
+
+        asyncio.run(_run())
+
+
+class TestResolveWithPAT:
+    """Test resolve_current_user with PAT in the chain."""
+
+    @patch("shomer.auth._try_session")
+    @patch("shomer.auth._try_pat")
+    @patch("shomer.auth._try_bearer")
+    def test_pat_used_when_bearer_fails(
+        self, mock_bearer: MagicMock, mock_pat: MagicMock, mock_session: MagicMock
+    ) -> None:
+        async def _run() -> None:
+            mock_bearer.return_value = None
+            pat_user = CurrentUserInfo(
+                user_id=uuid.uuid4(), scopes=["api:read"], auth_method="pat"
+            )
+            mock_pat.return_value = pat_user
+            result = await resolve_current_user(MagicMock(), AsyncMock())
+            assert result is pat_user
+            mock_session.assert_not_awaited()
+
+        asyncio.run(_run())
+
+    @patch("shomer.auth._try_session")
+    @patch("shomer.auth._try_pat")
+    @patch("shomer.auth._try_bearer")
+    def test_bearer_takes_priority_over_pat(
+        self, mock_bearer: MagicMock, mock_pat: MagicMock, mock_session: MagicMock
+    ) -> None:
+        async def _run() -> None:
+            bearer_user = CurrentUserInfo(
+                user_id=uuid.uuid4(), scopes=[], auth_method="bearer"
+            )
+            mock_bearer.return_value = bearer_user
+            result = await resolve_current_user(MagicMock(), AsyncMock())
+            assert result is bearer_user
+            mock_pat.assert_not_awaited()
 
         asyncio.run(_run())
