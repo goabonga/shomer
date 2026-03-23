@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""Async SQLAlchemy database setup, base model and mixins."""
+"""Async and sync SQLAlchemy database setup, base model and mixins."""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, MetaData, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -80,6 +81,29 @@ settings = get_settings()
 
 engine = create_async_engine(settings.database_url, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+_sync_session_factory: object | None = None
+
+
+def sync_session() -> Any:
+    """Return a synchronous session for Celery tasks (lazy init).
+
+    Returns
+    -------
+    Session
+        A synchronous SQLAlchemy session context manager.
+    """
+    global _sync_session_factory  # noqa: PLW0603
+    if _sync_session_factory is None:
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        _sync_url = settings.database_url.replace("+asyncpg", "").replace(
+            "postgresql+asyncpg", "postgresql"
+        )
+        _sync_engine = create_engine(_sync_url, echo=False)
+        _sync_session_factory = sessionmaker(_sync_engine, expire_on_commit=False)
+    return _sync_session_factory()  # type: ignore[operator]
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:  # pragma: no cover
