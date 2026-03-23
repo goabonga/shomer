@@ -103,6 +103,7 @@ class TestMFASetupSubmit:
                 ctx = call_args[0][2] if len(call_args[0]) > 2 else call_args[1]
                 assert "secret" in ctx
                 assert "provisioning_uri" in ctx
+                assert ctx["provisioning_uri"].startswith("otpauth://totp/")
 
         asyncio.run(_run())
 

@@ -19,6 +19,14 @@
     <p class="secret-display"><code>{{ secret }}</code></p>
 </details>
 
+<details class="secret-details">
+    <summary>Copy provisioning URI</summary>
+    <div class="uri-display">
+        <input type="text" id="otpauth-uri" value="{{ provisioning_uri }}" readonly onclick="this.select()">
+        <button type="button" class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('otpauth-uri').value)">Copy</button>
+    </div>
+</details>
+
 <form method="post" action="/ui/mfa/setup">
     <input type="hidden" name="step" value="verify">
     <input type="text" name="code" placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}" required>
@@ -47,5 +55,8 @@
     .secret-details { margin: 12px 0; }
     .secret-details summary { cursor: pointer; color: #666; font-size: 0.9em; }
     .secret-display { padding: 12px; background: #f8f8f8; border-radius: 8px; word-break: break-all; margin-top: 8px; }
+    .uri-display { display: flex; gap: 8px; margin-top: 8px; }
+    .uri-display input { flex: 1; padding: 8px; font-family: monospace; font-size: 0.85em; border: 1px solid #ccc; border-radius: 4px; background: #f8f8f8; }
+    .copy-btn { padding: 8px 16px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #eee; }
 </style>
 {% endblock %}

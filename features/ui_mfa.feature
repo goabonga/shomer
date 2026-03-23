@@ -22,7 +22,7 @@ Feature: MFA UI pages
     And the page should contain "Set Up MFA"
     And I take a screenshot named "mfa_setup_page"
 
-  Scenario: MFA setup generates QR code and secret
+  Scenario: MFA setup generates QR code, secret and otpauth URI
     Given I register and verify "mfa-ui-qr@example.com" with password "securepassword123"
     When I open the page "/ui/login"
     And I fill "input[name='email']" with "mfa-ui-qr@example.com"
@@ -34,6 +34,8 @@ Feature: MFA UI pages
     Then the page should contain "authenticator app"
     And the page should contain "Verify"
     And the page should have an element "img.qr-code"
+    And the page should contain "provisioning URI"
+    And the page should have an element "#otpauth-uri"
     And I take a screenshot named "mfa_setup_qr"
 
   Scenario: MFA challenge page renders with token
