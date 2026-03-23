@@ -43,10 +43,15 @@ def step_setup_admin_user(context, email, password):
     )
     assert user_id, f"User {email} not found in DB"
 
-    # Seed scope
+    # Seed scopes
     _psql(
         "INSERT INTO scopes (id, name, description, created_at, updated_at) "
         "VALUES (gen_random_uuid(), 'admin:users:read', 'Read admin users', NOW(), NOW()) "
+        "ON CONFLICT (name) DO NOTHING;"
+    )
+    _psql(
+        "INSERT INTO scopes (id, name, description, created_at, updated_at) "
+        "VALUES (gen_random_uuid(), 'admin:users:write', 'Write admin users', NOW(), NOW()) "
         "ON CONFLICT (name) DO NOTHING;"
     )
 
@@ -57,14 +62,15 @@ def step_setup_admin_user(context, email, password):
         "ON CONFLICT (name) DO NOTHING;"
     )
 
-    # Link role to scope
-    _psql(
-        "INSERT INTO role_scopes (id, role_id, scope_id, created_at, updated_at) "
-        "SELECT gen_random_uuid(), r.id, s.id, NOW(), NOW() "
-        "FROM roles r, scopes s "
-        "WHERE r.name = 'admin' AND s.name = 'admin:users:read' "
-        "ON CONFLICT ON CONSTRAINT uq_role_scope DO NOTHING;"
-    )
+    # Link role to scopes
+    for scope_name in ("admin:users:read", "admin:users:write"):
+        _psql(
+            f"INSERT INTO role_scopes (id, role_id, scope_id, created_at, updated_at) "
+            f"SELECT gen_random_uuid(), r.id, s.id, NOW(), NOW() "
+            f"FROM roles r, scopes s "
+            f"WHERE r.name = 'admin' AND s.name = '{scope_name}' "
+            f"ON CONFLICT ON CONSTRAINT uq_role_scope DO NOTHING;"
+        )
 
     # Assign role to user
     _psql(

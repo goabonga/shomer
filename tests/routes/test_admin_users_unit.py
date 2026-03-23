@@ -11,7 +11,9 @@ import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from shomer.routes.admin_users import get_user, list_users
+from fastapi import HTTPException
+
+from shomer.routes.admin_users import create_user, get_user, list_users
 
 
 def _mock_user(
@@ -223,8 +225,6 @@ class TestGetUser:
         """Returns 400 for invalid UUID."""
 
         async def _run() -> None:
-            from fastapi import HTTPException
-
             try:
                 await get_user("not-a-uuid", AsyncMock())
                 raise AssertionError("Expected HTTPException")
@@ -251,5 +251,78 @@ class TestGetUser:
                 raise AssertionError("Expected HTTPException")
             except HTTPException as exc:
                 assert exc.status_code == 404
+
+        asyncio.run(_run())
+
+
+class TestCreateUser:
+    """Tests for POST /admin/users."""
+
+    @patch("shomer.routes.admin_users.require_scope")
+    @patch("shomer.core.security.hash_password", return_value="hashed")
+    @patch("shomer.models.queries.create_user")
+    def test_creates_user_successfully(
+        self,
+        mock_create: AsyncMock,
+        _mock_hash: MagicMock,
+        _mock_rbac: MagicMock,
+    ) -> None:
+        """Creates a user and returns 201."""
+
+        async def _run() -> None:
+            new_user = _mock_user(email="new@example.com")
+            mock_create.return_value = new_user
+
+            # email check returns None (not existing)
+            email_result = MagicMock()
+            email_result.scalar_one_or_none.return_value = None
+
+            # _get_user_emails returns a mock email record
+            email_record = MagicMock()
+            email_record.is_verified = False
+            emails_scalars = MagicMock()
+            emails_scalars.all.return_value = [email_record]
+            emails_result = MagicMock()
+            emails_result.scalars.return_value = emails_scalars
+
+            db = AsyncMock()
+            db.execute.side_effect = [email_result, emails_result]
+
+            from shomer.routes.admin_users import AdminCreateUserRequest
+
+            body = AdminCreateUserRequest(
+                email="new@example.com", password="password123"
+            )
+            resp = await create_user(body, db)
+            assert resp.status_code == 201
+            data = json.loads(bytes(resp.body))
+            assert data["email"] == "new@example.com"
+            assert data["email_verified"] is True
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.admin_users.require_scope")
+    def test_duplicate_email_returns_409(self, _mock_rbac: MagicMock) -> None:
+        """Returns 409 when email already exists."""
+
+        async def _run() -> None:
+            email_result = MagicMock()
+            email_result.scalar_one_or_none.return_value = MagicMock()
+
+            db = AsyncMock()
+            db.execute.return_value = email_result
+
+            from shomer.routes.admin_users import AdminCreateUserRequest
+
+            body = AdminCreateUserRequest(
+                email="dup@example.com", password="password123"
+            )
+            try:
+                await create_user(body, db)
+                raise AssertionError("Expected HTTPException")
+            except HTTPException as exc:
+                assert exc.status_code == 409
+
+        asyncio.run(_run())
 
         asyncio.run(_run())
