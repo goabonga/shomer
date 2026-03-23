@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
     from shomer.middleware.cors import setup_cors
     from shomer.middleware.session import SessionMiddleware
     from shomer.routes.admin_clients import router as admin_clients_router
+    from shomer.routes.admin_jwks import router as admin_jwks_router
     from shomer.routes.admin_sessions import router as admin_sessions_router
     from shomer.routes.admin_users import router as admin_users_router
     from shomer.routes.auth import router as auth_router
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     application.include_router(admin_users_router)
     application.include_router(admin_clients_router)
     application.include_router(admin_sessions_router)
+    application.include_router(admin_jwks_router)
     application.include_router(views_router)
 
     return application
