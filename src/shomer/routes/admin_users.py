@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
@@ -255,3 +256,116 @@ async def get_user(user_id: str, db: DbSession) -> JSONResponse:
             "memberships": memberships,
         }
     )
+
+
+class AdminCreateUserRequest(BaseModel):
+    """Request body for admin user creation.
+
+    Attributes
+    ----------
+    email : EmailStr
+        Email address for the new user.
+    password : str
+        Plain-text password (will be hashed with Argon2id).
+    username : str or None
+        Optional display name.
+    is_active : bool
+        Whether the account is active (default True).
+    email_verified : bool
+        Whether to mark the email as verified (admin bypass, default True).
+    """
+
+    email: EmailStr
+    password: str
+    username: str | None = None
+    is_active: bool = True
+    email_verified: bool = True
+
+
+@router.post(
+    "",
+    dependencies=[Depends(require_scope("admin:users:write"))],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_user(body: AdminCreateUserRequest, db: DbSession) -> JSONResponse:
+    """Create a new user with admin bypass for email verification.
+
+    Parameters
+    ----------
+    body : AdminCreateUserRequest
+        User creation data.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    JSONResponse
+        The created user ID and email.
+
+    Raises
+    ------
+    HTTPException
+        409 if the email is already registered.
+    """
+    # Check for existing email
+    existing = await db.execute(select(UserEmail).where(UserEmail.email == body.email))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+
+    from shomer.core.security import hash_password
+    from shomer.models.queries import create_user as _create_user
+
+    password_hash = hash_password(body.password)
+    user = await _create_user(
+        db,
+        email=body.email,
+        password_hash=password_hash,
+        username=body.username,
+    )
+
+    # Admin bypass: set is_active and email_verified
+    user.is_active = body.is_active
+
+    if body.email_verified:
+        email_record = next(
+            (e for e in await _get_user_emails(db, user.id)),
+            None,
+        )
+        if email_record:
+            email_record.is_verified = True
+
+    await db.flush()
+
+    return JSONResponse(
+        status_code=201,
+        content={
+            "id": str(user.id),
+            "email": body.email,
+            "username": body.username,
+            "is_active": user.is_active,
+            "email_verified": body.email_verified,
+            "message": "User created successfully",
+        },
+    )
+
+
+async def _get_user_emails(db: Any, user_id: Any) -> list[Any]:
+    """Fetch all email records for a user.
+
+    Parameters
+    ----------
+    db : AsyncSession
+        Database session.
+    user_id : uuid.UUID
+        The user ID.
+
+    Returns
+    -------
+    list
+        List of UserEmail records.
+    """
+    result = await db.execute(select(UserEmail).where(UserEmail.user_id == user_id))
+    return list(result.scalars().all())

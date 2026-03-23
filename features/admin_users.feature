@@ -39,3 +39,21 @@ Feature: Admin users API
     When I send a GET request to "/admin/users"
     Then the response status code should be 200
     And the response should have JSON key "items"
+
+  Scenario: POST /admin/users without auth returns 401
+    When I send a POST request to "/admin/users" with JSON
+      """
+      {"email": "new-noauth@example.com", "password": "securepassword123"}
+      """
+    Then the response status code should be 401
+
+  Scenario: POST /admin/users with admin scope creates user
+    Given an admin user "admin-create@example.com" with password "securepassword123"
+    And I am logged in as "admin-create@example.com" with password "securepassword123"
+    When I send a POST request to "/admin/users" with JSON
+      """
+      {"email": "created-by-admin@example.com", "password": "securepassword123", "username": "newuser"}
+      """
+    Then the response status code should be 201
+    And the response body should contain "created-by-admin@example.com"
+    And the response body should contain "User created successfully"
