@@ -190,8 +190,22 @@ def step_registered_verified_user(context, email, password):
 
 @given('I am logged in as "{email}" with password "{password}"')
 def step_logged_in_as(context, email, password):
-    """Log in via POST /auth/login and capture the session cookie."""
-    _send(context, "POST", "/auth/login", {"email": email, "password": password})
+    """Log in via POST /auth/login and capture the session cookie.
+
+    Retries up to 3 times on 403 (email not verified yet) to handle
+    timing issues with Celery email verification.
+    """
+    import time as _time
+
+    for _attempt in range(3):
+        _send(context, "POST", "/auth/login", {"email": email, "password": password})
+        if context.response_status == 200:
+            return
+        if context.response_status == 403:
+            # Email might not be verified yet — wait and retry
+            _time.sleep(2)
+            continue
+        break
     assert context.response_status == 200, (
         f"Login failed with status {context.response_status}: {context.response_body}"
     )
