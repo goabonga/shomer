@@ -66,6 +66,7 @@ def step_setup_admin_user(context, email, password):
         "admin:tenants:write",
         "admin:pats:read",
         "admin:pats:write",
+        "admin:dashboard:read",
     )
     for scope_name in admin_scopes:
         _psql(
