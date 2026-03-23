@@ -162,15 +162,49 @@ class TestSettingsSecurity:
             mock_session = MagicMock()
             mock_auth.return_value = (mock_session, mock_user)
 
-            db = AsyncMock()
             count_result = MagicMock()
             count_result.scalar.return_value = 2
-            db.execute.return_value = count_result
+            mfa_result = MagicMock()
+            mfa_result.scalar_one_or_none.return_value = None
+
+            db = AsyncMock()
+            db.execute.side_effect = [count_result, mfa_result]
 
             mock_render.return_value = "html"
             await settings_security(_req({"session_id": "tok"}), db)
             ctx = mock_render.call_args[0][2]
             assert ctx["section"] == "security"
             assert ctx["active_sessions"] == 2
+            assert ctx["mfa_enabled"] is False
+            assert ctx["mfa_methods"] == []
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_mfa_enabled_shows_in_context(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_session = MagicMock()
+            mock_auth.return_value = (mock_session, mock_user)
+
+            count_result = MagicMock()
+            count_result.scalar.return_value = 1
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+            mock_mfa.methods = ["totp", "backup"]
+            mfa_result = MagicMock()
+            mfa_result.scalar_one_or_none.return_value = mock_mfa
+
+            db = AsyncMock()
+            db.execute.side_effect = [count_result, mfa_result]
+
+            mock_render.return_value = "html"
+            await settings_security(_req({"session_id": "tok"}), db)
+            ctx = mock_render.call_args[0][2]
+            assert ctx["mfa_enabled"] is True
+            assert "totp" in ctx["mfa_methods"]
 
         asyncio.run(_run())

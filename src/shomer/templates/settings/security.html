@@ -6,6 +6,7 @@
     <a href="/ui/settings/profile">Profile</a>
     <a href="/ui/settings/emails">Emails</a>
     <a href="/ui/settings/security" class="active">Security</a>
+    <a href="/ui/settings/pats">Tokens</a>
 </nav>
 
 <h2>Security</h2>
@@ -22,7 +23,17 @@
 
 <div class="security-section">
     <h3>Multi-Factor Authentication</h3>
-    <p class="mfa-status">MFA is not yet available.</p>
+    {% if mfa_enabled %}
+    <p class="mfa-status mfa-enabled">MFA is <strong>enabled</strong>.</p>
+    <p>Active methods: {{ mfa_methods | join(', ') }}</p>
+    <p>
+        <a href="/ui/mfa/setup">Manage MFA</a> |
+        <a href="/mfa/backup-codes" class="mfa-link">Regenerate backup codes</a>
+    </p>
+    {% else %}
+    <p class="mfa-status mfa-disabled">MFA is <strong>disabled</strong>.</p>
+    <p><a href="/ui/mfa/setup"><button type="button">Set Up MFA</button></a></p>
+    {% endif %}
 </div>
 
 <style>
@@ -30,6 +41,8 @@
     .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
     .settings-nav a.active { background: #333; color: #fff; }
     .security-section { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
-    .mfa-status { color: #999; }
+    .mfa-enabled { color: #060; }
+    .mfa-disabled { color: #c00; }
+    .mfa-link { color: #333; }
 </style>
 {% endblock %}

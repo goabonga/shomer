@@ -180,12 +180,24 @@ async def settings_security(request: Request, db: DbSession) -> Any:
     count_result = await db.execute(count_stmt)
     active_sessions = count_result.scalar() or 0
 
+    # Query MFA status
+    from shomer.models.user_mfa import UserMFA
+
+    mfa_stmt = select(UserMFA).where(UserMFA.user_id == user.id)
+    mfa_result = await db.execute(mfa_stmt)
+    user_mfa = mfa_result.scalar_one_or_none()
+
+    mfa_enabled = user_mfa.is_enabled if user_mfa else False
+    mfa_methods = user_mfa.methods if user_mfa and user_mfa.is_enabled else []
+
     return _render(
         request,
         "settings/security.html",
         {
             "user": user,
             "active_sessions": active_sessions,
+            "mfa_enabled": mfa_enabled,
+            "mfa_methods": mfa_methods,
             "section": "security",
         },
     )
