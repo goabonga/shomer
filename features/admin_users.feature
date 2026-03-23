@@ -57,3 +57,14 @@ Feature: Admin users API
     Then the response status code should be 201
     And the response body should contain "created-by-admin@example.com"
     And the response body should contain "User created successfully"
+
+  Scenario: PUT /admin/users/{id} without auth returns 401
+    When I send a PUT request to "/admin/users/00000000-0000-0000-0000-000000000001" with JSON
+      """
+      {"is_active": false}
+      """
+    Then the response status code should be 401
+
+  Scenario: DELETE /admin/users/{id} without auth returns 401
+    When I send a DELETE request to "/admin/users/00000000-0000-0000-0000-000000000001"
+    Then the response status code should be 401

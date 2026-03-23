@@ -352,6 +352,140 @@ async def create_user(body: AdminCreateUserRequest, db: DbSession) -> JSONRespon
     )
 
 
+class AdminUpdateUserRequest(BaseModel):
+    """Request body for admin user update.
+
+    Attributes
+    ----------
+    username : str or None
+        Display name (set to update).
+    is_active : bool or None
+        Active status (set to update).
+    """
+
+    username: str | None = None
+    is_active: bool | None = None
+
+
+@router.put(
+    "/{user_id}",
+    dependencies=[Depends(require_scope("admin:users:write"))],
+)
+async def update_user(
+    user_id: str, body: AdminUpdateUserRequest, db: DbSession
+) -> JSONResponse:
+    """Update a user's account fields (activate/deactivate, username).
+
+    Parameters
+    ----------
+    user_id : str
+        UUID of the user to update.
+    body : AdminUpdateUserRequest
+        Fields to update.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    JSONResponse
+        Updated user data.
+
+    Raises
+    ------
+    HTTPException
+        400 if the user_id is not a valid UUID.
+        404 if the user is not found.
+    """
+    import uuid as _uuid
+
+    try:
+        uid = _uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user ID",
+        )
+
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    if body.username is not None:
+        user.username = body.username
+    if body.is_active is not None:
+        user.is_active = body.is_active
+
+    await db.flush()
+
+    return JSONResponse(
+        content={
+            "id": str(user.id),
+            "username": user.username,
+            "is_active": user.is_active,
+            "message": "User updated successfully",
+        }
+    )
+
+
+@router.delete(
+    "/{user_id}",
+    dependencies=[Depends(require_scope("admin:users:write"))],
+)
+async def delete_user(user_id: str, db: DbSession) -> JSONResponse:
+    """Deactivate a user (soft delete).
+
+    Sets ``is_active`` to False rather than removing the user record.
+
+    Parameters
+    ----------
+    user_id : str
+        UUID of the user to deactivate.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    JSONResponse
+        Confirmation message.
+
+    Raises
+    ------
+    HTTPException
+        400 if the user_id is not a valid UUID.
+        404 if the user is not found.
+    """
+    import uuid as _uuid
+
+    try:
+        uid = _uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user ID",
+        )
+
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    user.is_active = False
+    await db.flush()
+
+    return JSONResponse(
+        content={"id": str(user.id), "message": "User deactivated successfully"}
+    )
+
+
 async def _get_user_emails(db: Any, user_id: Any) -> list[Any]:
     """Fetch all email records for a user.
 
