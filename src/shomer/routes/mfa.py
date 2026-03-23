@@ -131,11 +131,14 @@ async def mfa_setup(user: CurrentUser, db: DbSession, config: Config) -> JSONRes
         mfa.totp_secret_encrypted = encrypted
     await db.flush()
 
+    qr_code = MFAService.generate_qr_code_base64(provisioning_uri)
+
     return JSONResponse(
         status_code=200,
         content={
             "secret": secret,
             "provisioning_uri": provisioning_uri,
+            "qr_code": qr_code,
             "message": "Scan the QR code, then call POST /mfa/enable with a TOTP code.",
         },
     )

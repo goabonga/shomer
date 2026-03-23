@@ -63,9 +63,10 @@ pyjwt = {version = "*", optional = true}
 email-validator = {version = "*", optional = true}
 python-multipart = {version = "*", optional = true}
 httpx = {version = "*", optional = true}
+qrcode = {version = "*", optional = true}
 
 [tool.poetry.extras]
-server = ["fastapi", "uvicorn", "jinja2", "sqlalchemy", "asyncpg", "alembic", "argon2-cffi", "cryptography", "pyjwt", "email-validator", "python-multipart", "httpx"]
+server = ["fastapi", "uvicorn", "jinja2", "sqlalchemy", "asyncpg", "alembic", "argon2-cffi", "cryptography", "pyjwt", "email-validator", "python-multipart", "httpx", "qrcode"]
 worker = ["celery"]
 
 [tool.poetry.group.dev]
@@ -78,6 +79,8 @@ pytest-cov = "*"
 ruff = "*"
 isort = "*"
 mypy = "*"
+qrcode = "*"
+types-qrcode = "*"
 httpx = "*"
 
 [tool.poetry.group.test]

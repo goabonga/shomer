@@ -115,6 +115,44 @@ class MFAService:
         return f"otpauth://totp/{label}?{params}"
 
     @staticmethod
+    def generate_qr_code_base64(provisioning_uri: str) -> str:
+        """Generate a QR code as a base64-encoded SVG data URI.
+
+        Parameters
+        ----------
+        provisioning_uri : str
+            The ``otpauth://`` URI to encode.
+
+        Returns
+        -------
+        str
+            A ``data:image/svg+xml;base64,...`` URI for use in ``<img src>``.
+        """
+        import io
+
+        import qrcode
+        import qrcode.image.svg
+
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(provisioning_uri)
+        qr.make(fit=True)
+
+        factory = qrcode.image.svg.SvgPathImage
+        img = qr.make_image(image_factory=factory)
+
+        buf = io.BytesIO()
+        img.save(buf)
+        svg_bytes = buf.getvalue()
+
+        encoded = base64.b64encode(svg_bytes).decode("ascii")
+        return f"data:image/svg+xml;base64,{encoded}"
+
+    @staticmethod
     def generate_totp_code(secret: str, *, time_offset: int = 0) -> str:
         """Generate a TOTP code for the current time step.
 
