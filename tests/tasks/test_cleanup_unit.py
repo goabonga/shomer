@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
 from shomer.tasks.cleanup import DEFAULT_BATCH_SIZE
 
 
