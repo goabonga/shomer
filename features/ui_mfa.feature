@@ -33,6 +33,7 @@ Feature: MFA UI pages
     And I click the "Set Up MFA" button
     Then the page should contain "authenticator app"
     And the page should contain "Verify"
+    And the page should have an element "img.qr-code"
     And I take a screenshot named "mfa_setup_qr"
 
   Scenario: MFA challenge page renders with token
