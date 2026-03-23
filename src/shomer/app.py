@@ -56,6 +56,7 @@ def create_app() -> FastAPI:
     from shomer.routes.admin_jwks import router as admin_jwks_router
     from shomer.routes.admin_roles_scopes import router as admin_rbac_router
     from shomer.routes.admin_sessions import router as admin_sessions_router
+    from shomer.routes.admin_tenants import router as admin_tenants_router
     from shomer.routes.admin_users import router as admin_users_router
     from shomer.routes.auth import router as auth_router
     from shomer.routes.auth_ui import router as auth_ui_router
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     application.include_router(admin_sessions_router)
     application.include_router(admin_jwks_router)
     application.include_router(admin_rbac_router)
+    application.include_router(admin_tenants_router)
     application.include_router(views_router)
 
     return application
