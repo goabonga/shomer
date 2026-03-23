@@ -159,12 +159,15 @@ async def mfa_setup_submit(
             mfa.totp_secret_encrypted = encrypted
         await db.flush()
 
+        qr_code = MFAService.generate_qr_code_base64(provisioning_uri)
+
         return _render(
             request,
             "mfa/setup.html",
             {
                 "secret": secret,
                 "provisioning_uri": provisioning_uri,
+                "qr_code": qr_code,
             },
         )
 
