@@ -106,12 +106,20 @@ async def _build_profile(user: CurrentUserInfo, db: Any) -> dict[str, Any]:
             "name",
             "given_name",
             "family_name",
+            "middle_name",
             "nickname",
             "preferred_username",
             "gender",
             "birthdate",
             "zoneinfo",
             "locale",
+            "phone_number",
+            "website",
+            "address_street",
+            "address_locality",
+            "address_region",
+            "address_postal_code",
+            "address_country",
         ):
             val = getattr(p, field, None)
             if val is not None:
@@ -161,6 +169,8 @@ class ProfileUpdateRequest(BaseModel):
         First name.
     family_name : str or None
         Last name.
+    middle_name : str or None
+        Middle name.
     nickname : str or None
         Casual name.
     preferred_username : str or None
@@ -175,13 +185,28 @@ class ProfileUpdateRequest(BaseModel):
         Locale (e.g. fr-FR).
     picture : str or None
         Profile picture URL.
+    profile_url : str or None
+        Profile page URL.
     website : str or None
         Website URL.
+    phone_number : str or None
+        Phone number.
+    address_street : str or None
+        Street address.
+    address_locality : str or None
+        City.
+    address_region : str or None
+        State / province.
+    address_postal_code : str or None
+        Postal / ZIP code.
+    address_country : str or None
+        Country.
     """
 
     name: str | None = None
     given_name: str | None = None
     family_name: str | None = None
+    middle_name: str | None = None
     nickname: str | None = None
     preferred_username: str | None = None
     gender: str | None = None
@@ -189,7 +214,14 @@ class ProfileUpdateRequest(BaseModel):
     zoneinfo: str | None = None
     locale: str | None = None
     picture: str | None = None
+    profile_url: str | None = None
     website: str | None = None
+    phone_number: str | None = None
+    address_street: str | None = None
+    address_locality: str | None = None
+    address_region: str | None = None
+    address_postal_code: str | None = None
+    address_country: str | None = None
 
 
 class AddEmailRequest(BaseModel):
@@ -244,6 +276,7 @@ async def update_profile(
         "name": "name",
         "given_name": "given_name",
         "family_name": "family_name",
+        "middle_name": "middle_name",
         "nickname": "nickname",
         "preferred_username": "preferred_username",
         "gender": "gender",
@@ -251,7 +284,14 @@ async def update_profile(
         "zoneinfo": "zoneinfo",
         "locale": "locale",
         "picture": "picture_url",
+        "profile_url": "profile_url",
         "website": "website",
+        "phone_number": "phone_number",
+        "address_street": "address_street",
+        "address_locality": "address_locality",
+        "address_region": "address_region",
+        "address_postal_code": "address_postal_code",
+        "address_country": "address_country",
     }
 
     update_data = body.model_dump(exclude_unset=True)
