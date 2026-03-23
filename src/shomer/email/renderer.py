@@ -1,16 +1,29 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Chris <goabonga@pm.me>
 
-"""Jinja2 template rendering engine for email bodies."""
+"""Jinja2 template rendering engine for email bodies.
+
+Supports tenant branding injection (logo, colors, app name).
+"""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 #: Default directory for email templates.
 _TEMPLATE_DIR = Path(__file__).parent.parent / "templates" / "email"
+
+#: Default branding values used when no tenant branding is provided.
+DEFAULT_BRANDING: dict[str, str] = {
+    "app_name": "Shomer",
+    "primary_color": "#1a1a2e",
+    "secondary_color": "#16213e",
+    "bg_color": "#f4f4f7",
+}
 
 
 def create_env(template_dir: Path | None = None) -> Environment:
@@ -39,8 +52,13 @@ def render_template(
     context: dict[str, object],
     *,
     template_dir: Path | None = None,
+    branding: dict[str, Any] | None = None,
 ) -> str:
-    """Render an email template to a string.
+    """Render an email template to a string with branding support.
+
+    Injects default branding variables (``app_name``, ``primary_color``,
+    etc.) which can be overridden by the ``branding`` parameter or
+    individual ``context`` keys.
 
     Parameters
     ----------
@@ -50,6 +68,8 @@ def render_template(
         Variables passed to the template.
     template_dir : Path or None
         Override template directory.
+    branding : dict[str, Any] or None
+        Tenant branding overrides (logo_url, primary_color, etc.).
 
     Returns
     -------
@@ -58,4 +78,14 @@ def render_template(
     """
     env = create_env(template_dir)
     template = env.get_template(template_name)
-    return template.render(context)
+
+    # Build final context: defaults < branding < explicit context
+    merged: dict[str, object] = {
+        **DEFAULT_BRANDING,
+        "year": str(datetime.now(timezone.utc).year),
+    }
+    if branding:
+        merged.update(branding)
+    merged.update(context)
+
+    return template.render(merged)
