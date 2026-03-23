@@ -43,18 +43,6 @@ def step_setup_admin_user(context, email, password):
     )
     assert user_id, f"User {email} not found in DB"
 
-    # Seed scopes
-    _psql(
-        "INSERT INTO scopes (id, name, description, created_at, updated_at) "
-        "VALUES (gen_random_uuid(), 'admin:users:read', 'Read admin users', NOW(), NOW()) "
-        "ON CONFLICT (name) DO NOTHING;"
-    )
-    _psql(
-        "INSERT INTO scopes (id, name, description, created_at, updated_at) "
-        "VALUES (gen_random_uuid(), 'admin:users:write', 'Write admin users', NOW(), NOW()) "
-        "ON CONFLICT (name) DO NOTHING;"
-    )
-
     # Seed role
     _psql(
         "INSERT INTO roles (id, name, description, is_system, created_at, updated_at) "
@@ -62,8 +50,19 @@ def step_setup_admin_user(context, email, password):
         "ON CONFLICT (name) DO NOTHING;"
     )
 
-    # Link role to scopes
-    for scope_name in ("admin:users:read", "admin:users:write"):
+    # Link role to all admin scopes
+    admin_scopes = (
+        "admin:users:read",
+        "admin:users:write",
+        "admin:clients:read",
+        "admin:clients:write",
+    )
+    for scope_name in admin_scopes:
+        _psql(
+            "INSERT INTO scopes (id, name, description, created_at, updated_at) "
+            f"VALUES (gen_random_uuid(), '{scope_name}', '{scope_name}', NOW(), NOW()) "
+            "ON CONFLICT (name) DO NOTHING;"
+        )
         _psql(
             f"INSERT INTO role_scopes (id, role_id, scope_id, created_at, updated_at) "
             f"SELECT gen_random_uuid(), r.id, s.id, NOW(), NOW() "
