@@ -11,15 +11,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from shomer.deps import DbSession
 from shomer.middleware.rbac import require_scope
+from shomer.models.session import Session
 from shomer.models.user import User
 from shomer.models.user_email import UserEmail
+from shomer.models.user_role import UserRole
 
 router = APIRouter(prefix="/admin/users", tags=["admin"])
 
@@ -111,5 +113,145 @@ async def list_users(
             "total": total,
             "page": page,
             "page_size": page_size,
+        }
+    )
+
+
+@router.get(
+    "/{user_id}",
+    dependencies=[Depends(require_scope("admin:users:read"))],
+)
+async def get_user(user_id: str, db: DbSession) -> JSONResponse:
+    """Get detailed user view including roles, emails, sessions, and memberships.
+
+    Parameters
+    ----------
+    user_id : str
+        UUID of the user to retrieve.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    JSONResponse
+        Detailed user data.
+
+    Raises
+    ------
+    HTTPException
+        400 if the user_id is not a valid UUID.
+        404 if the user is not found.
+    """
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    try:
+        uid = _uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user ID",
+        )
+
+    stmt = (
+        select(User)
+        .where(User.id == uid)
+        .options(
+            selectinload(User.emails),
+            selectinload(User.profile),
+        )
+    )
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Emails
+    emails = [
+        {
+            "id": str(e.id),
+            "email": e.email,
+            "is_primary": e.is_primary,
+            "is_verified": e.is_verified,
+        }
+        for e in user.emails
+    ]
+
+    # Profile
+    profile_data: dict[str, Any] | None = None
+    if user.profile:
+        p = user.profile
+        profile_data = {}
+        for field in (
+            "name",
+            "given_name",
+            "family_name",
+            "nickname",
+            "preferred_username",
+            "gender",
+            "locale",
+            "zoneinfo",
+        ):
+            val = getattr(p, field, None)
+            if val is not None:
+                profile_data[field] = val
+
+    # Roles (via user_roles table)
+    roles_stmt = (
+        select(UserRole)
+        .where(UserRole.user_id == uid)
+        .options(selectinload(UserRole.role))
+    )
+    roles_result = await db.execute(roles_stmt)
+    user_roles = list(roles_result.scalars().all())
+    roles = [
+        {
+            "id": str(ur.role.id),
+            "name": ur.role.name,
+            "tenant_id": str(ur.tenant_id) if ur.tenant_id else None,
+            "expires_at": ur.expires_at.isoformat() if ur.expires_at else None,
+        }
+        for ur in user_roles
+    ]
+
+    # Active sessions count
+    now = datetime.now(timezone.utc)
+    session_stmt = (
+        select(func.count())
+        .select_from(Session)
+        .where(Session.user_id == uid, Session.expires_at > now)
+    )
+    session_result = await db.execute(session_stmt)
+    active_sessions = session_result.scalar() or 0
+
+    # Tenant memberships
+    from shomer.models.tenant_member import TenantMember
+
+    membership_stmt = select(TenantMember).where(TenantMember.user_id == uid)
+    membership_result = await db.execute(membership_stmt)
+    memberships = [
+        {
+            "tenant_id": str(m.tenant_id),
+            "role": m.role,
+            "joined_at": m.joined_at.isoformat() if m.joined_at else None,
+        }
+        for m in membership_result.scalars().all()
+    ]
+
+    return JSONResponse(
+        content={
+            "id": str(user.id),
+            "username": user.username,
+            "is_active": user.is_active,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "emails": emails,
+            "profile": profile_data,
+            "roles": roles,
+            "active_sessions": active_sessions,
+            "memberships": memberships,
         }
     )
