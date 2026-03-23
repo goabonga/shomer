@@ -13,7 +13,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
-from shomer.routes.admin_users import create_user, get_user, list_users
+from shomer.routes.admin_users import (
+    create_user,
+    delete_user,
+    get_user,
+    list_users,
+    update_user,
+)
 
 
 def _mock_user(
@@ -324,5 +330,100 @@ class TestCreateUser:
                 assert exc.status_code == 409
 
         asyncio.run(_run())
+
+
+class TestUpdateUser:
+    """Tests for PUT /admin/users/{id}."""
+
+    @patch("shomer.routes.admin_users.require_scope")
+    def test_updates_user_fields(self, _mock_rbac: MagicMock) -> None:
+        """Updates username and is_active."""
+
+        async def _run() -> None:
+            uid = uuid.uuid4()
+            mock_user = _mock_user()
+            mock_user.id = uid
+
+            user_result = MagicMock()
+            user_result.scalar_one_or_none.return_value = mock_user
+
+            db = AsyncMock()
+            db.execute.return_value = user_result
+
+            from shomer.routes.admin_users import AdminUpdateUserRequest
+
+            body = AdminUpdateUserRequest(username="updated", is_active=False)
+            resp = await update_user(str(uid), body, db)
+            data = json.loads(bytes(resp.body))
+            assert data["username"] == "updated"
+            assert data["is_active"] is False
+            assert data["message"] == "User updated successfully"
+            db.flush.assert_awaited_once()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.admin_users.require_scope")
+    def test_not_found_returns_404(self, _mock_rbac: MagicMock) -> None:
+        """Returns 404 when user does not exist."""
+
+        async def _run() -> None:
+            user_result = MagicMock()
+            user_result.scalar_one_or_none.return_value = None
+            db = AsyncMock()
+            db.execute.return_value = user_result
+
+            from shomer.routes.admin_users import AdminUpdateUserRequest
+
+            body = AdminUpdateUserRequest(is_active=False)
+            try:
+                await update_user(str(uuid.uuid4()), body, db)
+                raise AssertionError("Expected HTTPException")
+            except HTTPException as exc:
+                assert exc.status_code == 404
+
+        asyncio.run(_run())
+
+
+class TestDeleteUser:
+    """Tests for DELETE /admin/users/{id}."""
+
+    @patch("shomer.routes.admin_users.require_scope")
+    def test_deactivates_user(self, _mock_rbac: MagicMock) -> None:
+        """Soft-deletes user by setting is_active=False."""
+
+        async def _run() -> None:
+            uid = uuid.uuid4()
+            mock_user = _mock_user()
+            mock_user.id = uid
+
+            user_result = MagicMock()
+            user_result.scalar_one_or_none.return_value = mock_user
+
+            db = AsyncMock()
+            db.execute.return_value = user_result
+
+            resp = await delete_user(str(uid), db)
+            data = json.loads(bytes(resp.body))
+            assert data["message"] == "User deactivated successfully"
+            assert mock_user.is_active is False
+            db.flush.assert_awaited_once()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.admin_users.require_scope")
+    def test_not_found_returns_404(self, _mock_rbac: MagicMock) -> None:
+        """Returns 404 when user does not exist."""
+
+        async def _run() -> None:
+            user_result = MagicMock()
+            user_result.scalar_one_or_none.return_value = None
+            db = AsyncMock()
+            db.execute.return_value = user_result
+
+            try:
+                await delete_user(str(uuid.uuid4()), db)
+                raise AssertionError("Expected HTTPException")
+            except HTTPException as exc:
+                assert exc.status_code == 404
 
         asyncio.run(_run())
