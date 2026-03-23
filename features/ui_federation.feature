@@ -3,7 +3,7 @@ Feature: Federation UI — social login buttons and error display
   Scenario: Login page renders without federation when no tenant
     When I open the page "/ui/login"
     Then the page should contain "Login"
-    And the page should contain "Email"
+    And the page should contain "Create an account"
     And I take a screenshot named "login_no_federation"
 
   Scenario: Login page displays federation error from callback
