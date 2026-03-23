@@ -1,0 +1,52 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ 'Edit' if edit else 'Create' }} Client — Admin{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>{{ 'Edit' if edit else 'Create' }} OAuth2 Client</h1>
+    <p><a href="/ui/admin/clients" style="color: #6366f1;">&larr; Back to clients</a></p>
+</div>
+
+{% if error %}
+<div style="background: #f8d7da; color: #721c24; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px;">{{ error }}</div>
+{% endif %}
+{% if success %}
+<div style="background: #d4edda; color: #155724; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px;">{{ success }}</div>
+{% endif %}
+{% if new_secret %}
+<div style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+    <strong>Client Secret (shown once):</strong>
+    <code style="display: block; margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 4px; word-break: break-all;">{{ new_secret }}</code>
+</div>
+{% endif %}
+
+<div class="card">
+    <form method="post" action="/ui/admin/clients/{{ 'new' if not edit else client_id }}">
+        <div style="display: grid; gap: 16px; max-width: 500px;">
+            <div>
+                <label style="font-size: 13px; font-weight: 500;">Client Name</label>
+                <input type="text" name="client_name" value="{{ client_name or '' }}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <div>
+                <label style="font-size: 13px; font-weight: 500;">Client Type</label>
+                <select name="client_type" {% if edit %}disabled{% endif %} style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="confidential" {% if client_type == 'confidential' or not client_type %}selected{% endif %}>Confidential</option>
+                    <option value="public" {% if client_type == 'public' %}selected{% endif %}>Public</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-size: 13px; font-weight: 500;">Redirect URIs (one per line)</label>
+                <textarea name="redirect_uris" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">{{ redirect_uris or '' }}</textarea>
+            </div>
+            <div>
+                <label style="font-size: 13px; font-weight: 500;">Grant Types (comma-separated)</label>
+                <input type="text" name="grant_types" value="{{ grant_types or 'authorization_code' }}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <div>
+                <label style="font-size: 13px; font-weight: 500;">Scopes (comma-separated)</label>
+                <input type="text" name="scopes" value="{{ scopes or 'openid profile email' }}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <button type="submit" style="padding: 10px 24px; background: #1a1a2e; color: #fff; border: none; border-radius: 4px; cursor: pointer; width: fit-content;">{{ 'Save Changes' if edit else 'Create Client' }}</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

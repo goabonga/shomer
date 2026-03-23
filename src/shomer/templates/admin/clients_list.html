@@ -1,0 +1,48 @@
+{% extends "admin/base.html" %}
+{% block title %}OAuth2 Clients — Admin — Shomer{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>OAuth2 Clients</h1>
+    <p>Manage OAuth2 client registrations</p>
+</div>
+
+<div class="card" style="margin-bottom: 16px;">
+    <a href="/ui/admin/clients/new" style="padding: 8px 16px; background: #6366f1; color: #fff; border-radius: 4px; text-decoration: none; font-size: 14px;">+ Create Client</a>
+</div>
+
+<div class="card">
+    <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+            <tr style="border-bottom: 2px solid #eee; text-align: left;">
+                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Name</th>
+                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Client ID</th>
+                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Type</th>
+                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Status</th>
+                <th style="padding: 10px 8px;"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for client in clients %}
+            <tr style="border-bottom: 1px solid #f0f0f0;">
+                <td style="padding: 10px 8px; font-weight: 500;">{{ client.client_name }}</td>
+                <td style="padding: 10px 8px; font-family: monospace; font-size: 13px;">{{ client.client_id }}</td>
+                <td style="padding: 10px 8px;">
+                    <span style="background: {% if client.client_type == 'confidential' %}#e0e7ff{% else %}#fff3cd{% endif %}; padding: 2px 8px; border-radius: 10px; font-size: 12px;">{{ client.client_type }}</span>
+                </td>
+                <td style="padding: 10px 8px;">
+                    {% if client.is_active %}
+                    <span style="background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Active</span>
+                    {% else %}
+                    <span style="background: #f8d7da; color: #721c24; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Inactive</span>
+                    {% endif %}
+                </td>
+                <td style="padding: 10px 8px;"><a href="/ui/admin/clients/{{ client.id }}" style="color: #6366f1; font-size: 13px;">View</a></td>
+            </tr>
+            {% endfor %}
+            {% if not clients %}
+            <tr><td colspan="5" style="padding: 20px; text-align: center; color: #999;">No clients found.</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

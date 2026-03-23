@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -173,4 +173,592 @@ async def admin_dashboard(request: Request, db: DbSession) -> Any:
         request,
         "admin/dashboard.html",
         {"user": user, "stats": stats, "section": "dashboard"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Users UI
+# ---------------------------------------------------------------------------
+
+
+@router.get("/users", response_class=HTMLResponse)
+async def admin_users_list(
+    request: Request,
+    db: DbSession,
+    q: str | None = None,
+    is_active: str | None = None,
+    page: int = 1,
+) -> Any:
+    """Render the admin users list page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+    q : str or None
+        Search query.
+    is_active : str or None
+        Active filter (``"true"`` or ``"false"``).
+    page : int
+        Page number.
+
+    Returns
+    -------
+    HTMLResponse
+        Users list page or redirect to login.
+    """
+    user = await _get_admin_user(request, db)
+    if user is None:
+        return RedirectResponse(url="/ui/login?next=/ui/admin/users", status_code=302)
+
+    from sqlalchemy import or_
+
+    from shomer.models.user_email import UserEmail as UE
+
+    page_size = 20
+    stmt = select(User).options(selectinload(User.emails))
+
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.outerjoin(UE, User.id == UE.user_id).where(
+            or_(User.username.ilike(pattern), UE.email.ilike(pattern))
+        )
+
+    if is_active == "true":
+        stmt = stmt.where(User.is_active == True)  # noqa: E712
+    elif is_active == "false":
+        stmt = stmt.where(User.is_active == False)  # noqa: E712
+
+    count_stmt = select(func.count()).select_from(
+        stmt.with_only_columns(User.id).distinct().subquery()
+    )
+    count_r = await db.execute(count_stmt)
+    total = count_r.scalar() or 0
+
+    offset = (page - 1) * page_size
+    stmt = (
+        stmt.order_by(User.created_at.desc()).offset(offset).limit(page_size).distinct()
+    )
+    result = await db.execute(stmt)
+    users_list = list(result.scalars().unique().all())
+
+    items = []
+    for u in users_list:
+        primary_email = next(
+            (e.email for e in u.emails if e.is_primary),
+            u.emails[0].email if u.emails else None,
+        )
+        items.append(
+            {
+                "id": str(u.id),
+                "username": u.username,
+                "email": primary_email,
+                "is_active": u.is_active,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            }
+        )
+
+    return _render(
+        request,
+        "admin/users_list.html",
+        {
+            "users": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "q": q,
+            "is_active": is_active,
+            "section": "users",
+        },
+    )
+
+
+@router.get("/users/new", response_class=HTMLResponse)
+async def admin_user_create_form(request: Request, db: DbSession) -> Any:
+    """Render the user creation form.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        User creation form or redirect to login.
+    """
+    user = await _get_admin_user(request, db)
+    if user is None:
+        return RedirectResponse(
+            url="/ui/login?next=/ui/admin/users/new", status_code=302
+        )
+
+    return _render(
+        request,
+        "admin/user_form.html",
+        {"edit": False, "section": "users", "error": None, "success": None},
+    )
+
+
+@router.post("/users/new", response_class=HTMLResponse)
+async def admin_user_create_submit(
+    request: Request,
+    db: DbSession,
+    email: str = Form(...),
+    password: str = Form(...),
+    username: str = Form(""),
+    is_active: str = Form(""),
+) -> Any:
+    """Handle user creation form submission.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+    email : str
+        User email.
+    password : str
+        User password.
+    username : str
+        Optional username.
+    is_active : str
+        Checkbox value.
+
+    Returns
+    -------
+    HTMLResponse
+        Form with success/error or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    from shomer.core.security import hash_password
+    from shomer.models.queries import create_user as _create_user
+
+    # Check duplicate
+    existing = await db.execute(select(UserEmail).where(UserEmail.email == email))
+    if existing.scalar_one_or_none() is not None:
+        return _render(
+            request,
+            "admin/user_form.html",
+            {
+                "edit": False,
+                "section": "users",
+                "error": "Email already registered",
+                "success": None,
+                "email": email,
+                "username": username,
+            },
+        )
+
+    pw_hash = hash_password(password)
+    new_user = await _create_user(
+        db, email=email, password_hash=pw_hash, username=username or None
+    )
+    new_user.is_active = is_active == "on"
+
+    # Auto-verify email
+    email_result = await db.execute(
+        select(UserEmail).where(UserEmail.user_id == new_user.id)
+    )
+    for e in email_result.scalars().all():
+        e.is_verified = True
+
+    await db.flush()
+
+    return RedirectResponse(url=f"/ui/admin/users/{new_user.id}", status_code=302)
+
+
+@router.get("/users/{user_id}", response_class=HTMLResponse)
+async def admin_user_detail(request: Request, user_id: str, db: DbSession) -> Any:
+    """Render user detail page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    user_id : str
+        UUID of the user.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        User detail page or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    import uuid as _uuid
+
+    try:
+        uid = _uuid.UUID(user_id)
+    except ValueError:
+        return RedirectResponse(url="/ui/admin/users", status_code=302)
+
+    result = await db.execute(
+        select(User)
+        .where(User.id == uid)
+        .options(selectinload(User.emails), selectinload(User.profile))
+    )
+    target = result.scalar_one_or_none()
+    if target is None:
+        return RedirectResponse(url="/ui/admin/users", status_code=302)
+
+    # Build detail data
+    from shomer.models.user_role import UserRole
+
+    now = datetime.now(timezone.utc)
+    sessions_r = await db.execute(
+        select(func.count())
+        .select_from(Session)
+        .where(Session.user_id == uid, Session.expires_at > now)
+    )
+    active_sessions = sessions_r.scalar() or 0
+
+    roles_r = await db.execute(
+        select(UserRole)
+        .where(UserRole.user_id == uid)
+        .options(selectinload(UserRole.role))
+    )
+    roles = [
+        {"name": ur.role.name, "id": str(ur.role.id)} for ur in roles_r.scalars().all()
+    ]
+
+    profile_data = None
+    if target.profile:
+        p = target.profile
+        profile_data = {}
+        for field in (
+            "name",
+            "given_name",
+            "family_name",
+            "nickname",
+            "locale",
+            "zoneinfo",
+        ):
+            val = getattr(p, field, None)
+            if val:
+                profile_data[field] = val
+
+    user_data = {
+        "id": str(target.id),
+        "username": target.username,
+        "is_active": target.is_active,
+        "emails": [
+            {"email": e.email, "is_primary": e.is_primary, "is_verified": e.is_verified}
+            for e in target.emails
+        ],
+        "profile": profile_data,
+        "roles": roles,
+        "active_sessions": active_sessions,
+    }
+
+    return _render(
+        request,
+        "admin/user_detail.html",
+        {"user_data": user_data, "section": "users"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Clients UI
+# ---------------------------------------------------------------------------
+
+
+@router.get("/clients", response_class=HTMLResponse)
+async def admin_clients_list(request: Request, db: DbSession) -> Any:
+    """Render the admin clients list page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Clients list page or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login?next=/ui/admin/clients", status_code=302)
+
+    result = await db.execute(
+        select(OAuth2Client).order_by(OAuth2Client.created_at.desc())
+    )
+    clients = list(result.scalars().all())
+
+    items = []
+    for c in clients:
+        ct = c.client_type
+        ct_val = ct.value if hasattr(ct, "value") else str(ct)
+        items.append(
+            {
+                "id": str(c.id),
+                "client_id": c.client_id,
+                "client_name": c.client_name,
+                "client_type": ct_val,
+                "is_active": c.is_active,
+            }
+        )
+
+    return _render(
+        request,
+        "admin/clients_list.html",
+        {"clients": items, "section": "clients"},
+    )
+
+
+@router.get("/clients/new", response_class=HTMLResponse)
+async def admin_client_create_form(request: Request, db: DbSession) -> Any:
+    """Render the client creation form.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Client creation form or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    return _render(
+        request,
+        "admin/client_form.html",
+        {
+            "edit": False,
+            "section": "clients",
+            "error": None,
+            "success": None,
+            "new_secret": None,
+        },
+    )
+
+
+@router.post("/clients/new", response_class=HTMLResponse)
+async def admin_client_create_submit(
+    request: Request,
+    db: DbSession,
+    client_name: str = Form(...),
+    client_type: str = Form("confidential"),
+    redirect_uris: str = Form(""),
+    grant_types: str = Form("authorization_code"),
+    scopes: str = Form("openid profile email"),
+) -> Any:
+    """Handle client creation form submission.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+    client_name : str
+        Client display name.
+    client_type : str
+        confidential or public.
+    redirect_uris : str
+        Newline-separated redirect URIs.
+    grant_types : str
+        Comma-separated grant types.
+    scopes : str
+        Comma-separated scopes.
+
+    Returns
+    -------
+    HTMLResponse
+        Form with secret or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    from shomer.models.oauth2_client import ClientType
+    from shomer.services.oauth2_client_service import OAuth2ClientService
+
+    try:
+        ct = ClientType(client_type)
+    except ValueError:
+        return _render(
+            request,
+            "admin/client_form.html",
+            {
+                "edit": False,
+                "section": "clients",
+                "error": f"Invalid type: {client_type}",
+                "success": None,
+                "new_secret": None,
+            },
+        )
+
+    uris = [u.strip() for u in redirect_uris.strip().splitlines() if u.strip()]
+    grants = [g.strip() for g in grant_types.split(",") if g.strip()]
+    scope_list = [s.strip() for s in scopes.split(",") if s.strip()]
+
+    svc = OAuth2ClientService(db)
+    client, raw_secret = await svc.create_client(
+        client_name=client_name,
+        client_type=ct,
+        redirect_uris=uris,
+        grant_types=grants,
+        scopes=scope_list,
+    )
+
+    return _render(
+        request,
+        "admin/client_form.html",
+        {
+            "edit": False,
+            "section": "clients",
+            "error": None,
+            "success": f"Client '{client_name}' created. Client ID: {client.client_id}",
+            "new_secret": raw_secret,
+            "client_name": client_name,
+        },
+    )
+
+
+@router.get("/clients/{client_id}", response_class=HTMLResponse)
+async def admin_client_detail(request: Request, client_id: str, db: DbSession) -> Any:
+    """Render client detail page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    client_id : str
+        UUID of the client.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Client detail page or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(client_id)
+    except ValueError:
+        return RedirectResponse(url="/ui/admin/clients", status_code=302)
+
+    result = await db.execute(select(OAuth2Client).where(OAuth2Client.id == cid))
+    client = result.scalar_one_or_none()
+    if client is None:
+        return RedirectResponse(url="/ui/admin/clients", status_code=302)
+
+    ct = client.client_type
+    am = client.token_endpoint_auth_method
+    client_data = {
+        "id": str(client.id),
+        "client_id": client.client_id,
+        "client_name": client.client_name,
+        "client_type": ct.value if hasattr(ct, "value") else str(ct),
+        "token_endpoint_auth_method": am.value if hasattr(am, "value") else str(am),
+        "redirect_uris": client.redirect_uris,
+        "grant_types": client.grant_types,
+        "scopes": client.scopes,
+        "is_active": client.is_active,
+    }
+
+    return _render(
+        request,
+        "admin/client_detail.html",
+        {
+            "client_data": client_data,
+            "section": "clients",
+            "success": None,
+            "new_secret": None,
+        },
+    )
+
+
+@router.post("/clients/{client_id}/rotate-secret", response_class=HTMLResponse)
+async def admin_client_rotate_secret(
+    request: Request, client_id: str, db: DbSession
+) -> Any:
+    """Handle secret rotation from the client detail page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    client_id : str
+        UUID of the client.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Client detail page with new secret.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(client_id)
+    except ValueError:
+        return RedirectResponse(url="/ui/admin/clients", status_code=302)
+
+    result = await db.execute(select(OAuth2Client).where(OAuth2Client.id == cid))
+    client = result.scalar_one_or_none()
+    if client is None:
+        return RedirectResponse(url="/ui/admin/clients", status_code=302)
+
+    from shomer.services.oauth2_client_service import OAuth2ClientService
+
+    svc = OAuth2ClientService(db)
+    _, new_secret = await svc.rotate_secret(client.client_id)
+
+    ct = client.client_type
+    am = client.token_endpoint_auth_method
+    client_data = {
+        "id": str(client.id),
+        "client_id": client.client_id,
+        "client_name": client.client_name,
+        "client_type": ct.value if hasattr(ct, "value") else str(ct),
+        "token_endpoint_auth_method": am.value if hasattr(am, "value") else str(am),
+        "redirect_uris": client.redirect_uris,
+        "grant_types": client.grant_types,
+        "scopes": client.scopes,
+        "is_active": client.is_active,
+    }
+
+    return _render(
+        request,
+        "admin/client_detail.html",
+        {
+            "client_data": client_data,
+            "section": "clients",
+            "success": "Secret rotated successfully",
+            "new_secret": new_secret,
+        },
     )
