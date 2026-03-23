@@ -1,0 +1,66 @@
+{% extends "admin/base.html" %}
+{% block title %}Users — Admin — Shomer{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Users</h1>
+    <p>Manage user accounts</p>
+</div>
+
+<div class="card" style="margin-bottom: 16px;">
+    <form method="get" action="/ui/admin/users" style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 200px;">
+            <label style="font-size: 13px; color: #666;">Search</label>
+            <input type="text" name="q" value="{{ q or '' }}" placeholder="Username or email" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        <div>
+            <label style="font-size: 13px; color: #666;">Status</label>
+            <select name="is_active" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">All</option>
+                <option value="true" {% if is_active == 'true' %}selected{% endif %}>Active</option>
+                <option value="false" {% if is_active == 'false' %}selected{% endif %}>Inactive</option>
+            </select>
+        </div>
+        <button type="submit" style="padding: 8px 16px; background: #1a1a2e; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Filter</button>
+        <a href="/ui/admin/users/new" style="padding: 8px 16px; background: #6366f1; color: #fff; border-radius: 4px; text-decoration: none; font-size: 14px;">+ Create User</a>
+    </form>
+</div>
+
+<div class="card">
+    <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+            <tr style="border-bottom: 2px solid #eee; text-align: left;">
+                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Username</th>
+                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Email</th>
+                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Status</th>
+                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Created</th>
+                <th style="padding: 10px 8px;"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr style="border-bottom: 1px solid #f0f0f0;">
+                <td style="padding: 10px 8px;">{{ user.username or '—' }}</td>
+                <td style="padding: 10px 8px;">{{ user.email or '—' }}</td>
+                <td style="padding: 10px 8px;">
+                    {% if user.is_active %}
+                    <span style="background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Active</span>
+                    {% else %}
+                    <span style="background: #f8d7da; color: #721c24; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Inactive</span>
+                    {% endif %}
+                </td>
+                <td style="padding: 10px 8px; font-size: 13px; color: #888;">{{ user.created_at[:10] if user.created_at else '—' }}</td>
+                <td style="padding: 10px 8px;"><a href="/ui/admin/users/{{ user.id }}" style="color: #6366f1; font-size: 13px;">View</a></td>
+            </tr>
+            {% endfor %}
+            {% if not users %}
+            <tr><td colspan="5" style="padding: 20px; text-align: center; color: #999;">No users found.</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+    {% if total > page_size %}
+    <div style="padding: 12px 8px; text-align: center; font-size: 13px; color: #888;">
+        Page {{ page }} of {{ ((total - 1) // page_size) + 1 }} ({{ total }} total)
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

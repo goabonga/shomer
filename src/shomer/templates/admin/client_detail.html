@@ -1,0 +1,57 @@
+{% extends "admin/base.html" %}
+{% block title %}Client {{ client_data.client_name }} — Admin{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Client: {{ client_data.client_name }}</h1>
+    <p><a href="/ui/admin/clients" style="color: #6366f1;">&larr; Back to clients</a></p>
+</div>
+
+{% if success %}
+<div style="background: #d4edda; color: #155724; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px;">{{ success }}</div>
+{% endif %}
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="label">Client ID</div>
+        <div style="font-family: monospace; font-size: 14px; margin-top: 4px; word-break: break-all;">{{ client_data.client_id }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Type</div>
+        <div class="value" style="font-size: 18px;">{{ client_data.client_type }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Status</div>
+        <div class="value" style="font-size: 18px;">{% if client_data.is_active %}Active{% else %}Inactive{% endif %}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Settings</h3>
+    <dl style="display: grid; grid-template-columns: 160px 1fr; gap: 8px 12px; margin-top: 12px;">
+        <dt style="font-size: 13px; color: #888;">Auth Method</dt>
+        <dd style="margin: 0;">{{ client_data.token_endpoint_auth_method }}</dd>
+        <dt style="font-size: 13px; color: #888;">Redirect URIs</dt>
+        <dd style="margin: 0;">{{ client_data.redirect_uris | join(', ') or '—' }}</dd>
+        <dt style="font-size: 13px; color: #888;">Grant Types</dt>
+        <dd style="margin: 0;">{{ client_data.grant_types | join(', ') or '—' }}</dd>
+        <dt style="font-size: 13px; color: #888;">Scopes</dt>
+        <dd style="margin: 0;">{{ client_data.scopes | join(', ') or '—' }}</dd>
+    </dl>
+</div>
+
+{% if client_data.client_type == 'confidential' %}
+<div class="card">
+    <h3>Secret Rotation</h3>
+    <p style="font-size: 14px; color: #666; margin-bottom: 12px;">Generate a new client secret. The current secret will be immediately invalidated.</p>
+    <form method="post" action="/ui/admin/clients/{{ client_data.id }}/rotate-secret">
+        <button type="submit" style="padding: 8px 16px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer;" onclick="return confirm('Are you sure? This will invalidate the current secret.')">Rotate Secret</button>
+    </form>
+    {% if new_secret %}
+    <div style="margin-top: 12px; background: #fff3cd; border: 1px solid #ffc107; padding: 12px; border-radius: 4px;">
+        <strong>New Secret (shown once):</strong>
+        <code style="display: block; margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 4px; word-break: break-all;">{{ new_secret }}</code>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
