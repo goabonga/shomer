@@ -13,6 +13,7 @@ from shomer.routes.settings_ui import (
     _get_session_user,
     settings_emails,
     settings_profile,
+    settings_profile_update,
     settings_security,
 )
 
@@ -206,5 +207,152 @@ class TestSettingsSecurity:
             ctx = mock_render.call_args[0][2]
             assert ctx["mfa_enabled"] is True
             assert "totp" in ctx["mfa_methods"]
+
+        asyncio.run(_run())
+
+
+class TestSettingsProfileUpdate:
+    """Tests for POST /ui/settings/profile."""
+
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """POST without session redirects to login."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_profile_update(_req(), AsyncMock())
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_saves_profile_fields(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """POST with valid data updates profile and shows success."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_profile = MagicMock()
+            mock_user.profile = mock_profile
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            db = AsyncMock()
+            await settings_profile_update(
+                _req({"session_id": "tok"}),
+                db,
+                nickname="Jo",
+                given_name="John",
+                family_name="Doe",
+                middle_name="M",
+                preferred_username="johnd",
+                gender="male",
+                birthdate="1990-01-15",
+                zoneinfo="Europe/Paris",
+                locale="fr-FR",
+                phone_number="+33612345678",
+                website="https://example.com",
+                profile_url="https://linkedin.com/in/john",
+                picture_url="https://pic.example.com/me.jpg",
+                address_street="123 Main St",
+                address_locality="Paris",
+                address_region="IDF",
+                address_postal_code="75001",
+                address_country="France",
+            )
+
+            # Verify profile was updated
+            assert mock_profile.nickname == "Jo"
+            assert mock_profile.given_name == "John"
+            assert mock_profile.family_name == "Doe"
+            assert mock_profile.middle_name == "M"
+            assert mock_profile.address_street == "123 Main St"
+            assert mock_profile.phone_number == "+33612345678"
+
+            db.flush.assert_awaited_once()
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["success"] == "Profile updated successfully."
+            assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui.UserProfile")
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_creates_profile_if_none(
+        self, mock_auth: AsyncMock, mock_render: MagicMock, mock_up_cls: MagicMock
+    ) -> None:
+        """POST creates a new UserProfile when user has none."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_user.profile = None
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            new_profile = MagicMock()
+            mock_up_cls.return_value = new_profile
+
+            db = AsyncMock()
+            await settings_profile_update(
+                _req({"session_id": "tok"}),
+                db,
+                nickname="New",
+            )
+
+            db.add.assert_called_once_with(new_profile)
+            db.flush.assert_awaited_once()
+            assert new_profile.nickname == "New"
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_empty_fields_become_none(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Empty string form values are stored as None."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_profile = MagicMock()
+            mock_user.profile = mock_profile
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            db = AsyncMock()
+            await settings_profile_update(
+                _req({"session_id": "tok"}),
+                db,
+                nickname="",
+                gender="",
+            )
+
+            assert mock_profile.nickname is None
+            assert mock_profile.gender is None
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_get_includes_email_in_context(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """GET renders profile page with primary email in context."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            await settings_profile(_req({"session_id": "tok"}), AsyncMock())
+            ctx = mock_render.call_args[0][2]
+            assert ctx["email"] == "test@example.com"
+            assert ctx["success"] is None
+            assert ctx["error"] is None
 
         asyncio.run(_run())
