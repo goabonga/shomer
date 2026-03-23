@@ -103,6 +103,14 @@ def step_check_url(context, text):
     assert text in url, f"URL '{url}' does not contain '{text}'"
 
 
+@then('the page should have an element "{selector}"')
+def step_check_element_exists(context, selector):
+    """Check that a CSS selector matches at least one element on the page."""
+    context.page.wait_for_load_state("domcontentloaded", timeout=15000)
+    el = context.page.query_selector(selector)
+    assert el is not None, f"No element found matching '{selector}'"
+
+
 @then('I take a screenshot named "{name}"')
 def step_take_screenshot(context, name):
     SCREENSHOTS_DIR.mkdir(exist_ok=True)
