@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Welcome to {{ app_name | default('Shomer') }}{% endblock %}
+{% block content %}
+<h2>Welcome{% if username %}, {{ username }}{% endif %}!</h2>
+<p>Your account has been created and verified. You're all set to start using {{ app_name | default('Shomer') }}.</p>
+{% if login_url %}
+<p style="text-align: center;">
+  <a href="{{ login_url }}" class="btn">Go to Login</a>
+</p>
+{% endif %}
+<p>Here's what you can do:</p>
+<ul style="padding-left: 20px; color: #555555;">
+  <li>Set up <strong>multi-factor authentication</strong> for extra security</li>
+  <li>Complete your <strong>profile</strong> with your personal information</li>
+  <li>Create <strong>personal access tokens</strong> for API integrations</li>
+</ul>
+<p class="muted">If you have any questions, don't hesitate to reach out to our support team.</p>
+{% endblock %}

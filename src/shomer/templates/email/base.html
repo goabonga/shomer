@@ -1,5 +1,60 @@
 <!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"></head>
-<body>{% block content %}{% endblock %}</body>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>{% block title %}Shomer{% endblock %}</title>
+  <style type="text/css">
+    body, table, td { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    body { margin: 0; padding: 0; background-color: {{ bg_color | default('#f4f4f7') }}; }
+    .wrapper { width: 100%; background-color: {{ bg_color | default('#f4f4f7') }}; padding: 40px 0; }
+    .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .header { background-color: {{ primary_color | default('#1a1a2e') }}; padding: 24px 32px; text-align: center; }
+    .header img { max-height: 48px; }
+    .header h1 { color: #ffffff; font-size: 20px; margin: 0; font-weight: 600; }
+    .content { padding: 32px; color: #333333; font-size: 16px; line-height: 1.6; }
+    .content h2 { color: {{ primary_color | default('#1a1a2e') }}; font-size: 22px; margin: 0 0 16px; }
+    .code-box { background-color: #f0f0f5; border-radius: 8px; padding: 20px; text-align: center; margin: 24px 0; }
+    .code-box .code { font-size: 32px; font-weight: 700; letter-spacing: 6px; color: {{ primary_color | default('#1a1a2e') }}; font-family: 'Courier New', monospace; }
+    .btn { display: inline-block; background-color: {{ primary_color | default('#1a1a2e') }}; color: #ffffff !important; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 16px; margin: 16px 0; }
+    .btn:hover { background-color: {{ secondary_color | default('#16213e') }}; }
+    .footer { padding: 24px 32px; text-align: center; color: #999999; font-size: 12px; line-height: 1.5; border-top: 1px solid #eeeeee; }
+    .footer a { color: #999999; text-decoration: underline; }
+    .muted { color: #888888; font-size: 14px; }
+    @media only screen and (max-width: 620px) {
+      .container { width: 100% !important; border-radius: 0 !important; }
+      .content { padding: 24px 20px !important; }
+      .header { padding: 20px !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="center">
+        <div class="container">
+          <div class="header">
+            {% if logo_url %}
+            <img src="{{ logo_url }}" alt="{{ app_name | default('Shomer') }}">
+            {% else %}
+            <h1>{{ app_name | default('Shomer') }}</h1>
+            {% endif %}
+          </div>
+          <div class="content">
+            {% block content %}{% endblock %}
+          </div>
+          <div class="footer">
+            {% block footer %}
+            <p>&copy; {{ year | default('2025') }} {{ app_name | default('Shomer') }}. All rights reserved.</p>
+            {% if support_url %}
+            <p><a href="{{ support_url }}">Help &amp; Support</a></p>
+            {% endif %}
+            {% endblock %}
+          </div>
+        </div>
+      </td></tr>
+    </table>
+  </div>
+</body>
 </html>

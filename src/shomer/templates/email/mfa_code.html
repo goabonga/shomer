@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Your verification code{% endblock %}
+{% block content %}
+<h2>Your verification code</h2>
+<p>Use the code below to complete your sign-in. Do not share this code with anyone.</p>
+<div class="code-box">
+  <div class="code">{{ code }}</div>
+</div>
+<p class="muted">This code expires in 5 minutes. If you didn't try to sign in, please secure your account immediately by changing your password.</p>
+{% endblock %}
