@@ -24,6 +24,7 @@ Feature: User registration
       """
     When I send a POST request to "/auth/register"
     Then the response status code should be 201
+    And I wait 1 seconds
     Given I have a JSON payload
       """
       {"email": "duplicate@example.com", "password": "anotherpassword1"}

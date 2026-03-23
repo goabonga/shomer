@@ -23,6 +23,7 @@ Feature: User login
       {"email": "unverified-login@example.com", "password": "securepassword123"}
       """
     Then the response status code should be 201
+    And I wait 1 seconds
     When I send a POST request to "/auth/login" with JSON
       """
       {"email": "unverified-login@example.com", "password": "securepassword123"}

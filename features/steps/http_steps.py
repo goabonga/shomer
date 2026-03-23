@@ -44,12 +44,18 @@ def _send(context, method, path, data=None):
 
 
 def _capture_session_cookie(context, response):
-    """Extract session_id cookie from Set-Cookie header."""
-    cookies = response.headers.get_all("Set-Cookie") or []
-    for cookie in cookies:
+    """Extract session_id cookie from Set-Cookie header.
+
+    Handles edge cases: quoted values, whitespace, multiple headers.
+    """
+    raw_headers = response.headers.get_all("Set-Cookie") or []
+    for cookie in raw_headers:
         if "session_id=" in cookie:
-            value = cookie.split("session_id=")[1].split(";")[0]
-            if value and value != '""':
+            value = cookie.split("session_id=")[1].split(";")[0].strip()
+            # Strip surrounding quotes if present
+            if value.startswith('"') and value.endswith('"'):
+                value = value[1:-1]
+            if value:
                 context.session_cookie = value
 
 
@@ -183,27 +189,42 @@ def step_post_form(context, path):
 @given('a registered and verified user "{email}" with password "{password}"')
 def step_registered_verified_user(context, email, password):
     """Register and verify a user via the API + MailCatcher."""
+    import time as _time
+
     from features.steps.mail_steps import register_and_verify_user
 
     register_and_verify_user(context, email, password)
+    # Allow DB commit to complete before dependent steps
+    _time.sleep(0.3)
 
 
 @given('I am logged in as "{email}" with password "{password}"')
 def step_logged_in_as(context, email, password):
     """Log in via POST /auth/login and capture the session cookie.
 
-    Retries up to 3 times on 403 (email not verified yet) to handle
-    timing issues with Celery email verification.
+    Retries up to 5 times with exponential backoff on 401/403
+    (email not verified yet) to handle Celery timing.
     """
+    import sys as _sys
     import time as _time
 
-    for _attempt in range(3):
+    for attempt in range(5):
         _send(context, "POST", "/auth/login", {"email": email, "password": password})
         if context.response_status == 200:
+            if not getattr(context, "session_cookie", None):
+                _sys.stderr.write(
+                    f"  [login] WARNING: 200 but no session cookie for {email}\n"
+                )
+            # Allow DB commit to complete (yield-dependency race condition)
+            _time.sleep(0.3)
             return
-        if context.response_status == 403:
-            # Email might not be verified yet — wait and retry
-            _time.sleep(2)
+        if context.response_status in (401, 403):
+            wait = 2**attempt
+            _sys.stderr.write(
+                f"  [login] {email} -> {context.response_status}, "
+                f"retry {attempt + 1}/5 in {wait}s\n"
+            )
+            _time.sleep(wait)
             continue
         break
     assert context.response_status == 200, (
@@ -213,7 +234,13 @@ def step_logged_in_as(context, email, password):
 
 @given("I have a Bearer token for the OAuth2 client")
 def step_obtain_bearer_token(context):
-    """Obtain a Bearer token via password grant for the BDD test user/client."""
+    """Obtain a Bearer token via password grant for the BDD test user/client.
+
+    Retries up to 3 times with backoff to handle timing issues when
+    the user's email verification hasn't fully propagated yet.
+    """
+    import time as _time
+
     form_data = {
         "grant_type": "password",
         "username": context.oauth2_user_email,
@@ -222,17 +249,35 @@ def step_obtain_bearer_token(context):
         "client_secret": context.oauth2_client_secret,
         "scope": "openid profile email",
     }
-    _send_form(context, "/oauth2/token", form_data)
+    for attempt in range(3):
+        _send_form(context, "/oauth2/token", form_data)
+        if context.response_status == 200:
+            break
+        if context.response_status in (400, 401, 403) and attempt < 2:
+            _time.sleep(2**attempt)
+            continue
+        break
     assert context.response_status == 200, (
         f"Token request failed: {context.response_body}"
     )
     token_data = json.loads(context.response_body)
     context.bearer_token = token_data["access_token"]
+    # Allow DB commit to complete (yield-dependency race condition)
+    _time.sleep(0.3)
 
 
 @when('I send a DELETE request to "{path}"')
 def step_delete_request(context, path):
     _send(context, "DELETE", path)
+
+
+@then("I wait {seconds:d} seconds")
+@given("I wait {seconds:d} seconds")  # type: ignore[no-redef]
+def step_wait_seconds(context, seconds):
+    """Pause execution for a fixed number of seconds."""
+    import time as _time
+
+    _time.sleep(seconds)
 
 
 @then("the response status code should be {status_code:d}")

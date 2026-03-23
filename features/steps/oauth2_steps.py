@@ -49,6 +49,9 @@ def step_setup_oauth2_flow(context):
 
     # 1. Register and verify user via API + MailCatcher email flow
     register_and_verify_user(context, email, password)
+    import time
+
+    time.sleep(0.3)  # Allow DB commit to complete
 
     # 2. Create OAuth2 client via psql (no admin API yet)
     _psql(

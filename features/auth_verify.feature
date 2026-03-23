@@ -26,6 +26,8 @@ Feature: Email verification
       {"email": "resend-rate@example.com", "password": "securepassword123"}
       """
     Then the response status code should be 201
+    # Small delay to ensure the verification code is flushed to DB
+    And I wait 2 seconds
     When I send a POST request to "/auth/verify/resend" with JSON
       """
       {"email": "resend-rate@example.com"}

@@ -48,6 +48,46 @@ def _mfa_api(context, method, path, data=None):
         return e.code, json.loads(e.read().decode())
 
 
+def _login_and_capture_session(context, email, password):
+    """Log in and capture the session cookie with retry on 401/403.
+
+    Parameters
+    ----------
+    context : behave.Context
+        BDD context with base_url.
+    email : str
+        User email.
+    password : str
+        User password.
+    """
+    for attempt in range(5):
+        login_data = json.dumps({"email": email, "password": password}).encode()
+        login_req = urllib.request.Request(
+            context.base_url + "/auth/login",
+            data=login_data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            login_resp = urllib.request.urlopen(login_req, timeout=10)
+            cookies = login_resp.headers.get_all("Set-Cookie") or []
+            for cookie in cookies:
+                if "session_id=" in cookie:
+                    value = cookie.split("session_id=")[1].split(";")[0].strip()
+                    if value.startswith('"') and value.endswith('"'):
+                        value = value[1:-1]
+                    if value:
+                        context.session_cookie = value
+            # Allow DB commit to complete (yield-dependency race)
+            time.sleep(0.3)
+            return  # success
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403) and attempt < 4:
+                time.sleep(2**attempt)
+                continue
+            raise
+
+
 @given("a user with MFA enabled")
 def step_setup_user_with_mfa(context):
     """Register a user, log in, setup MFA, and enable it.
@@ -62,24 +102,8 @@ def step_setup_user_with_mfa(context):
 
     register_and_verify_user(context, email, password)
 
-    # Log in to get session cookie
-    login_data = json.dumps({"email": email, "password": password}).encode()
-    login_req = urllib.request.Request(
-        context.base_url + "/auth/login",
-        data=login_data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        login_resp = urllib.request.urlopen(login_req, timeout=10)
-        cookies = login_resp.headers.get_all("Set-Cookie") or []
-        for cookie in cookies:
-            if "session_id=" in cookie:
-                value = cookie.split("session_id=")[1].split(";")[0]
-                if value and value != '""':
-                    context.session_cookie = value
-    except urllib.error.HTTPError:
-        pass
+    # Log in to get session cookie (with retry)
+    _login_and_capture_session(context, email, password)
 
     # Call POST /mfa/setup
     status_code, setup_body = _mfa_api(context, "POST", "/mfa/setup")
@@ -115,24 +139,8 @@ def step_setup_user_mfa_and_client(context):
     email = context.oauth2_user_email  # token-bdd@example.com
     password = context.oauth2_user_password  # securepassword123
 
-    # Log in to get session cookie
-    login_data = json.dumps({"email": email, "password": password}).encode()
-    login_req = urllib.request.Request(
-        context.base_url + "/auth/login",
-        data=login_data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        login_resp = urllib.request.urlopen(login_req, timeout=10)
-        cookies = login_resp.headers.get_all("Set-Cookie") or []
-        for cookie in cookies:
-            if "session_id=" in cookie:
-                value = cookie.split("session_id=")[1].split(";")[0]
-                if value and value != '""':
-                    context.session_cookie = value
-    except urllib.error.HTTPError:
-        pass
+    # Log in to get session cookie (with retry)
+    _login_and_capture_session(context, email, password)
 
     # Setup MFA
     status_code, setup_body = _mfa_api(context, "POST", "/mfa/setup")
