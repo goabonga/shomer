@@ -155,18 +155,39 @@ def register_and_verify_user(context, email, password):
         time.sleep(2)
     assert code is not None, f"No verification code found in email: {body[:200]}"
 
-    # Verify
-    verify_data = json.dumps({"email": email, "code": code}).encode()
-    verify_req = urllib.request.Request(
-        context.base_url + "/auth/verify",
-        data=verify_data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        urllib.request.urlopen(verify_req)
-    except urllib.error.HTTPError:
-        pass
+    # Verify (with retry for timing issues)
+    verified = False
+    for _retry in range(3):
+        verify_data = json.dumps({"email": email, "code": code}).encode()
+        verify_req = urllib.request.Request(
+            context.base_url + "/auth/verify",
+            data=verify_data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            resp = urllib.request.urlopen(verify_req)
+            if resp.status == 200:
+                verified = True
+                break
+        except urllib.error.HTTPError:
+            time.sleep(1)
+            continue
+
+    if not verified:
+        # Last resort: one final attempt after longer wait
+        time.sleep(2)
+        try:
+            verify_data = json.dumps({"email": email, "code": code}).encode()
+            verify_req = urllib.request.Request(
+                context.base_url + "/auth/verify",
+                data=verify_data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(verify_req)
+        except urllib.error.HTTPError:
+            pass
 
     return code
 
