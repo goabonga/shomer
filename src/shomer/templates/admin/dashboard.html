@@ -1,0 +1,46 @@
+{% extends "admin/base.html" %}
+{% block title %}Dashboard — Admin — Shomer{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <p>System overview and key metrics</p>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="label">Total Users</div>
+        <div class="value">{{ stats.users.total }}</div>
+        <div class="detail">{{ stats.users.active }} active, {{ stats.users.verified }} verified</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Active Sessions</div>
+        <div class="value">{{ stats.sessions.active }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">OAuth2 Clients</div>
+        <div class="value">{{ stats.clients.total }}</div>
+        <div class="detail">{{ stats.clients.confidential }} confidential, {{ stats.clients.public }} public</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Tokens (24h)</div>
+        <div class="value">{{ stats.tokens.issued_24h }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">MFA Adoption</div>
+        <div class="value">{{ stats.mfa.adoption_rate }}%</div>
+        <div class="detail">{{ stats.mfa.enabled }} users with MFA enabled</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Quick Actions</h3>
+    <div class="quick-actions">
+        <a href="/ui/admin/users">Manage Users</a>
+        <a href="/ui/admin/clients">Manage Clients</a>
+        <a href="/ui/admin/sessions">View Sessions</a>
+        <a href="/ui/admin/roles">Manage Roles</a>
+        <a href="/ui/admin/tenants">Manage Tenants</a>
+        <a href="/ui/admin/jwks">Signing Keys</a>
+    </div>
+</div>
+{% endblock %}
