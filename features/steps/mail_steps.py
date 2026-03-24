@@ -247,6 +247,7 @@ def _verify_via_db(email):
         f"UPDATE user_emails SET is_verified = true "
         f"WHERE email = '{email}' AND is_verified = false;"
     )
+    pg_port = os.environ.get("BDD_PG_PORT", "5432")
     result = subprocess.run(
         [
             "psql",
