@@ -18,6 +18,7 @@ from shomer.routes.settings_ui import (
     settings_profile,
     settings_profile_avatar,
     settings_profile_update,
+    settings_revoke_session,
     settings_security,
 )
 
@@ -779,5 +780,103 @@ class TestSettingsProfileAvatar:
             )
             ctx = mock_render.call_args[0][2]
             assert "Invalid file type" in ctx["error"]
+
+        asyncio.run(_run())
+
+
+class TestSettingsRevokeSession:
+    """Tests for POST /ui/settings/sessions/{session_id}/revoke."""
+
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Unauthenticated request redirects to login."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_revoke_session(
+                _req(), AsyncMock(), session_id=uuid.uuid4()
+            )
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_cannot_revoke_current_session(self, mock_auth: AsyncMock) -> None:
+        """Revoking the current session redirects without deleting."""
+
+        async def _run() -> None:
+            current_id = uuid.uuid4()
+            mock_session = MagicMock()
+            mock_session.id = current_id
+            mock_auth.return_value = (mock_session, _mock_user())
+
+            db = AsyncMock()
+            resp = await settings_revoke_session(
+                _req({"session_id": "tok"}), db, session_id=current_id
+            )
+            assert resp.status_code == 303
+            db.execute.assert_not_called()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui.SessionService")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_revokes_other_session(
+        self, mock_auth: AsyncMock, mock_svc_cls: MagicMock
+    ) -> None:
+        """Successfully revokes a session belonging to the user."""
+
+        async def _run() -> None:
+            current_id = uuid.uuid4()
+            target_id = uuid.uuid4()
+            mock_session = MagicMock()
+            mock_session.id = current_id
+            mock_user = _mock_user()
+            mock_auth.return_value = (mock_session, mock_user)
+
+            target_session = MagicMock()
+            db_result = MagicMock()
+            db_result.scalar_one_or_none.return_value = target_session
+            db = AsyncMock()
+            db.execute.return_value = db_result
+
+            mock_svc = AsyncMock()
+            mock_svc_cls.return_value = mock_svc
+
+            resp = await settings_revoke_session(
+                _req({"session_id": "tok"}), db, session_id=target_id
+            )
+            assert resp.status_code == 303
+            mock_svc.delete.assert_awaited_once_with(target_id)
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui.SessionService")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_nonexistent_session_no_delete(
+        self, mock_auth: AsyncMock, mock_svc_cls: MagicMock
+    ) -> None:
+        """Revoking a nonexistent session does not call delete."""
+
+        async def _run() -> None:
+            current_id = uuid.uuid4()
+            mock_session = MagicMock()
+            mock_session.id = current_id
+            mock_auth.return_value = (mock_session, _mock_user())
+
+            db_result = MagicMock()
+            db_result.scalar_one_or_none.return_value = None
+            db = AsyncMock()
+            db.execute.return_value = db_result
+
+            mock_svc = AsyncMock()
+            mock_svc_cls.return_value = mock_svc
+
+            resp = await settings_revoke_session(
+                _req({"session_id": "tok"}), db, session_id=uuid.uuid4()
+            )
+            assert resp.status_code == 303
+            mock_svc.delete.assert_not_called()
 
         asyncio.run(_run())
