@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from shomer.deps import DbSession
+from shomer.models.personal_access_token import PersonalAccessToken
 from shomer.models.session import Session
 from shomer.models.user import User
 from shomer.models.user_profile import UserProfile
@@ -73,6 +74,103 @@ async def _get_session_user(request: Request, db: Any) -> tuple[Any, Any] | None
         return None
 
     return session, user
+
+
+#: Profile fields considered for completeness calculation.
+_COMPLETENESS_FIELDS = (
+    "nickname",
+    "given_name",
+    "family_name",
+    "picture_url",
+    "phone_number",
+    "locale",
+    "zoneinfo",
+)
+
+
+@router.get("", response_class=HTMLResponse)
+async def settings_index(request: Request, db: DbSession) -> Any:
+    """Render the settings index / dashboard page.
+
+    Shows an at-a-glance overview of account status: profile completeness,
+    email verification, MFA status, active sessions count, and PAT count.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Settings index page or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(url="/ui/login?next=/ui/settings", status_code=302)
+
+    _, user = auth
+    profile = user.profile
+
+    # Profile completeness
+    filled = 0
+    total = len(_COMPLETENESS_FIELDS)
+    if profile is not None:
+        for field in _COMPLETENESS_FIELDS:
+            if getattr(profile, field, None):
+                filled += 1
+    completeness = round(filled / total * 100) if total > 0 else 0
+
+    # Email verification status
+    has_verified_email = any(e.is_verified for e in user.emails)
+
+    # MFA status
+    from shomer.models.user_mfa import UserMFA
+
+    mfa_stmt = select(UserMFA).where(UserMFA.user_id == user.id)
+    mfa_result = await db.execute(mfa_stmt)
+    user_mfa = mfa_result.scalar_one_or_none()
+    mfa_enabled = user_mfa.is_enabled if user_mfa else False
+
+    # Active sessions count
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    sessions_stmt = (
+        select(func.count())
+        .select_from(Session)
+        .where(Session.user_id == user.id, Session.expires_at > now)
+    )
+    sessions_result = await db.execute(sessions_stmt)
+    active_sessions = sessions_result.scalar() or 0
+
+    # Active PAT count
+    pat_stmt = (
+        select(func.count())
+        .select_from(PersonalAccessToken)
+        .where(
+            PersonalAccessToken.user_id == user.id,
+            PersonalAccessToken.is_revoked == False,  # noqa: E712
+        )
+    )
+    pat_result = await db.execute(pat_stmt)
+    active_pats = pat_result.scalar() or 0
+
+    return _render(
+        request,
+        "settings/index.html",
+        {
+            "user": user,
+            "completeness": completeness,
+            "has_verified_email": has_verified_email,
+            "mfa_enabled": mfa_enabled,
+            "active_sessions": active_sessions,
+            "active_pats": active_pats,
+            "section": "overview",
+        },
+    )
 
 
 @router.get("/profile", response_class=HTMLResponse)
