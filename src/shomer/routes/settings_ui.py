@@ -573,7 +573,7 @@ async def settings_emails_post(
     email_id: str = Form(""),
     code: str = Form(""),
 ) -> Any:
-    """Handle email management form submissions (add, remove, verify).
+    """Handle email management form submissions (add, remove, verify, resend).
 
     Parameters
     ----------
@@ -582,11 +582,11 @@ async def settings_emails_post(
     db : DbSession
         Database session.
     action : str
-        Form action (``add``, ``remove``, or ``verify``).
+        Form action (``add``, ``remove``, ``verify``, or ``resend``).
     email : str
         Email address to add (for ``add`` action).
     email_id : str
-        UUID of the email (for ``remove`` and ``verify`` actions).
+        UUID of the email (for ``remove``, ``verify``, and ``resend`` actions).
 
     Returns
     -------
@@ -711,6 +711,53 @@ async def settings_emails_post(
                         success = "Email verified successfully."
                     except InvalidCodeError:
                         error = "Invalid or expired verification code."
+
+    elif action == "resend":
+        import uuid as _uuid
+
+        try:
+            eid = _uuid.UUID(email_id)
+        except ValueError:
+            error = "Invalid email ID."
+        else:
+            resend_stmt = select(UserEmail).where(
+                UserEmail.id == eid,
+                UserEmail.user_id == user.id,
+            )
+            resend_result = await db.execute(resend_stmt)
+            target_email = resend_result.scalar_one_or_none()
+
+            if target_email is None:
+                error = "Email not found."
+            elif target_email.is_verified:
+                error = "Email is already verified."
+            else:
+                from shomer.services.auth_service import AuthService
+
+                svc = AuthService(db)
+                new_code = svc._generate_code()
+
+                from datetime import datetime, timedelta, timezone
+
+                from shomer.models.verification_code import VerificationCode
+
+                vc = VerificationCode(
+                    email=target_email.email,
+                    code=new_code,
+                    expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+                )
+                db.add(vc)
+                await db.flush()
+
+                from shomer.tasks.email import send_email_task
+
+                send_email_task.delay(
+                    to=target_email.email,
+                    subject="Verify your email",
+                    template="verification.html",
+                    context={"code": new_code},
+                )
+                success = "Verification email resent."
 
     # Re-load user with emails
     reload_stmt = (
