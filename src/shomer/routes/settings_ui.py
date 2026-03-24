@@ -571,8 +571,9 @@ async def settings_emails_post(
     action: str = Form("add"),
     email: str = Form(""),
     email_id: str = Form(""),
+    code: str = Form(""),
 ) -> Any:
-    """Handle email management form submissions (add, remove).
+    """Handle email management form submissions (add, remove, verify).
 
     Parameters
     ----------
@@ -581,11 +582,11 @@ async def settings_emails_post(
     db : DbSession
         Database session.
     action : str
-        Form action (``add`` or ``remove``).
+        Form action (``add``, ``remove``, or ``verify``).
     email : str
         Email address to add (for ``add`` action).
     email_id : str
-        UUID of the email to remove (for ``remove`` action).
+        UUID of the email (for ``remove`` and ``verify`` actions).
 
     Returns
     -------
@@ -674,6 +675,42 @@ async def settings_emails_post(
                 await db.delete(email_record)
                 await db.flush()
                 success = "Email removed."
+
+    elif action == "verify":
+        code = code.strip()
+        if not code:
+            error = "Verification code is required."
+        else:
+            import uuid as _uuid
+
+            try:
+                eid = _uuid.UUID(email_id)
+            except ValueError:
+                error = "Invalid email ID."
+            else:
+                email_stmt = select(UserEmail).where(
+                    UserEmail.id == eid,
+                    UserEmail.user_id == user.id,
+                )
+                email_result = await db.execute(email_stmt)
+                target_email = email_result.scalar_one_or_none()
+
+                if target_email is None:
+                    error = "Email not found."
+                elif target_email.is_verified:
+                    error = "Email is already verified."
+                else:
+                    from shomer.services.auth_service import (
+                        AuthService,
+                        InvalidCodeError,
+                    )
+
+                    svc = AuthService(db)
+                    try:
+                        await svc.verify_email(email=target_email.email, code=code)
+                        success = "Email verified successfully."
+                    except InvalidCodeError:
+                        error = "Invalid or expired verification code."
 
     # Re-load user with emails
     reload_stmt = (
