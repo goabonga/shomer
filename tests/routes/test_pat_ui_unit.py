@@ -103,8 +103,13 @@ class TestPATAction:
 
                 req = MagicMock()
                 await pat_action(
-                    req, AsyncMock(), action="create", name="test",
-                    scopes="api:read", expires_at="", pat_id="",
+                    req,
+                    AsyncMock(),
+                    action="create",
+                    name="test",
+                    scopes="api:read",
+                    expires_at="",
+                    pat_id="",
                 )
                 call_args = mock_tpl.TemplateResponse.call_args
                 ctx = call_args[0][2] if len(call_args[0]) > 2 else call_args[1]
@@ -131,8 +136,13 @@ class TestPATAction:
 
                 req = MagicMock()
                 await pat_action(
-                    req, AsyncMock(), action="create", name="",
-                    scopes="", expires_at="", pat_id="",
+                    req,
+                    AsyncMock(),
+                    action="create",
+                    name="",
+                    scopes="",
+                    expires_at="",
+                    pat_id="",
                 )
                 call_args = mock_tpl.TemplateResponse.call_args
                 ctx = call_args[0][2] if len(call_args[0]) > 2 else call_args[1]
@@ -159,8 +169,13 @@ class TestPATAction:
                 req = MagicMock()
                 pid = str(uuid.uuid4())
                 await pat_action(
-                    req, AsyncMock(), action="revoke", pat_id=pid,
-                    name="", scopes="", expires_at="",
+                    req,
+                    AsyncMock(),
+                    action="revoke",
+                    pat_id=pid,
+                    name="",
+                    scopes="",
+                    expires_at="",
                 )
                 mock_svc.revoke.assert_awaited_once()
                 call_args = mock_tpl.TemplateResponse.call_args

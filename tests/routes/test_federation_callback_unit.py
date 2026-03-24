@@ -217,7 +217,9 @@ class TestFederationCallbackSuccess:
 
             with (
                 patch("shomer.routes.federation.FederationService") as mock_fed_cls,
-                patch("shomer.services.session_service.SessionService") as mock_sess_cls,
+                patch(
+                    "shomer.services.session_service.SessionService"
+                ) as mock_sess_cls,
                 patch(
                     "shomer.middleware.cookies.get_cookie_policy",
                     return_value=mock_policy,
@@ -291,7 +293,9 @@ class TestFederationCallbackSuccess:
 
             with (
                 patch("shomer.routes.federation.FederationService") as mock_fed_cls,
-                patch("shomer.services.session_service.SessionService") as mock_sess_cls,
+                patch(
+                    "shomer.services.session_service.SessionService"
+                ) as mock_sess_cls,
                 patch(
                     "shomer.middleware.cookies.get_cookie_policy",
                     return_value=mock_policy,

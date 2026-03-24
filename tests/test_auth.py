@@ -28,10 +28,8 @@ def _req(
 ) -> MagicMock:
     r = MagicMock()
     r.headers = MagicMock()
-    r.headers.get = (
-        lambda k, d="": (auth_header if auth_header is not None else d)
-        if k == "authorization"
-        else d
+    r.headers.get = lambda k, d="": (
+        (auth_header if auth_header is not None else d) if k == "authorization" else d
     )
     cookie_data = cookies or {}
     r.cookies = MagicMock()
