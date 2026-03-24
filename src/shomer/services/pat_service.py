@@ -246,6 +246,60 @@ class PATService:
         pat.is_revoked = True
         await self.session.flush()
 
+    async def regenerate(
+        self,
+        pat_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> PATCreateResult:
+        """Regenerate a PAT: revoke the old token and create a new one.
+
+        The new token inherits the name, scopes, and expiration of the
+        original. The old token is revoked immediately.
+
+        Parameters
+        ----------
+        pat_id : uuid.UUID
+            The existing PAT record ID to regenerate.
+        user_id : uuid.UUID
+            The token owner's ID (authorization check).
+
+        Returns
+        -------
+        PATCreateResult
+            The newly created PAT including the raw token (shown once).
+
+        Raises
+        ------
+        PATError
+            If the PAT is not found or doesn't belong to the user.
+        """
+        stmt = select(PersonalAccessToken).where(
+            PersonalAccessToken.id == pat_id,
+            PersonalAccessToken.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        pat = result.scalar_one_or_none()
+
+        if pat is None:
+            raise PATError("Token not found")
+
+        # Capture original attributes before revoking
+        name = pat.name
+        scopes = pat.scopes
+        expires_at = pat.expires_at
+
+        # Revoke old token
+        pat.is_revoked = True
+        await self.session.flush()
+
+        # Create replacement with same attributes
+        return await self.create(
+            user_id=user_id,
+            name=name,
+            scopes=scopes,
+            expires_at=expires_at,
+        )
+
     async def list_for_user(self, user_id: uuid.UUID) -> list[PATInfo]:
         """List all PATs for a user (metadata only).
 

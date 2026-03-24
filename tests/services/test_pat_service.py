@@ -215,6 +215,71 @@ class TestPATRevoke:
         asyncio.run(_run())
 
 
+class TestPATRegenerate:
+    """Tests for PAT regeneration."""
+
+    def test_regenerate_revokes_old_and_creates_new(self) -> None:
+        async def _run() -> None:
+            old_pat = MagicMock()
+            old_pat.name = "CI key"
+            old_pat.scopes = "api:read"
+            old_pat.expires_at = None
+            old_pat.is_revoked = False
+
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = old_pat
+
+            db = AsyncMock()
+            db.execute.return_value = mock_result
+
+            svc = PATService(db)
+            uid = uuid.uuid4()
+            result = await svc.regenerate(uuid.uuid4(), uid)
+
+            assert old_pat.is_revoked is True
+            assert isinstance(result, PATCreateResult)
+            assert result.token.startswith(PAT_PREFIX)
+            assert result.name == "CI key"
+            assert result.scopes == "api:read"
+
+        asyncio.run(_run())
+
+    def test_regenerate_not_found_raises(self) -> None:
+        async def _run() -> None:
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = None
+
+            db = AsyncMock()
+            db.execute.return_value = mock_result
+
+            svc = PATService(db)
+            with pytest.raises(PATError, match="not found"):
+                await svc.regenerate(uuid.uuid4(), uuid.uuid4())
+
+        asyncio.run(_run())
+
+    def test_regenerate_preserves_expiration(self) -> None:
+        async def _run() -> None:
+            exp = datetime.now(timezone.utc) + timedelta(days=30)
+            old_pat = MagicMock()
+            old_pat.name = "tmp"
+            old_pat.scopes = ""
+            old_pat.expires_at = exp
+            old_pat.is_revoked = False
+
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = old_pat
+
+            db = AsyncMock()
+            db.execute.return_value = mock_result
+
+            svc = PATService(db)
+            result = await svc.regenerate(uuid.uuid4(), uuid.uuid4())
+            assert result.expires_at == exp
+
+        asyncio.run(_run())
+
+
 class TestPATListForUser:
     """Tests for listing user PATs."""
 

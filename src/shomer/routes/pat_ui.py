@@ -108,7 +108,7 @@ async def pat_action(
     expires_at: str = Form(""),
     pat_id: str = Form(""),
 ) -> Any:
-    """Handle PAT create/revoke form submissions.
+    """Handle PAT create/revoke/regenerate form submissions.
 
     Parameters
     ----------
@@ -117,7 +117,7 @@ async def pat_action(
     db : DbSession
         Database session.
     action : str
-        ``create`` or ``revoke``.
+        ``create``, ``revoke``, or ``regenerate``.
     name : str
         Token name (for create).
     scopes : str
@@ -125,7 +125,7 @@ async def pat_action(
     expires_at : str
         Expiration date string (for create).
     pat_id : str
-        PAT ID (for revoke).
+        PAT ID (for revoke or regenerate).
 
     Returns
     -------
@@ -163,6 +163,14 @@ async def pat_action(
                 )
                 new_token = result.token
                 success = "Token created successfully."
+
+    elif action == "regenerate":
+        try:
+            result = await svc.regenerate(uuid.UUID(pat_id), user_id)
+            new_token = result.token
+            success = "Token regenerated successfully."
+        except (PATError, ValueError) as exc:
+            error = str(exc)
 
     elif action == "revoke":
         try:
