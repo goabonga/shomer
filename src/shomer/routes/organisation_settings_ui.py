@@ -22,6 +22,7 @@ from sqlalchemy.orm import selectinload
 
 from shomer.deps import DbSession
 from shomer.models.tenant import Tenant, TenantTrustMode
+from shomer.models.tenant_custom_role import TenantCustomRole
 from shomer.models.tenant_member import TenantMember
 from shomer.models.user import User
 from shomer.models.user_email import UserEmail
@@ -1244,4 +1245,301 @@ async def _member_update_role(
         request,
         "settings/organisation_members.html",
         await ctx_fn(success=f"Role updated to {new_role}."),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Role management (CRUD + scope assignment)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/organisations/{org_id}/roles", response_class=HTMLResponse)
+async def settings_organisation_roles(
+    request: Request, org_id: str, db: DbSession
+) -> Any:
+    """Render the role management page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Roles page, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/roles",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_roles.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_roles.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    roles_stmt = (
+        select(TenantCustomRole)
+        .where(TenantCustomRole.tenant_id == tid)
+        .order_by(TenantCustomRole.name)
+    )
+    roles_result = await db.execute(roles_stmt)
+    roles = [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "permissions": r.permissions,
+        }
+        for r in roles_result.scalars().all()
+    ]
+
+    return _render(
+        request,
+        "settings/organisation_roles.html",
+        {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "roles": roles,
+            "role": membership.role,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@router.post("/organisations/{org_id}/roles", response_class=HTMLResponse)
+async def settings_organisation_roles_action(
+    request: Request,
+    org_id: str,
+    db: DbSession,
+    action: str = Form(...),
+    role_name: str = Form(""),
+    permissions: str = Form(""),
+    role_id: str = Form(""),
+) -> Any:
+    """Handle role management actions (create, update, delete).
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+    action : str
+        Action to perform: ``create``, ``update``, or ``delete``.
+    role_name : str
+        Name for the role (create/update).
+    permissions : str
+        Space-separated permission strings (create/update).
+    role_id : str
+        UUID of the role (update/delete).
+
+    Returns
+    -------
+    HTMLResponse
+        Roles page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/roles",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_roles.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_roles.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    async def _ctx(
+        *, error: str | None = None, success: str | None = None
+    ) -> dict[str, Any]:
+        roles_stmt = (
+            select(TenantCustomRole)
+            .where(TenantCustomRole.tenant_id == tid)
+            .order_by(TenantCustomRole.name)
+        )
+        roles_result = await db.execute(roles_stmt)
+        roles = [
+            {"id": str(r.id), "name": r.name, "permissions": r.permissions}
+            for r in roles_result.scalars().all()
+        ]
+        return {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "roles": roles,
+            "role": membership.role,
+            "error": error,
+            "success": success,
+        }
+
+    if membership.role not in ("owner", "admin"):
+        return _render(
+            request,
+            "settings/organisation_roles.html",
+            await _ctx(error="You do not have permission to manage roles."),
+        )
+
+    perms_list = [p.strip() for p in permissions.split() if p.strip()]
+
+    if action == "create":
+        name = role_name.strip()
+        if not name:
+            return _render(
+                request,
+                "settings/organisation_roles.html",
+                await _ctx(error="Role name is required."),
+            )
+        existing = await db.execute(
+            select(TenantCustomRole).where(
+                TenantCustomRole.tenant_id == tid,
+                TenantCustomRole.name == name,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            return _render(
+                request,
+                "settings/organisation_roles.html",
+                await _ctx(error=f"Role '{name}' already exists."),
+            )
+        role_obj = TenantCustomRole(
+            tenant_id=tid,
+            name=name,
+            permissions=perms_list,
+        )
+        db.add(role_obj)
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_roles.html",
+            await _ctx(success=f"Role '{name}' created."),
+        )
+
+    elif action == "update":
+        rid = _parse_uuid(role_id)
+        if rid is None:
+            return _render(
+                request,
+                "settings/organisation_roles.html",
+                await _ctx(error="Invalid role ID."),
+            )
+        update_result = await db.execute(
+            select(TenantCustomRole).where(
+                TenantCustomRole.id == rid, TenantCustomRole.tenant_id == tid
+            )
+        )
+        update_role = update_result.scalar_one_or_none()
+        if update_role is None:
+            return _render(
+                request,
+                "settings/organisation_roles.html",
+                await _ctx(error="Role not found."),
+            )
+        if role_name.strip():
+            update_role.name = role_name.strip()
+        update_role.permissions = perms_list
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_roles.html",
+            await _ctx(success=f"Role '{update_role.name}' updated."),
+        )
+
+    elif action == "delete":
+        rid = _parse_uuid(role_id)
+        if rid is None:
+            return _render(
+                request,
+                "settings/organisation_roles.html",
+                await _ctx(error="Invalid role ID."),
+            )
+        delete_result = await db.execute(
+            select(TenantCustomRole).where(
+                TenantCustomRole.id == rid, TenantCustomRole.tenant_id == tid
+            )
+        )
+        delete_role = delete_result.scalar_one_or_none()
+        if delete_role is None:
+            return _render(
+                request,
+                "settings/organisation_roles.html",
+                await _ctx(error="Role not found."),
+            )
+        await db.delete(delete_role)
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_roles.html",
+            await _ctx(success="Role deleted."),
+        )
+
+    return _render(
+        request,
+        "settings/organisation_roles.html",
+        await _ctx(error="Unknown action."),
     )

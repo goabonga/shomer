@@ -24,6 +24,8 @@ from shomer.routes.organisation_settings_ui import (
     settings_organisation_members,
     settings_organisation_members_action,
     settings_organisation_new,
+    settings_organisation_roles,
+    settings_organisation_roles_action,
     settings_organisations,
 )
 
@@ -1319,5 +1321,678 @@ class TestSettingsOrganisationMembersAction:
             ctx = mock_render.call_args[0][2]
             assert "updated" in ctx["success"]
             assert other_member.role == "admin"
+
+        asyncio.run(_run())
+
+
+class TestSettingsOrganisationRoles:
+    """Tests for GET /ui/settings/organisations/{org_id}/roles."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_roles(_req(), "some-id", AsyncMock())
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_invalid_org_id(self, mock_auth: AsyncMock, mock_render: MagicMock) -> None:
+        """Show error for invalid org ID."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_roles(
+                _req({"session_id": "tok"}), "not-a-uuid", AsyncMock()
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid organisation ID" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_not_member_shows_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Show error when user is not a member."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_mem.return_value = None
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_roles(
+                _req({"session_id": "tok"}), str(uuid.uuid4()), AsyncMock()
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "not found" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_renders_roles_list(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Render roles page with list of custom roles."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            role1 = MagicMock()
+            role1.id = uuid.uuid4()
+            role1.name = "editor"
+            role1.permissions = ["read", "write"]
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = [role1]
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_roles(
+                _req({"session_id": "tok"}), str(tenant.id), db
+            )
+
+            mock_render.assert_called_once()
+            ctx = mock_render.call_args[0][2]
+            assert ctx["role"] == "owner"
+            assert len(ctx["roles"]) == 1
+            assert ctx["roles"][0]["name"] == "editor"
+            assert ctx["roles"][0]["permissions"] == ["read", "write"]
+
+        asyncio.run(_run())
+
+
+class TestSettingsOrganisationRolesAction:
+    """Tests for POST /ui/settings/organisations/{org_id}/roles."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_roles_action(
+                _req(),
+                "some-id",
+                AsyncMock(),
+                action="create",
+                role_name="",
+                permissions="",
+                role_id="",
+            )
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_invalid_org_id(self, mock_auth: AsyncMock, mock_render: MagicMock) -> None:
+        """Show error for invalid org ID."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                "bad-uuid",
+                AsyncMock(),
+                action="create",
+                role_name="",
+                permissions="",
+                role_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid organisation ID" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_not_member_shows_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Show error when user is not a member."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_mem.return_value = None
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(uuid.uuid4()),
+                AsyncMock(),
+                action="create",
+                role_name="",
+                permissions="",
+                role_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "not found" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_non_admin_denied(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Members without owner/admin role cannot manage roles."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="member", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="create",
+                role_name="editor",
+                permissions="",
+                role_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "permission" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_create_empty_name_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Creating a role with empty name shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="create",
+                role_name="",
+                permissions="",
+                role_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "required" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_create_duplicate_name_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Creating a role with duplicate name shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            existing_role = MagicMock()
+            db = AsyncMock()
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    # First call: duplicate check returns existing role
+                    result_mock.scalar_one_or_none.return_value = existing_role
+                else:
+                    # Subsequent calls for _ctx: roles list
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="create",
+                role_name="editor",
+                permissions="",
+                role_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "already exists" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_create_role_success(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Owner can create a new custom role."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    # First call: uniqueness check returns None
+                    result_mock.scalar_one_or_none.return_value = None
+                else:
+                    # Subsequent calls for _ctx: roles list
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db = AsyncMock()
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="create",
+                role_name="editor",
+                permissions="read write",
+            )
+
+            db.add.assert_called_once()
+            ctx = mock_render.call_args[0][2]
+            assert "created" in ctx["success"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_update_role_success(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Owner can update an existing custom role."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            role_obj = MagicMock()
+            role_obj.name = "editor"
+            rid = uuid.uuid4()
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    # First call: find role
+                    result_mock.scalar_one_or_none.return_value = role_obj
+                else:
+                    # Subsequent calls for _ctx: roles list
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db = AsyncMock()
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="update",
+                role_id=str(rid),
+                role_name="reviewer",
+                permissions="read review",
+            )
+
+            assert role_obj.name == "reviewer"
+            assert role_obj.permissions == ["read", "review"]
+            ctx = mock_render.call_args[0][2]
+            assert "updated" in ctx["success"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_update_role_not_found(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Updating a non-existent role shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    result_mock.scalar_one_or_none.return_value = None
+                else:
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db = AsyncMock()
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="update",
+                role_id=str(uuid.uuid4()),
+                role_name="editor",
+                permissions="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "not found" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_delete_role_success(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Owner can delete a custom role."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            role_obj = MagicMock()
+            rid = uuid.uuid4()
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    result_mock.scalar_one_or_none.return_value = role_obj
+                else:
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db = AsyncMock()
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="delete",
+                role_id=str(rid),
+                role_name="",
+                permissions="",
+            )
+
+            db.delete.assert_called_once_with(role_obj)
+            ctx = mock_render.call_args[0][2]
+            assert "deleted" in ctx["success"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_delete_role_not_found(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Deleting a non-existent role shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    result_mock.scalar_one_or_none.return_value = None
+                else:
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db = AsyncMock()
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="delete",
+                role_id=str(uuid.uuid4()),
+                role_name="",
+                permissions="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "not found" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unknown_action_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Unknown action shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="foobar",
+                role_name="",
+                permissions="",
+                role_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "unknown" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_update_invalid_role_id(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Updating with invalid role ID shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="update",
+                role_id="bad-uuid",
+                role_name="editor",
+                permissions="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "invalid role id" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_delete_invalid_role_id(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Deleting with invalid role ID shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_roles_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="delete",
+                role_id="bad-uuid",
+                role_name="",
+                permissions="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "invalid role id" in ctx["error"].lower()
 
         asyncio.run(_run())
