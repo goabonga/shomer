@@ -762,3 +762,403 @@ async def admin_client_rotate_secret(
             "new_secret": new_secret,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Sessions UI
+# ---------------------------------------------------------------------------
+
+
+@router.get("/sessions", response_class=HTMLResponse)
+async def admin_sessions_list(request: Request, db: DbSession) -> Any:
+    """Render the admin sessions list page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Sessions list page or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(
+            url="/ui/login?next=/ui/admin/sessions", status_code=302
+        )
+
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(Session)
+        .where(Session.expires_at > now)
+        .order_by(Session.created_at.desc())
+        .limit(100)
+    )
+    sessions_list = list(result.scalars().all())
+
+    items = [
+        {
+            "id": str(s.id),
+            "user_id": str(s.user_id),
+            "ip_address": s.ip_address,
+            "last_activity": s.last_activity.isoformat() if s.last_activity else None,
+            "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+        }
+        for s in sessions_list
+    ]
+
+    return _render(
+        request,
+        "admin/sessions_list.html",
+        {"sessions": items, "section": "sessions"},
+    )
+
+
+@router.post("/sessions/{session_id}/revoke", response_class=HTMLResponse)
+async def admin_session_revoke(request: Request, session_id: str, db: DbSession) -> Any:
+    """Revoke a session from the UI.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    session_id : str
+        UUID of the session to revoke.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Redirect to sessions list.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    import uuid as _uuid
+
+    try:
+        sid = _uuid.UUID(session_id)
+    except ValueError:
+        return RedirectResponse(url="/ui/admin/sessions", status_code=302)
+
+    result = await db.execute(select(Session).where(Session.id == sid))
+    session_obj = result.scalar_one_or_none()
+    if session_obj:
+        await db.delete(session_obj)
+        await db.flush()
+
+    return RedirectResponse(url="/ui/admin/sessions", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# JWKS UI
+# ---------------------------------------------------------------------------
+
+
+@router.get("/jwks", response_class=HTMLResponse)
+async def admin_jwks_list(request: Request, db: DbSession) -> Any:
+    """Render the JWKS keys page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        JWKS page or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login?next=/ui/admin/jwks", status_code=302)
+
+    from shomer.models.jwk import JWK
+
+    result = await db.execute(select(JWK).order_by(JWK.created_at.desc()))
+    keys_list = list(result.scalars().all())
+
+    items = []
+    for k in keys_list:
+        st = k.status
+        items.append(
+            {
+                "kid": k.kid,
+                "algorithm": k.algorithm,
+                "status": st.value if hasattr(st, "value") else str(st),
+                "created_at": k.created_at.isoformat() if k.created_at else None,
+            }
+        )
+
+    return _render(
+        request,
+        "admin/jwks_list.html",
+        {"keys": items, "section": "jwks", "success": None},
+    )
+
+
+@router.post("/jwks/rotate", response_class=HTMLResponse)
+async def admin_jwks_rotate(request: Request, db: DbSession) -> Any:
+    """Trigger key rotation from the UI.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Redirect to JWKS page.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    from shomer.core.security import AESEncryption
+    from shomer.core.settings import get_settings
+    from shomer.services.jwk_service import JWKService
+
+    settings = get_settings()
+    encryption = AESEncryption(settings.jwk_encryption_key.encode())
+    svc = JWKService(db, encryption)
+    await svc.rotate()
+
+    return RedirectResponse(url="/ui/admin/jwks", status_code=302)
+
+
+@router.post("/jwks/{kid}/revoke", response_class=HTMLResponse)
+async def admin_jwks_revoke(request: Request, kid: str, db: DbSession) -> Any:
+    """Revoke a key from the UI.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    kid : str
+        Key ID to revoke.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Redirect to JWKS page.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    from shomer.core.security import AESEncryption
+    from shomer.core.settings import get_settings
+    from shomer.services.jwk_service import JWKService
+
+    settings = get_settings()
+    encryption = AESEncryption(settings.jwk_encryption_key.encode())
+    svc = JWKService(db, encryption)
+    await svc.revoke(kid)
+
+    return RedirectResponse(url="/ui/admin/jwks", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# Roles & Scopes UI
+# ---------------------------------------------------------------------------
+
+
+@router.get("/roles", response_class=HTMLResponse)
+async def admin_roles_list(request: Request, db: DbSession) -> Any:
+    """Render the roles and scopes management page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Roles/scopes page or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login?next=/ui/admin/roles", status_code=302)
+
+    from shomer.models.role import Role
+    from shomer.models.scope import Scope
+
+    roles_r = await db.execute(
+        select(Role).options(selectinload(Role.scopes)).order_by(Role.name)
+    )
+    roles = [
+        {
+            "name": r.name,
+            "description": r.description,
+            "is_system": r.is_system,
+            "scopes": [s.name for s in r.scopes],
+        }
+        for r in roles_r.scalars().all()
+    ]
+
+    scopes_r = await db.execute(select(Scope).order_by(Scope.name))
+    scopes = [
+        {"name": s.name, "description": s.description} for s in scopes_r.scalars().all()
+    ]
+
+    return _render(
+        request,
+        "admin/roles_list.html",
+        {"roles": roles, "scopes": scopes, "section": "roles", "success": None},
+    )
+
+
+# ---------------------------------------------------------------------------
+# PATs UI
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pats", response_class=HTMLResponse)
+async def admin_pats_list(request: Request, db: DbSession) -> Any:
+    """Render the PATs oversight page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        PATs list page or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login?next=/ui/admin/pats", status_code=302)
+
+    from shomer.models.personal_access_token import PersonalAccessToken
+
+    result = await db.execute(
+        select(PersonalAccessToken)
+        .order_by(PersonalAccessToken.created_at.desc())
+        .limit(100)
+    )
+    pats = [
+        {
+            "id": str(p.id),
+            "name": p.name,
+            "token_prefix": p.token_prefix,
+            "user_id": str(p.user_id),
+            "is_revoked": p.is_revoked,
+        }
+        for p in result.scalars().all()
+    ]
+
+    return _render(
+        request,
+        "admin/pats_list.html",
+        {"pats": pats, "section": "pats"},
+    )
+
+
+@router.post("/pats/{pat_id}/revoke", response_class=HTMLResponse)
+async def admin_pat_revoke(request: Request, pat_id: str, db: DbSession) -> Any:
+    """Revoke a PAT from the UI.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    pat_id : str
+        UUID of the PAT to revoke.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Redirect to PATs list.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login", status_code=302)
+
+    import uuid as _uuid
+
+    from shomer.models.personal_access_token import PersonalAccessToken
+
+    try:
+        pid = _uuid.UUID(pat_id)
+    except ValueError:
+        return RedirectResponse(url="/ui/admin/pats", status_code=302)
+
+    result = await db.execute(
+        select(PersonalAccessToken).where(PersonalAccessToken.id == pid)
+    )
+    pat = result.scalar_one_or_none()
+    if pat:
+        pat.is_revoked = True
+        await db.flush()
+
+    return RedirectResponse(url="/ui/admin/pats", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# Tenants UI
+# ---------------------------------------------------------------------------
+
+
+@router.get("/tenants", response_class=HTMLResponse)
+async def admin_tenants_list(request: Request, db: DbSession) -> Any:
+    """Render the tenants management page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Tenants list page or redirect.
+    """
+    admin = await _get_admin_user(request, db)
+    if admin is None:
+        return RedirectResponse(url="/ui/login?next=/ui/admin/tenants", status_code=302)
+
+    from shomer.models.tenant import Tenant
+
+    result = await db.execute(select(Tenant).order_by(Tenant.created_at.desc()))
+    tenants = []
+    for t in result.scalars().all():
+        tm = t.trust_mode
+        tenants.append(
+            {
+                "slug": t.slug,
+                "display_name": t.display_name,
+                "trust_mode": tm.value if hasattr(tm, "value") else str(tm),
+                "is_active": t.is_active,
+                "custom_domain": t.custom_domain,
+            }
+        )
+
+    return _render(
+        request,
+        "admin/tenants_list.html",
+        {"tenants": tenants, "section": "tenants"},
+    )
