@@ -791,23 +791,17 @@ async def settings_emails_post(
                 await db.flush()
                 success = "Primary email updated."
 
-    # Re-load user with emails
-    reload_stmt = (
-        select(User)
-        .where(User.id == user.id)
-        .options(selectinload(User.profile), selectinload(User.emails))
-    )
-    reload_result = await db.execute(reload_stmt)
-    refreshed = reload_result.scalar_one_or_none()
-    if refreshed is not None:
-        user = refreshed
+    # Re-load user emails directly to ensure we see all changes
+    emails_stmt = select(UserEmail).where(UserEmail.user_id == user.id)
+    emails_result = await db.execute(emails_stmt)
+    emails = list(emails_result.scalars().all())
 
     return _render(
         request,
         "settings/emails.html",
         {
             "user": user,
-            "emails": user.emails,
+            "emails": emails,
             "section": "emails",
             "success": success,
             "error": error,
