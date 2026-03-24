@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from shomer.routes.settings_ui import (
     _get_session_user,
     settings_emails,
-    settings_emails_add,
+    settings_emails_post,
     settings_profile,
     settings_profile_update,
     settings_security,
@@ -368,7 +368,7 @@ class TestSettingsEmailsAdd:
 
         async def _run() -> None:
             mock_auth.return_value = None
-            resp = await settings_emails_add(_req(), AsyncMock())
+            resp = await settings_emails_post(_req(), AsyncMock())
             assert resp.status_code == 302
             assert "/ui/login" in resp.headers["location"]
 
@@ -392,7 +392,7 @@ class TestSettingsEmailsAdd:
             reload_result.scalar_one_or_none.return_value = mock_user
             db.execute.return_value = reload_result
 
-            await settings_emails_add(
+            await settings_emails_post(
                 _req({"session_id": "tok"}), db, action="add", email=""
             )
             ctx = mock_render.call_args[0][2]
@@ -432,7 +432,7 @@ class TestSettingsEmailsAdd:
             reload_result.scalar_one_or_none.return_value = mock_user
             db.execute.side_effect = [existing_result, reload_result]
 
-            await settings_emails_add(
+            await settings_emails_post(
                 _req({"session_id": "tok"}), db, action="add", email="new@example.com"
             )
 
@@ -467,7 +467,7 @@ class TestSettingsEmailsAdd:
             reload_result.scalar_one_or_none.return_value = mock_user
             db.execute.side_effect = [existing_result, reload_result]
 
-            await settings_emails_add(
+            await settings_emails_post(
                 _req({"session_id": "tok"}),
                 db,
                 action="add",
@@ -496,5 +496,136 @@ class TestSettingsEmailsAdd:
             ctx = mock_render.call_args[0][2]
             assert ctx["success"] is None
             assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+
+class TestSettingsEmailsRemove:
+    """Tests for POST /ui/settings/emails action=remove."""
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_remove_email_success(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Remove a non-primary email shows success."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            email_record = MagicMock()
+            email_record.is_primary = False
+
+            db = AsyncMock()
+            # First call: find email by id
+            find_result = MagicMock()
+            find_result.scalar_one_or_none.return_value = email_record
+            # Second call: re-load user
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [find_result, reload_result]
+
+            eid = str(uuid.uuid4())
+            await settings_emails_post(
+                _req({"session_id": "tok"}), db, action="remove", email_id=eid
+            )
+
+            db.delete.assert_awaited_once_with(email_record)
+            ctx = mock_render.call_args[0][2]
+            assert ctx["success"] == "Email removed."
+            assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_remove_primary_email_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Removing primary email shows error."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            email_record = MagicMock()
+            email_record.is_primary = True
+
+            db = AsyncMock()
+            find_result = MagicMock()
+            find_result.scalar_one_or_none.return_value = email_record
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [find_result, reload_result]
+
+            eid = str(uuid.uuid4())
+            await settings_emails_post(
+                _req({"session_id": "tok"}), db, action="remove", email_id=eid
+            )
+
+            db.delete.assert_not_awaited()
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Cannot delete primary email."
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_remove_nonexistent_email_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Removing a non-existent email shows error."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            db = AsyncMock()
+            find_result = MagicMock()
+            find_result.scalar_one_or_none.return_value = None
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [find_result, reload_result]
+
+            eid = str(uuid.uuid4())
+            await settings_emails_post(
+                _req({"session_id": "tok"}), db, action="remove", email_id=eid
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Email not found."
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_remove_invalid_uuid_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Removing with invalid UUID shows error."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            db = AsyncMock()
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.return_value = reload_result
+
+            await settings_emails_post(
+                _req({"session_id": "tok"}),
+                db,
+                action="remove",
+                email_id="not-a-uuid",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Invalid email ID."
 
         asyncio.run(_run())
