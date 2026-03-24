@@ -157,46 +157,57 @@ class TestSettingsSecurity:
 
         asyncio.run(_run())
 
+    @patch("shomer.routes.settings_ui.SessionService")
     @patch("shomer.routes.settings_ui._render")
     @patch("shomer.routes.settings_ui._get_session_user")
     def test_authenticated_renders_page(
-        self, mock_auth: AsyncMock, mock_render: MagicMock
+        self, mock_auth: AsyncMock, mock_render: MagicMock, mock_svc_cls: MagicMock
     ) -> None:
         async def _run() -> None:
             mock_user = _mock_user()
             mock_session = MagicMock()
+            mock_session.id = uuid.uuid4()
             mock_auth.return_value = (mock_session, mock_user)
 
-            count_result = MagicMock()
-            count_result.scalar.return_value = 2
+            sessions_list = [MagicMock(), MagicMock()]
+            mock_svc = AsyncMock()
+            mock_svc.list_active.return_value = sessions_list
+            mock_svc_cls.return_value = mock_svc
+
             mfa_result = MagicMock()
             mfa_result.scalar_one_or_none.return_value = None
 
             db = AsyncMock()
-            db.execute.side_effect = [count_result, mfa_result]
+            db.execute.return_value = mfa_result
 
             mock_render.return_value = "html"
             await settings_security(_req({"session_id": "tok"}), db)
             ctx = mock_render.call_args[0][2]
             assert ctx["section"] == "security"
+            assert ctx["sessions"] == sessions_list
             assert ctx["active_sessions"] == 2
+            assert ctx["current_session_id"] == str(mock_session.id)
             assert ctx["mfa_enabled"] is False
             assert ctx["mfa_methods"] == []
 
         asyncio.run(_run())
 
+    @patch("shomer.routes.settings_ui.SessionService")
     @patch("shomer.routes.settings_ui._render")
     @patch("shomer.routes.settings_ui._get_session_user")
     def test_mfa_enabled_shows_in_context(
-        self, mock_auth: AsyncMock, mock_render: MagicMock
+        self, mock_auth: AsyncMock, mock_render: MagicMock, mock_svc_cls: MagicMock
     ) -> None:
         async def _run() -> None:
             mock_user = _mock_user()
             mock_session = MagicMock()
+            mock_session.id = uuid.uuid4()
             mock_auth.return_value = (mock_session, mock_user)
 
-            count_result = MagicMock()
-            count_result.scalar.return_value = 1
+            mock_svc = AsyncMock()
+            mock_svc.list_active.return_value = [MagicMock()]
+            mock_svc_cls.return_value = mock_svc
+
             mock_mfa = MagicMock()
             mock_mfa.is_enabled = True
             mock_mfa.methods = ["totp", "backup"]
@@ -204,7 +215,7 @@ class TestSettingsSecurity:
             mfa_result.scalar_one_or_none.return_value = mock_mfa
 
             db = AsyncMock()
-            db.execute.side_effect = [count_result, mfa_result]
+            db.execute.return_value = mfa_result
 
             mock_render.return_value = "html"
             await settings_security(_req({"session_id": "tok"}), db)

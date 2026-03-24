@@ -582,16 +582,9 @@ async def settings_security(request: Request, db: DbSession) -> Any:
 
     session, user = auth
 
-    from datetime import datetime, timezone
-
-    now = datetime.now(timezone.utc)
-    count_stmt = (
-        select(func.count())
-        .select_from(Session)
-        .where(Session.user_id == user.id, Session.expires_at > now)
-    )
-    count_result = await db.execute(count_stmt)
-    active_sessions = count_result.scalar() or 0
+    # Fetch active sessions list
+    svc = SessionService(db)
+    sessions = await svc.list_active(user.id)
 
     # Query MFA status
     from shomer.models.user_mfa import UserMFA
@@ -608,7 +601,9 @@ async def settings_security(request: Request, db: DbSession) -> Any:
         "settings/security.html",
         {
             "user": user,
-            "active_sessions": active_sessions,
+            "sessions": sessions,
+            "current_session_id": str(session.id),
+            "active_sessions": len(sessions),
             "mfa_enabled": mfa_enabled,
             "mfa_methods": mfa_methods,
             "section": "security",
