@@ -172,6 +172,10 @@ async def pat_action(
         except (PATError, ValueError) as exc:
             error = str(exc)
 
+    elif action == "revoke_all":
+        count = await svc.revoke_all_for_user(user_id)
+        success = f"All tokens revoked ({count})."
+
     elif action == "revoke":
         try:
             await svc.revoke(uuid.UUID(pat_id), user_id)

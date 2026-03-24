@@ -280,6 +280,46 @@ class TestPATRegenerate:
         asyncio.run(_run())
 
 
+class TestPATRevokeAll:
+    """Tests for bulk revoke all."""
+
+    def test_revoke_all_marks_active_tokens(self) -> None:
+        async def _run() -> None:
+            pat1 = MagicMock()
+            pat1.is_revoked = False
+            pat2 = MagicMock()
+            pat2.is_revoked = False
+
+            mock_result = MagicMock()
+            mock_result.scalars.return_value.all.return_value = [pat1, pat2]
+
+            db = AsyncMock()
+            db.execute.return_value = mock_result
+
+            svc = PATService(db)
+            count = await svc.revoke_all_for_user(uuid.uuid4())
+            assert count == 2
+            assert pat1.is_revoked is True
+            assert pat2.is_revoked is True
+            db.flush.assert_awaited_once()
+
+        asyncio.run(_run())
+
+    def test_revoke_all_returns_zero_when_none_active(self) -> None:
+        async def _run() -> None:
+            mock_result = MagicMock()
+            mock_result.scalars.return_value.all.return_value = []
+
+            db = AsyncMock()
+            db.execute.return_value = mock_result
+
+            svc = PATService(db)
+            count = await svc.revoke_all_for_user(uuid.uuid4())
+            assert count == 0
+
+        asyncio.run(_run())
+
+
 class TestPATListForUser:
     """Tests for listing user PATs."""
 
