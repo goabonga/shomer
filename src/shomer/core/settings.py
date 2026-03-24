@@ -69,6 +69,8 @@ class Settings(BaseSettings):
         SameSite cookie attribute (lax, strict, or none).
     cookie_domain : str
         Cookie domain scope. Empty string means current domain.
+    avatar_upload_dir : str
+        Directory path for storing uploaded avatar files.
     database_host : str
         PostgreSQL server hostname.
     database_port : int
@@ -140,6 +142,9 @@ class Settings(BaseSettings):
     cookie_httponly: bool = True
     cookie_samesite: str = "lax"
     cookie_domain: str = ""
+
+    # Uploads
+    avatar_upload_dir: str = "data/avatars"
 
     # Database
     database_host: str = "localhost"

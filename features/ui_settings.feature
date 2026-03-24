@@ -64,7 +64,7 @@ Feature: User settings UI pages
     And the page should contain "Identity"
     And the page should contain "Personal Information"
     And the page should contain "Contact"
-    And the page should contain "Picture URL"
+    And the page should contain "Upload avatar"
     And the page should contain "Address"
     And the page should contain "Save changes"
     And the page should have an element "input[name='nickname']"
