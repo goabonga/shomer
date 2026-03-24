@@ -818,3 +818,149 @@ class TestSettingsEmailsVerify:
             assert ctx["error"] == "Email not found."
 
         asyncio.run(_run())
+
+
+class TestSettingsEmailsResend:
+    """Tests for POST /ui/settings/emails action=resend."""
+
+    @patch("shomer.tasks.email.send_email_task")
+    @patch("shomer.services.auth_service.AuthService")
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_resend_success(
+        self,
+        mock_auth: AsyncMock,
+        mock_render: MagicMock,
+        mock_auth_svc_cls: MagicMock,
+        mock_send_task: MagicMock,
+    ) -> None:
+        """Resend verification for unverified email shows success."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            mock_auth_svc = MagicMock()
+            mock_auth_svc._generate_code.return_value = "654321"
+            mock_auth_svc_cls.return_value = mock_auth_svc
+
+            target_email = MagicMock()
+            target_email.is_verified = False
+            target_email.email = "unverified@example.com"
+
+            db = AsyncMock()
+            find_result = MagicMock()
+            find_result.scalar_one_or_none.return_value = target_email
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [find_result, reload_result]
+
+            await settings_emails_post(
+                _req({"session_id": "tok"}),
+                db,
+                action="resend",
+                email_id=str(uuid.uuid4()),
+            )
+
+            db.add.assert_called()
+            db.flush.assert_awaited()
+            ctx = mock_render.call_args[0][2]
+            assert ctx["success"] == "Verification email resent."
+            assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_resend_already_verified_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Resend for already-verified email shows error."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            target_email = MagicMock()
+            target_email.is_verified = True
+
+            db = AsyncMock()
+            find_result = MagicMock()
+            find_result.scalar_one_or_none.return_value = target_email
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [find_result, reload_result]
+
+            await settings_emails_post(
+                _req({"session_id": "tok"}),
+                db,
+                action="resend",
+                email_id=str(uuid.uuid4()),
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Email is already verified."
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_resend_nonexistent_email_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Resend for non-existent email shows error."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            db = AsyncMock()
+            find_result = MagicMock()
+            find_result.scalar_one_or_none.return_value = None
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [find_result, reload_result]
+
+            await settings_emails_post(
+                _req({"session_id": "tok"}),
+                db,
+                action="resend",
+                email_id=str(uuid.uuid4()),
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Email not found."
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_resend_invalid_uuid_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Resend with invalid UUID shows error."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            db = AsyncMock()
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.return_value = reload_result
+
+            await settings_emails_post(
+                _req({"session_id": "tok"}),
+                db,
+                action="resend",
+                email_id="bad-uuid",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Invalid email ID."
+
+        asyncio.run(_run())
