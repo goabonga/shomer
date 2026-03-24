@@ -11,11 +11,12 @@ from features.steps.mail_steps import register_and_verify_user
 
 
 def _psql(sql):
-    """Run SQL against PostgreSQL on localhost:5432 (for OAuth2 client seeding only)."""
+    """Run SQL against the BDD PostgreSQL instance."""
     env = os.environ.copy()
     env["PGPASSWORD"] = "shomer"
+    pg_port = os.getenv("BDD_PG_PORT", "5432")
     result = subprocess.run(
-        ["psql", "-h", "localhost", "-U", "shomer", "-d", "shomer", "-tAc", sql],
+        ["psql", "-h", "localhost", "-p", pg_port, "-U", "shomer", "-d", "shomer", "-tAc", sql],
         capture_output=True,
         text=True,
         timeout=10,

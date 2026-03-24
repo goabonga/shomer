@@ -242,12 +242,13 @@ def _verify_via_db(email):
     """
     env = os.environ.copy()
     env["PGPASSWORD"] = "shomer"
+    pg_port = os.getenv("BDD_PG_PORT", "5432")
     sql = (
         f"UPDATE user_emails SET is_verified = true "
         f"WHERE email = '{email}' AND is_verified = false;"
     )
     result = subprocess.run(
-        ["psql", "-h", "localhost", "-U", "shomer", "-d", "shomer", "-tAc", sql],
+        ["psql", "-h", "localhost", "-p", pg_port, "-U", "shomer", "-d", "shomer", "-tAc", sql],
         capture_output=True,
         text=True,
         timeout=10,

@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.server
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
     environment:
       - PYTHONPATH=/app/src
       - CREDENTIALS_DIRECTORY=/run/secrets
@@ -95,7 +95,7 @@ services:
       - POSTGRES_PASSWORD_FILE=/run/secrets/DATABASE_PASSWORD
       - POSTGRES_DB=shomer
     ports:
-      - "5432:5432"
+      - "${PG_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     secrets:
@@ -115,7 +115,7 @@ services:
         redis-server
       fi'
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     secrets:
       - REDIS_PASSWORD
     healthcheck:
@@ -127,8 +127,8 @@ services:
   mailcatcher:
     image: schickling/mailcatcher
     ports:
-      - "1080:1080"
-      - "1025:1025"
+      - "${MAIL_HTTP_PORT:-1080}:1080"
+      - "${MAIL_SMTP_PORT:-1025}:1025"
 
 secrets:
   DATABASE_PASSWORD:
