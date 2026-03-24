@@ -24,6 +24,7 @@ from shomer.deps import DbSession
 from shomer.models.tenant import Tenant, TenantTrustMode
 from shomer.models.tenant_member import TenantMember
 from shomer.models.user import User
+from shomer.models.user_email import UserEmail
 from shomer.services.session_service import SessionService
 
 router = APIRouter(prefix="/ui/settings", tags=["ui"], include_in_schema=False)
@@ -780,4 +781,467 @@ async def settings_organisation_domains_update(
         request,
         "settings/organisation_domains.html",
         _ctx(success=msg),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Member management
+# ---------------------------------------------------------------------------
+
+#: Valid member roles.
+_MEMBER_ROLES = ("owner", "admin", "member")
+
+
+async def _list_members(db: Any, tenant_id: Any) -> list[dict[str, Any]]:
+    """Fetch all members for a tenant.
+
+    Parameters
+    ----------
+    db : AsyncSession
+        Database session.
+    tenant_id : uuid.UUID
+        The tenant ID.
+
+    Returns
+    -------
+    list
+        List of member dicts with user info.
+    """
+    stmt = (
+        select(TenantMember)
+        .where(TenantMember.tenant_id == tenant_id)
+        .options(selectinload(TenantMember.user))
+        .order_by(TenantMember.joined_at)
+    )
+    result = await db.execute(stmt)
+    members_list = list(result.scalars().all())
+    items: list[dict[str, Any]] = []
+    for m in members_list:
+        items.append(
+            {
+                "id": str(m.id),
+                "user_id": str(m.user_id),
+                "username": m.user.username if m.user else "unknown",
+                "role": m.role,
+                "joined_at": m.joined_at,
+            }
+        )
+    return items
+
+
+@router.get("/organisations/{org_id}/members", response_class=HTMLResponse)
+async def settings_organisation_members(
+    request: Request, org_id: str, db: DbSession
+) -> Any:
+    """Render the member management page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Members page, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/members",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+    members = await _list_members(db, tid)
+
+    return _render(
+        request,
+        "settings/organisation_members.html",
+        {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "members": members,
+            "role": membership.role,
+            "roles": _MEMBER_ROLES,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@router.post("/organisations/{org_id}/members", response_class=HTMLResponse)
+async def settings_organisation_members_action(
+    request: Request,
+    org_id: str,
+    db: DbSession,
+    action: str = Form(...),
+    email: str = Form(""),
+    member_role: str = Form("member"),
+    member_id: str = Form(""),
+) -> Any:
+    """Handle member management actions (add, remove, update role).
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+    action : str
+        Action to perform: ``add``, ``remove``, or ``update_role``.
+    email : str
+        Email address of the user to add.
+    member_role : str
+        Role to assign (for add and update_role actions).
+    member_id : str
+        ID of the member to remove or update.
+
+    Returns
+    -------
+    HTMLResponse
+        Members page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/members",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    async def _ctx(
+        *, error: str | None = None, success: str | None = None
+    ) -> dict[str, Any]:
+        members = await _list_members(db, tid)
+        return {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "members": members,
+            "role": membership.role,
+            "roles": _MEMBER_ROLES,
+            "error": error,
+            "success": success,
+        }
+
+    if membership.role not in ("owner", "admin"):
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await _ctx(error="You do not have permission to manage members."),
+        )
+
+    if action == "add":
+        return await _member_add(request, db, tid, email, member_role, _ctx)
+    elif action == "remove":
+        return await _member_remove(request, db, tid, member_id, user, _ctx)
+    elif action == "update_role":
+        return await _member_update_role(
+            request, db, tid, member_id, member_role, user, _ctx
+        )
+
+    return _render(
+        request,
+        "settings/organisation_members.html",
+        await _ctx(error="Unknown action."),
+    )
+
+
+async def _member_add(
+    request: Request,
+    db: Any,
+    tenant_id: uuid_mod.UUID,
+    email: str,
+    role: str,
+    ctx_fn: Any,
+) -> Any:
+    """Add a member by email.
+
+    Parameters
+    ----------
+    request : Request
+        The HTTP request.
+    db : AsyncSession
+        Database session.
+    tenant_id : uuid.UUID
+        Tenant to add the member to.
+    email : str
+        Email of the user to add.
+    role : str
+        Role to assign.
+    ctx_fn : callable
+        Async function to build template context.
+
+    Returns
+    -------
+    Any
+        Rendered template response.
+    """
+    email = email.strip().lower()
+    if not email:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error="Please enter an email address."),
+        )
+
+    if role not in _MEMBER_ROLES:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error=f"Invalid role: {role}"),
+        )
+
+    # Find user by email
+    email_result = await db.execute(select(UserEmail).where(UserEmail.email == email))
+    user_email = email_result.scalar_one_or_none()
+    if user_email is None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error=f"No user found with email {email}."),
+        )
+
+    # Check if already a member
+    existing = await db.execute(
+        select(TenantMember).where(
+            TenantMember.tenant_id == tenant_id,
+            TenantMember.user_id == user_email.user_id,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error="User is already a member."),
+        )
+
+    member = TenantMember(
+        tenant_id=tenant_id,
+        user_id=user_email.user_id,
+        role=role,
+        joined_at=datetime.now(timezone.utc),
+    )
+    db.add(member)
+    await db.flush()
+
+    return _render(
+        request,
+        "settings/organisation_members.html",
+        await ctx_fn(success=f"Member {email} added successfully."),
+    )
+
+
+async def _member_remove(
+    request: Request,
+    db: Any,
+    tenant_id: uuid_mod.UUID,
+    member_id: str,
+    current_user: Any,
+    ctx_fn: Any,
+) -> Any:
+    """Remove a member from the organisation.
+
+    Parameters
+    ----------
+    request : Request
+        The HTTP request.
+    db : AsyncSession
+        Database session.
+    tenant_id : uuid.UUID
+        Tenant to remove from.
+    member_id : str
+        UUID of the member to remove.
+    current_user : User
+        The currently authenticated user.
+    ctx_fn : callable
+        Async function to build template context.
+
+    Returns
+    -------
+    Any
+        Rendered template response.
+    """
+    mid = _parse_uuid(member_id)
+    if mid is None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error="Invalid member ID."),
+        )
+
+    result = await db.execute(
+        select(TenantMember).where(
+            TenantMember.id == mid, TenantMember.tenant_id == tenant_id
+        )
+    )
+    member = result.scalar_one_or_none()
+    if member is None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error="Member not found."),
+        )
+
+    if member.user_id == current_user.id:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error="You cannot remove yourself."),
+        )
+
+    await db.delete(member)
+    await db.flush()
+
+    return _render(
+        request,
+        "settings/organisation_members.html",
+        await ctx_fn(success="Member removed."),
+    )
+
+
+async def _member_update_role(
+    request: Request,
+    db: Any,
+    tenant_id: uuid_mod.UUID,
+    member_id: str,
+    new_role: str,
+    current_user: Any,
+    ctx_fn: Any,
+) -> Any:
+    """Update a member's role.
+
+    Parameters
+    ----------
+    request : Request
+        The HTTP request.
+    db : AsyncSession
+        Database session.
+    tenant_id : uuid.UUID
+        Tenant context.
+    member_id : str
+        UUID of the member to update.
+    new_role : str
+        New role to assign.
+    current_user : User
+        The currently authenticated user.
+    ctx_fn : callable
+        Async function to build template context.
+
+    Returns
+    -------
+    Any
+        Rendered template response.
+    """
+    if new_role not in _MEMBER_ROLES:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error=f"Invalid role: {new_role}"),
+        )
+
+    mid = _parse_uuid(member_id)
+    if mid is None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error="Invalid member ID."),
+        )
+
+    result = await db.execute(
+        select(TenantMember).where(
+            TenantMember.id == mid, TenantMember.tenant_id == tenant_id
+        )
+    )
+    member = result.scalar_one_or_none()
+    if member is None:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error="Member not found."),
+        )
+
+    if member.user_id == current_user.id:
+        return _render(
+            request,
+            "settings/organisation_members.html",
+            await ctx_fn(error="You cannot change your own role."),
+        )
+
+    member.role = new_role
+    await db.flush()
+
+    return _render(
+        request,
+        "settings/organisation_members.html",
+        await ctx_fn(success=f"Role updated to {new_role}."),
     )
