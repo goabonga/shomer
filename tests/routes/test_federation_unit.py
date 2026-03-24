@@ -150,8 +150,11 @@ class TestInitiateFederation:
                 db.execute.return_value = mock_slug_result
 
                 resp = await initiate_federation(
-                    req, str(idp.id), db,
-                    redirect_uri=None, state=None,
+                    req,
+                    str(idp.id),
+                    db,
+                    redirect_uri=None,
+                    state=None,
                 )
                 assert resp.status_code == 302
 
