@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from shomer.deps import DbSession
+from shomer.models.identity_provider import IdentityProvider, IdentityProviderType
 from shomer.models.tenant import Tenant, TenantTrustMode
 from shomer.models.tenant_custom_role import TenantCustomRole
 from shomer.models.tenant_member import TenantMember
@@ -1541,5 +1542,323 @@ async def settings_organisation_roles_action(
     return _render(
         request,
         "settings/organisation_roles.html",
+        await _ctx(error="Unknown action."),
+    )
+
+
+# ---------------------------------------------------------------------------
+# IdP management (CRUD + toggle)
+# ---------------------------------------------------------------------------
+
+#: Valid identity provider types.
+_IDP_TYPES = [t.value for t in IdentityProviderType]
+
+
+@router.get("/organisations/{org_id}/idps", response_class=HTMLResponse)
+async def settings_organisation_idps(
+    request: Request, org_id: str, db: DbSession
+) -> Any:
+    """Render the identity provider management page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        IdP page, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/idps",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_idps.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_idps.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    idps_stmt = (
+        select(IdentityProvider)
+        .where(IdentityProvider.tenant_id == tid)
+        .order_by(IdentityProvider.display_order, IdentityProvider.name)
+    )
+    idps_result = await db.execute(idps_stmt)
+    idps = [
+        {
+            "id": str(idp.id),
+            "name": idp.name,
+            "provider_type": idp.provider_type.value,
+            "client_id": idp.client_id,
+            "is_active": idp.is_active,
+        }
+        for idp in idps_result.scalars().all()
+    ]
+
+    return _render(
+        request,
+        "settings/organisation_idps.html",
+        {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "idps": idps,
+            "provider_types": _IDP_TYPES,
+            "role": membership.role,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@router.post("/organisations/{org_id}/idps", response_class=HTMLResponse)
+async def settings_organisation_idps_action(
+    request: Request,
+    org_id: str,
+    db: DbSession,
+    action: str = Form(...),
+    idp_name: str = Form(""),
+    provider_type: str = Form("oidc"),
+    client_id: str = Form(""),
+    discovery_url: str = Form(""),
+    idp_id: str = Form(""),
+) -> Any:
+    """Handle identity provider management actions (create, toggle, delete).
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+    action : str
+        Action to perform: ``create``, ``toggle``, or ``delete``.
+    idp_name : str
+        Name for the IdP (create).
+    provider_type : str
+        Provider type string (create).
+    client_id : str
+        OAuth2 client ID (create).
+    discovery_url : str
+        OIDC discovery URL (create, optional).
+    idp_id : str
+        UUID of the IdP (toggle/delete).
+
+    Returns
+    -------
+    HTMLResponse
+        IdP page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/idps",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_idps.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_idps.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    async def _ctx(
+        *, error: str | None = None, success: str | None = None
+    ) -> dict[str, Any]:
+        idps_stmt = (
+            select(IdentityProvider)
+            .where(IdentityProvider.tenant_id == tid)
+            .order_by(IdentityProvider.display_order, IdentityProvider.name)
+        )
+        idps_result = await db.execute(idps_stmt)
+        idps = [
+            {
+                "id": str(idp.id),
+                "name": idp.name,
+                "provider_type": idp.provider_type.value,
+                "client_id": idp.client_id,
+                "is_active": idp.is_active,
+            }
+            for idp in idps_result.scalars().all()
+        ]
+        return {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "idps": idps,
+            "provider_types": _IDP_TYPES,
+            "role": membership.role,
+            "error": error,
+            "success": success,
+        }
+
+    if membership.role not in ("owner", "admin"):
+        return _render(
+            request,
+            "settings/organisation_idps.html",
+            await _ctx(
+                error="You do not have permission to manage identity providers."
+            ),
+        )
+
+    if action == "create":
+        name = idp_name.strip()
+        if not name:
+            return _render(
+                request,
+                "settings/organisation_idps.html",
+                await _ctx(error="Provider name is required."),
+            )
+        if provider_type not in _IDP_TYPES:
+            return _render(
+                request,
+                "settings/organisation_idps.html",
+                await _ctx(error=f"Invalid provider type: {provider_type}"),
+            )
+        cid = client_id.strip()
+        if not cid:
+            return _render(
+                request,
+                "settings/organisation_idps.html",
+                await _ctx(error="Client ID is required."),
+            )
+        idp_obj = IdentityProvider(
+            tenant_id=tid,
+            name=name,
+            provider_type=IdentityProviderType(provider_type),
+            client_id=cid,
+            discovery_url=discovery_url.strip() or None,
+        )
+        db.add(idp_obj)
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_idps.html",
+            await _ctx(success=f"Identity provider '{name}' created."),
+        )
+
+    elif action == "toggle":
+        iid = _parse_uuid(idp_id)
+        if iid is None:
+            return _render(
+                request,
+                "settings/organisation_idps.html",
+                await _ctx(error="Invalid provider ID."),
+            )
+        toggle_result = await db.execute(
+            select(IdentityProvider).where(
+                IdentityProvider.id == iid, IdentityProvider.tenant_id == tid
+            )
+        )
+        toggle_idp = toggle_result.scalar_one_or_none()
+        if toggle_idp is None:
+            return _render(
+                request,
+                "settings/organisation_idps.html",
+                await _ctx(error="Provider not found."),
+            )
+        toggle_idp.is_active = not toggle_idp.is_active
+        await db.flush()
+        state = "enabled" if toggle_idp.is_active else "disabled"
+        return _render(
+            request,
+            "settings/organisation_idps.html",
+            await _ctx(success=f"Provider '{toggle_idp.name}' {state}."),
+        )
+
+    elif action == "delete":
+        iid = _parse_uuid(idp_id)
+        if iid is None:
+            return _render(
+                request,
+                "settings/organisation_idps.html",
+                await _ctx(error="Invalid provider ID."),
+            )
+        delete_result = await db.execute(
+            select(IdentityProvider).where(
+                IdentityProvider.id == iid, IdentityProvider.tenant_id == tid
+            )
+        )
+        delete_idp = delete_result.scalar_one_or_none()
+        if delete_idp is None:
+            return _render(
+                request,
+                "settings/organisation_idps.html",
+                await _ctx(error="Provider not found."),
+            )
+        await db.delete(delete_idp)
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_idps.html",
+            await _ctx(success="Provider deleted."),
+        )
+
+    return _render(
+        request,
+        "settings/organisation_idps.html",
         await _ctx(error="Unknown action."),
     )

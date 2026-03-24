@@ -21,6 +21,8 @@ from shomer.routes.organisation_settings_ui import (
     settings_organisation_domains,
     settings_organisation_domains_update,
     settings_organisation_edit,
+    settings_organisation_idps,
+    settings_organisation_idps_action,
     settings_organisation_members,
     settings_organisation_members_action,
     settings_organisation_new,
@@ -1994,5 +1996,608 @@ class TestSettingsOrganisationRolesAction:
 
             ctx = mock_render.call_args[0][2]
             assert "invalid role id" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+
+class TestSettingsOrganisationIdps:
+    """Tests for GET /ui/settings/organisations/{org_id}/idps."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_idps(_req(), "some-id", AsyncMock())
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_invalid_org_id(self, mock_auth: AsyncMock, mock_render: MagicMock) -> None:
+        """Show error for invalid org ID."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_idps(
+                _req({"session_id": "tok"}), "not-a-uuid", AsyncMock()
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid organisation ID" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_not_member_shows_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Show error when user is not a member."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_mem.return_value = None
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_idps(
+                _req({"session_id": "tok"}), str(uuid.uuid4()), AsyncMock()
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "not found" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_renders_idps_list(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Render IdPs page with list of providers."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            idp1 = MagicMock()
+            idp1.id = uuid.uuid4()
+            idp1.name = "Acme SSO"
+            idp1.provider_type = MagicMock(value="oidc")
+            idp1.client_id = "acme-client"
+            idp1.is_active = True
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = [idp1]
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_idps(
+                _req({"session_id": "tok"}), str(tenant.id), db
+            )
+
+            mock_render.assert_called_once()
+            ctx = mock_render.call_args[0][2]
+            assert ctx["role"] == "owner"
+            assert len(ctx["idps"]) == 1
+            assert ctx["idps"][0]["name"] == "Acme SSO"
+            assert ctx["idps"][0]["is_active"] is True
+
+        asyncio.run(_run())
+
+
+class TestSettingsOrganisationIdpsAction:
+    """Tests for POST /ui/settings/organisations/{org_id}/idps."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_idps_action(
+                _req(),
+                "some-id",
+                AsyncMock(),
+                action="create",
+                idp_name="",
+                provider_type="oidc",
+                client_id="",
+                discovery_url="",
+                idp_id="",
+            )
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_invalid_org_id(self, mock_auth: AsyncMock, mock_render: MagicMock) -> None:
+        """Show error for invalid org ID."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                "bad-uuid",
+                AsyncMock(),
+                action="create",
+                idp_name="",
+                provider_type="oidc",
+                client_id="",
+                discovery_url="",
+                idp_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid organisation ID" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_non_admin_denied(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Members without owner/admin role cannot manage IdPs."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="member", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="create",
+                idp_name="test",
+                provider_type="oidc",
+                client_id="cid",
+                discovery_url="",
+                idp_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "permission" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_create_empty_name_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Creating an IdP with empty name shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="create",
+                idp_name="",
+                provider_type="oidc",
+                client_id="cid",
+                discovery_url="",
+                idp_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "required" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_create_empty_client_id_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Creating an IdP with empty client ID shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="create",
+                idp_name="Acme SSO",
+                provider_type="oidc",
+                client_id="",
+                discovery_url="",
+                idp_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "client id" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_create_invalid_type_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Creating an IdP with invalid type shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="create",
+                idp_name="Acme SSO",
+                provider_type="ldap",
+                client_id="cid",
+                discovery_url="",
+                idp_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "invalid provider type" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_create_idp_success(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Owner can create a new identity provider."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="create",
+                idp_name="Acme SSO",
+                provider_type="oidc",
+                client_id="acme-client",
+                discovery_url="https://sso.acme.com/.well-known/openid-configuration",
+                idp_id="",
+            )
+
+            db.add.assert_called_once()
+            ctx = mock_render.call_args[0][2]
+            assert "created" in ctx["success"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_toggle_idp_success(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Owner can toggle an IdP active/inactive."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            idp_obj = MagicMock()
+            idp_obj.is_active = True
+            idp_obj.name = "Acme SSO"
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    result_mock.scalar_one_or_none.return_value = idp_obj
+                else:
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db = AsyncMock()
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="toggle",
+                idp_id=str(uuid.uuid4()),
+                idp_name="",
+                provider_type="oidc",
+                client_id="",
+                discovery_url="",
+            )
+
+            assert idp_obj.is_active is False
+            ctx = mock_render.call_args[0][2]
+            assert "disabled" in ctx["success"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_toggle_idp_not_found(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Toggling a non-existent IdP shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    result_mock.scalar_one_or_none.return_value = None
+                else:
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db = AsyncMock()
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="toggle",
+                idp_id=str(uuid.uuid4()),
+                idp_name="",
+                provider_type="oidc",
+                client_id="",
+                discovery_url="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "not found" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_delete_idp_success(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Owner can delete an IdP."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            idp_obj = MagicMock()
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    result_mock.scalar_one_or_none.return_value = idp_obj
+                else:
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db = AsyncMock()
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="delete",
+                idp_id=str(uuid.uuid4()),
+                idp_name="",
+                provider_type="oidc",
+                client_id="",
+                discovery_url="",
+            )
+
+            db.delete.assert_called_once_with(idp_obj)
+            ctx = mock_render.call_args[0][2]
+            assert "deleted" in ctx["success"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_delete_idp_not_found(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Deleting a non-existent IdP shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            call_count = 0
+
+            def execute_side_effect(*args: object, **kwargs: object) -> MagicMock:
+                nonlocal call_count
+                call_count += 1
+                result_mock = MagicMock()
+                if call_count == 1:
+                    result_mock.scalar_one_or_none.return_value = None
+                else:
+                    scalars_mock = MagicMock()
+                    scalars_mock.all.return_value = []
+                    result_mock.scalars.return_value = scalars_mock
+                return result_mock
+
+            db = AsyncMock()
+            db.execute = AsyncMock(side_effect=execute_side_effect)
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="delete",
+                idp_id=str(uuid.uuid4()),
+                idp_name="",
+                provider_type="oidc",
+                client_id="",
+                discovery_url="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "not found" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unknown_action_error(
+        self, mock_auth: AsyncMock, mock_mem: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Unknown action shows error."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = []
+            result_mock = MagicMock()
+            result_mock.scalars.return_value = scalars_mock
+            db.execute.return_value = result_mock
+
+            await settings_organisation_idps_action(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                action="foobar",
+                idp_name="",
+                provider_type="oidc",
+                client_id="",
+                discovery_url="",
+                idp_id="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "unknown" in ctx["error"].lower()
 
         asyncio.run(_run())
