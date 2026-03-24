@@ -573,7 +573,7 @@ async def settings_emails_post(
     email_id: str = Form(""),
     code: str = Form(""),
 ) -> Any:
-    """Handle email management form submissions (add, remove, verify, resend).
+    """Handle email management form submissions.
 
     Parameters
     ----------
@@ -582,11 +582,13 @@ async def settings_emails_post(
     db : DbSession
         Database session.
     action : str
-        Form action (``add``, ``remove``, ``verify``, or ``resend``).
+        Form action (``add``, ``remove``, ``verify``, ``resend``,
+        or ``set_primary``).
     email : str
         Email address to add (for ``add`` action).
     email_id : str
-        UUID of the email (for ``remove``, ``verify``, and ``resend`` actions).
+        UUID of the email (for ``remove``, ``verify``, ``resend``,
+        and ``set_primary`` actions).
 
     Returns
     -------
@@ -758,6 +760,36 @@ async def settings_emails_post(
                     context={"code": new_code},
                 )
                 success = "Verification email resent."
+
+    elif action == "set_primary":
+        import uuid as _uuid
+
+        try:
+            eid = _uuid.UUID(email_id)
+        except ValueError:
+            error = "Invalid email ID."
+        else:
+            target_stmt = select(UserEmail).where(
+                UserEmail.id == eid,
+                UserEmail.user_id == user.id,
+            )
+            target_result = await db.execute(target_stmt)
+            target_email = target_result.scalar_one_or_none()
+
+            if target_email is None:
+                error = "Email not found."
+            elif not target_email.is_verified:
+                error = "Cannot set unverified email as primary."
+            else:
+                # Unset current primary, set new one
+                all_stmt = select(UserEmail).where(
+                    UserEmail.user_id == user.id,
+                )
+                all_result = await db.execute(all_stmt)
+                for em in all_result.scalars().all():
+                    em.is_primary = em.id == eid
+                await db.flush()
+                success = "Primary email updated."
 
     # Re-load user with emails
     reload_stmt = (
