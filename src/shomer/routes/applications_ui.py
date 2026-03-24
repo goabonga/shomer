@@ -9,12 +9,13 @@ allows revoking access, within the user settings area.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from shomer.deps import DbSession
 from shomer.models.access_token import AccessToken
@@ -74,31 +75,25 @@ async def _get_session_user_id(request: Request, db: Any) -> Any:
     return session.user_id if session else None
 
 
-@router.get("/applications", response_class=HTMLResponse)
-async def applications_page(request: Request, db: DbSession) -> Any:
-    """Render the connected applications page.
+async def _fetch_authorized_apps(db: Any, user_id: uuid.UUID) -> list[dict[str, Any]]:
+    """Fetch authorized OAuth2 applications for a user.
 
-    Lists distinct OAuth2 clients the user has authorized, showing
-    client name, granted scopes, and authorization date.
+    Groups access tokens by client_id and merges scopes across tokens
+    for the same client.
 
     Parameters
     ----------
-    request : Request
-        The incoming HTTP request.
-    db : DbSession
+    db : AsyncSession
         Database session.
+    user_id : uuid.UUID
+        The user whose authorized apps to fetch.
 
     Returns
     -------
-    HTMLResponse
-        Connected applications page or redirect to login.
+    list[dict]
+        List of app dicts with client_id, client_name, logo_uri,
+        scopes, and authorized_at.
     """
-    user_id = await _get_session_user_id(request, db)
-    if user_id is None:
-        return RedirectResponse(
-            url="/ui/login?next=/ui/settings/applications", status_code=302
-        )
-
     stmt = (
         select(
             OAuth2Client.client_id,
@@ -117,8 +112,6 @@ async def applications_page(request: Request, db: DbSession) -> Any:
     result = await db.execute(stmt)
     rows = result.all()
 
-    # Group by client_id: keep first (latest) authorization date,
-    # merge all scopes.
     seen: dict[str, dict[str, Any]] = {}
     for row in rows:
         cid = row.client_id
@@ -145,6 +138,35 @@ async def applications_page(request: Request, db: DbSession) -> Any:
                 "authorized_at": entry["authorized_at"],
             }
         )
+    return apps
+
+
+@router.get("/applications", response_class=HTMLResponse)
+async def applications_page(request: Request, db: DbSession) -> Any:
+    """Render the connected applications page.
+
+    Lists distinct OAuth2 clients the user has authorized, showing
+    client name, granted scopes, and authorization date.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Connected applications page or redirect to login.
+    """
+    user_id = await _get_session_user_id(request, db)
+    if user_id is None:
+        return RedirectResponse(
+            url="/ui/login?next=/ui/settings/applications", status_code=302
+        )
+
+    apps = await _fetch_authorized_apps(db, user_id)
 
     return _render(
         request,
@@ -153,5 +175,76 @@ async def applications_page(request: Request, db: DbSession) -> Any:
             "apps": apps,
             "success": None,
             "error": None,
+        },
+    )
+
+
+@router.post("/applications", response_class=HTMLResponse)
+async def applications_action(
+    request: Request,
+    db: DbSession,
+    action: str = Form(""),
+    client_id: str = Form(""),
+) -> Any:
+    """Handle connected-applications form submissions (revoke).
+
+    Revokes all active access tokens for the given client_id
+    belonging to the authenticated user.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+    action : str
+        Form action (``revoke``).
+    client_id : str
+        The OAuth2 client_id to revoke access for.
+
+    Returns
+    -------
+    HTMLResponse
+        Updated applications page with success/error message.
+    """
+    user_id = await _get_session_user_id(request, db)
+    if user_id is None:
+        return RedirectResponse(
+            url="/ui/login?next=/ui/settings/applications", status_code=302
+        )
+
+    error = None
+    success = None
+
+    if action == "revoke":
+        if not client_id:
+            error = "No application specified."
+        else:
+            stmt = (
+                update(AccessToken)
+                .where(
+                    AccessToken.user_id == user_id,
+                    AccessToken.client_id == client_id,
+                    AccessToken.revoked == False,  # noqa: E712
+                )
+                .values(revoked=True)
+            )
+            result = await db.execute(stmt)
+            row_count: int = getattr(result, "rowcount", 0)
+            if row_count > 0:
+                await db.flush()
+                success = "Application access revoked."
+            else:
+                error = "No active access found for this application."
+
+    apps = await _fetch_authorized_apps(db, user_id)
+
+    return _render(
+        request,
+        "settings/applications.html",
+        {
+            "apps": apps,
+            "success": success,
+            "error": error,
         },
     )

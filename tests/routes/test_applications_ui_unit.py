@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from shomer.routes.applications_ui import applications_page
+from shomer.routes.applications_ui import applications_action, applications_page
 
 
 class TestApplicationsPage:
@@ -92,6 +92,34 @@ class TestApplicationsPage:
 
         asyncio.run(_run())
 
+    def test_authenticated_uses_fetch_helper(self) -> None:
+        async def _run() -> None:
+            mock_db = AsyncMock()
+            mock_result = MagicMock()
+            mock_result.all.return_value = []
+            mock_db.execute.return_value = mock_result
+
+            with (
+                patch(
+                    "shomer.routes.applications_ui._get_session_user_id",
+                    new_callable=AsyncMock,
+                    return_value=uuid.uuid4(),
+                ),
+                patch(
+                    "shomer.routes.applications_ui._fetch_authorized_apps",
+                    new_callable=AsyncMock,
+                    return_value=[],
+                ) as mock_fetch,
+                patch("shomer.app.templates") as mock_tpl,
+            ):
+                mock_tpl.TemplateResponse.return_value = MagicMock()
+
+                req = MagicMock()
+                await applications_page(req, mock_db)
+                mock_fetch.assert_awaited_once()
+
+        asyncio.run(_run())
+
     def test_deduplicates_by_client_id(self) -> None:
         async def _run() -> None:
             now = datetime.now(timezone.utc)
@@ -134,5 +162,118 @@ class TestApplicationsPage:
                 assert "openid" in scopes
                 assert "profile" in scopes
                 assert "email" in scopes
+
+        asyncio.run(_run())
+
+
+class TestApplicationsAction:
+    """Unit tests for POST /ui/settings/applications."""
+
+    def test_unauthenticated_redirects(self) -> None:
+        async def _run() -> None:
+            with patch(
+                "shomer.routes.applications_ui._get_session_user_id",
+                new_callable=AsyncMock,
+                return_value=None,
+            ):
+                req = MagicMock()
+                resp = await applications_action(req, AsyncMock())
+                assert resp.status_code == 302
+                assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    def test_revoke_success(self) -> None:
+        async def _run() -> None:
+            mock_db = AsyncMock()
+            mock_update_result = MagicMock()
+            mock_update_result.rowcount = 2
+            mock_db.execute.return_value = mock_update_result
+
+            with (
+                patch(
+                    "shomer.routes.applications_ui._get_session_user_id",
+                    new_callable=AsyncMock,
+                    return_value=uuid.uuid4(),
+                ),
+                patch(
+                    "shomer.routes.applications_ui._fetch_authorized_apps",
+                    new_callable=AsyncMock,
+                    return_value=[],
+                ),
+                patch("shomer.app.templates") as mock_tpl,
+            ):
+                mock_tpl.TemplateResponse.return_value = MagicMock()
+
+                req = MagicMock()
+                await applications_action(
+                    req, mock_db, action="revoke", client_id="app-1"
+                )
+                mock_db.flush.assert_awaited_once()
+                call_args = mock_tpl.TemplateResponse.call_args
+                ctx = call_args[0][2] if len(call_args[0]) > 2 else call_args[1]
+                assert "revoked" in ctx["success"].lower()
+                assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+    def test_revoke_no_client_id_shows_error(self) -> None:
+        async def _run() -> None:
+            with (
+                patch(
+                    "shomer.routes.applications_ui._get_session_user_id",
+                    new_callable=AsyncMock,
+                    return_value=uuid.uuid4(),
+                ),
+                patch(
+                    "shomer.routes.applications_ui._fetch_authorized_apps",
+                    new_callable=AsyncMock,
+                    return_value=[],
+                ),
+                patch("shomer.app.templates") as mock_tpl,
+            ):
+                mock_tpl.TemplateResponse.return_value = MagicMock()
+
+                req = MagicMock()
+                await applications_action(
+                    req, AsyncMock(), action="revoke", client_id=""
+                )
+                call_args = mock_tpl.TemplateResponse.call_args
+                ctx = call_args[0][2] if len(call_args[0]) > 2 else call_args[1]
+                assert ctx["error"] is not None
+                assert "no application" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    def test_revoke_no_active_tokens_shows_error(self) -> None:
+        async def _run() -> None:
+            mock_db = AsyncMock()
+            mock_update_result = MagicMock()
+            mock_update_result.rowcount = 0
+            mock_db.execute.return_value = mock_update_result
+
+            with (
+                patch(
+                    "shomer.routes.applications_ui._get_session_user_id",
+                    new_callable=AsyncMock,
+                    return_value=uuid.uuid4(),
+                ),
+                patch(
+                    "shomer.routes.applications_ui._fetch_authorized_apps",
+                    new_callable=AsyncMock,
+                    return_value=[],
+                ),
+                patch("shomer.app.templates") as mock_tpl,
+            ):
+                mock_tpl.TemplateResponse.return_value = MagicMock()
+
+                req = MagicMock()
+                await applications_action(
+                    req, mock_db, action="revoke", client_id="unknown-app"
+                )
+                call_args = mock_tpl.TemplateResponse.call_args
+                ctx = call_args[0][2] if len(call_args[0]) > 2 else call_args[1]
+                assert ctx["error"] is not None
+                assert "no active" in ctx["error"].lower()
 
         asyncio.run(_run())
