@@ -580,3 +580,204 @@ async def settings_organisation_edit(
         "settings/organisation_detail.html",
         _detail_ctx(success="Organisation updated successfully."),
     )
+
+
+# ---------------------------------------------------------------------------
+# Custom domain verification
+# ---------------------------------------------------------------------------
+
+#: Regex for a valid domain name.
+_DOMAIN_RE = re.compile(
+    r"^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)(\.[a-zA-Z0-9-]{1,63})*\.[a-zA-Z]{2,}$"
+)
+
+
+@router.get("/organisations/{org_id}/domains", response_class=HTMLResponse)
+async def settings_organisation_domains(
+    request: Request, org_id: str, db: DbSession
+) -> Any:
+    """Render the custom domain management page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Custom domain page, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/domains",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_domains.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_domains.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    return _render(
+        request,
+        "settings/organisation_domains.html",
+        {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "custom_domain": tenant.custom_domain,
+            "role": membership.role,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@router.post("/organisations/{org_id}/domains", response_class=HTMLResponse)
+async def settings_organisation_domains_update(
+    request: Request,
+    org_id: str,
+    db: DbSession,
+    custom_domain: str = Form(""),
+) -> Any:
+    """Handle custom domain update form submission.
+
+    Only owners and admins can update the custom domain.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+    custom_domain : str
+        The custom domain to set (empty to remove).
+
+    Returns
+    -------
+    HTMLResponse
+        Domain page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/domains",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_domains.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_domains.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    def _ctx(*, error: str | None = None, success: str | None = None) -> dict[str, Any]:
+        return {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "custom_domain": tenant.custom_domain,
+            "role": membership.role,
+            "error": error,
+            "success": success,
+        }
+
+    if membership.role not in ("owner", "admin"):
+        return _render(
+            request,
+            "settings/organisation_domains.html",
+            _ctx(error="You do not have permission to update domains."),
+        )
+
+    domain = custom_domain.strip() or None
+
+    if domain is not None and not _DOMAIN_RE.match(domain):
+        return _render(
+            request,
+            "settings/organisation_domains.html",
+            _ctx(error="Invalid domain format."),
+        )
+
+    # Check uniqueness if setting a domain
+    if domain is not None:
+        dup_stmt = select(Tenant).where(
+            Tenant.custom_domain == domain, Tenant.id != tid
+        )
+        dup_result = await db.execute(dup_stmt)
+        if dup_result.scalar_one_or_none() is not None:
+            return _render(
+                request,
+                "settings/organisation_domains.html",
+                _ctx(error="This domain is already in use by another organisation."),
+            )
+
+    tenant.custom_domain = domain
+    await db.flush()
+
+    msg = "Custom domain updated." if domain else "Custom domain removed."
+    return _render(
+        request,
+        "settings/organisation_domains.html",
+        _ctx(success=msg),
+    )

@@ -11,12 +11,15 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from shomer.routes.organisation_settings_ui import (
+    _DOMAIN_RE,
     _SLUG_RE,
     _get_membership,
     _get_session_user,
     _parse_uuid,
     settings_organisation_create,
     settings_organisation_detail,
+    settings_organisation_domains,
+    settings_organisation_domains_update,
     settings_organisation_edit,
     settings_organisation_new,
     settings_organisations,
@@ -44,6 +47,24 @@ def _mock_user() -> MagicMock:
     e.is_verified = True
     u.emails = [e]
     return u
+
+
+def _mock_tenant(
+    slug: str = "acme",
+    custom_domain: str | None = None,
+) -> MagicMock:
+    """Build a mock Tenant."""
+    tenant = MagicMock()
+    tenant.id = uuid.uuid4()
+    tenant.slug = slug
+    tenant.name = slug.capitalize()
+    tenant.display_name = f"{slug.capitalize()} Corp"
+    tenant.custom_domain = custom_domain
+    tenant.is_active = True
+    tenant.is_platform = False
+    tenant.trust_mode = MagicMock(value="none")
+    tenant.created_at = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    return tenant
 
 
 def _mock_membership(
@@ -366,6 +387,251 @@ class TestSettingsOrganisationCreate:
             mock_render.assert_called_once()
             ctx = mock_render.call_args[0][2]
             assert "Invalid trust mode" in ctx["error"]
+
+        asyncio.run(_run())
+
+
+class TestDomainRegex:
+    """Tests for _DOMAIN_RE validation."""
+
+    def test_valid_domains(self) -> None:
+        """Accept valid domain names."""
+        for d in ("example.com", "auth.example.com", "a.b.co"):
+            assert _DOMAIN_RE.match(d), f"Expected valid: {d}"
+
+    def test_invalid_domains(self) -> None:
+        """Reject invalid domain names."""
+        for d in ("", "localhost", "-bad.com", "no_under.com"):
+            assert not _DOMAIN_RE.match(d), f"Expected invalid: {d}"
+
+
+class TestSettingsOrganisationDomains:
+    """Tests for GET /ui/settings/organisations/{org_id}/domains."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_domains(
+                _req(), str(uuid.uuid4()), AsyncMock()
+            )
+            assert resp.status_code == 302
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_renders_domain_page(
+        self,
+        mock_auth: AsyncMock,
+        mock_mem: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Render domain page for a member."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant(custom_domain="auth.acme.com")
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_domains(
+                _req({"session_id": "tok"}), str(tenant.id), AsyncMock()
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["custom_domain"] == "auth.acme.com"
+            assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+
+class TestSettingsOrganisationDomainsUpdate:
+    """Tests for POST /ui/settings/organisations/{org_id}/domains."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_domains_update(
+                _req(), str(uuid.uuid4()), AsyncMock(), custom_domain=""
+            )
+            assert resp.status_code == 302
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_member_cannot_update(
+        self,
+        mock_auth: AsyncMock,
+        mock_mem: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Show error when regular member tries to update domain."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="member", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_domains_update(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                AsyncMock(),
+                custom_domain="new.com",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "permission" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_invalid_domain_format(
+        self,
+        mock_auth: AsyncMock,
+        mock_mem: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Show error for invalid domain format."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_domains_update(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                AsyncMock(),
+                custom_domain="-invalid",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid domain" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_owner_sets_domain(
+        self,
+        mock_auth: AsyncMock,
+        mock_mem: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Owner can set a custom domain."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            dup_result = MagicMock()
+            dup_result.scalar_one_or_none.return_value = None
+            db.execute.return_value = dup_result
+
+            await settings_organisation_domains_update(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                custom_domain="auth.acme.com",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "updated" in ctx["success"]
+            assert tenant.custom_domain == "auth.acme.com"
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_owner_removes_domain(
+        self,
+        mock_auth: AsyncMock,
+        mock_mem: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Owner can remove a custom domain by submitting empty."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant(custom_domain="old.com")
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            await settings_organisation_domains_update(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                custom_domain="",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "removed" in ctx["success"]
+            assert tenant.custom_domain is None
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_duplicate_domain_error(
+        self,
+        mock_auth: AsyncMock,
+        mock_mem: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Show error when domain is used by another org."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            tenant = _mock_tenant()
+            membership = MagicMock(role="owner", tenant=tenant)
+            mock_mem.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            dup_result = MagicMock()
+            dup_result.scalar_one_or_none.return_value = MagicMock()  # duplicate
+            db.execute.return_value = dup_result
+
+            await settings_organisation_domains_update(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                custom_domain="taken.com",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "already in use" in ctx["error"]
 
         asyncio.run(_run())
 
