@@ -9,11 +9,14 @@ Requires session authentication.
 
 from __future__ import annotations
 
+import uuid
 import uuid as uuid_mod
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form
+from fastapi import Path as FastAPIPath
+from fastapi import Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -609,3 +612,54 @@ async def settings_security(request: Request, db: DbSession) -> Any:
             "section": "security",
         },
     )
+
+
+@router.post("/sessions/{session_id}/revoke", response_class=HTMLResponse)
+async def settings_revoke_session(
+    request: Request,
+    db: DbSession,
+    session_id: uuid.UUID = FastAPIPath(...),
+) -> Any:
+    """Revoke an individual session.
+
+    Deletes the specified session if it belongs to the authenticated user
+    and is not the current session, then redirects back to the security page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+    session_id : uuid.UUID
+        ID of the session to revoke.
+
+    Returns
+    -------
+    HTMLResponse
+        Redirect to security settings page.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url="/ui/login?next=/ui/settings/security", status_code=302
+        )
+
+    current_session, user = auth
+
+    # Prevent revoking the current session
+    if session_id == current_session.id:
+        return RedirectResponse(url="/ui/settings/security", status_code=303)
+
+    # Verify the target session belongs to this user
+    target_stmt = select(Session).where(
+        Session.id == session_id, Session.user_id == user.id
+    )
+    result = await db.execute(target_stmt)
+    target = result.scalar_one_or_none()
+
+    if target is not None:
+        svc = SessionService(db)
+        await svc.delete(session_id)
+
+    return RedirectResponse(url="/ui/settings/security", status_code=303)
