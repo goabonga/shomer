@@ -10,6 +10,7 @@ Allows users to list, create, view and manage their own organisations.
 from __future__ import annotations
 
 import re
+import uuid as uuid_mod
 from datetime import datetime, timezone
 from typing import Any
 
@@ -294,4 +295,288 @@ async def settings_organisation_create(
     return RedirectResponse(
         url=f"/ui/settings/organisations/{tenant.id}",
         status_code=302,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_uuid(value: str) -> uuid_mod.UUID | None:
+    """Parse a UUID string, returning None on failure.
+
+    Parameters
+    ----------
+    value : str
+        String to parse.
+
+    Returns
+    -------
+    uuid.UUID or None
+        Parsed UUID or None if invalid.
+    """
+    try:
+        return uuid_mod.UUID(value)
+    except ValueError:
+        return None
+
+
+async def _get_membership(
+    db: Any, user_id: Any, tenant_id: uuid_mod.UUID
+) -> tuple[Any, Any] | None:
+    """Fetch the TenantMember and Tenant for a user, or None.
+
+    Parameters
+    ----------
+    db : AsyncSession
+        Database session.
+    user_id : uuid.UUID
+        The authenticated user ID.
+    tenant_id : uuid.UUID
+        The tenant to look up.
+
+    Returns
+    -------
+    tuple or None
+        (membership, tenant) if the user is a member, None otherwise.
+    """
+    stmt = (
+        select(TenantMember)
+        .where(TenantMember.user_id == user_id, TenantMember.tenant_id == tenant_id)
+        .options(selectinload(TenantMember.tenant))
+    )
+    result = await db.execute(stmt)
+    membership = result.scalar_one_or_none()
+    if membership is None:
+        return None
+    return membership, membership.tenant
+
+
+def _trust_mode_str(tenant: Any) -> str:
+    """Return trust_mode as plain string.
+
+    Parameters
+    ----------
+    tenant : Tenant
+        The tenant object.
+
+    Returns
+    -------
+    str
+        Trust mode value.
+    """
+    m = tenant.trust_mode
+    return m.value if hasattr(m, "value") else str(m)
+
+
+# ---------------------------------------------------------------------------
+# Organisation detail / edit
+# ---------------------------------------------------------------------------
+
+
+@router.get("/organisations/{org_id}", response_class=HTMLResponse)
+async def settings_organisation_detail(
+    request: Request, org_id: str, db: DbSession
+) -> Any:
+    """Render the organisation detail page.
+
+    Shows organisation information and management options.
+    Only accessible to members of the organisation.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Organisation detail page, 404 page, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_detail.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_detail.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    return _render(
+        request,
+        "settings/organisation_detail.html",
+        {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "name": tenant.name,
+                "display_name": tenant.display_name,
+                "custom_domain": tenant.custom_domain,
+                "is_active": tenant.is_active,
+                "is_platform": tenant.is_platform,
+                "trust_mode": _trust_mode_str(tenant),
+                "created_at": tenant.created_at,
+            },
+            "role": membership.role,
+            "trust_modes": [m.value for m in TenantTrustMode],
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@router.post("/organisations/{org_id}", response_class=HTMLResponse)
+async def settings_organisation_edit(
+    request: Request,
+    org_id: str,
+    db: DbSession,
+    name: str = Form(...),
+    display_name: str = Form(""),
+    trust_mode: str = Form("none"),
+) -> Any:
+    """Handle organisation edit form submission.
+
+    Only owners and admins can edit organisation details.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+    name : str
+        Updated internal name.
+    display_name : str
+        Updated display name.
+    trust_mode : str
+        Updated trust mode.
+
+    Returns
+    -------
+    HTMLResponse
+        Organisation detail page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_detail.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_detail.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    def _detail_ctx(
+        *,
+        error: str | None = None,
+        success: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "name": tenant.name,
+                "display_name": tenant.display_name,
+                "custom_domain": tenant.custom_domain,
+                "is_active": tenant.is_active,
+                "is_platform": tenant.is_platform,
+                "trust_mode": _trust_mode_str(tenant),
+                "created_at": tenant.created_at,
+            },
+            "role": membership.role,
+            "trust_modes": [m.value for m in TenantTrustMode],
+            "error": error,
+            "success": success,
+        }
+
+    # Only owners and admins can edit
+    if membership.role not in ("owner", "admin"):
+        return _render(
+            request,
+            "settings/organisation_detail.html",
+            _detail_ctx(error="You do not have permission to edit this organisation."),
+        )
+
+    # Validate trust mode
+    try:
+        trust = TenantTrustMode(trust_mode)
+    except ValueError:
+        return _render(
+            request,
+            "settings/organisation_detail.html",
+            _detail_ctx(error=f"Invalid trust mode: {trust_mode}"),
+        )
+
+    # Apply changes
+    tenant.name = name
+    tenant.display_name = display_name or name
+    tenant.trust_mode = trust
+    await db.flush()
+
+    return _render(
+        request,
+        "settings/organisation_detail.html",
+        _detail_ctx(success="Organisation updated successfully."),
     )

@@ -12,8 +12,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from shomer.routes.organisation_settings_ui import (
     _SLUG_RE,
+    _get_membership,
     _get_session_user,
+    _parse_uuid,
     settings_organisation_create,
+    settings_organisation_detail,
+    settings_organisation_edit,
     settings_organisation_new,
     settings_organisations,
 )
@@ -395,5 +399,330 @@ class TestSettingsOrganisationCreate:
             assert "/ui/settings/organisations/" in resp.headers["location"]
             assert db.add.call_count == 2  # tenant + membership
             assert db.flush.call_count == 2
+
+        asyncio.run(_run())
+
+
+class TestParseUuid:
+    """Tests for _parse_uuid()."""
+
+    def test_valid_uuid(self) -> None:
+        """Parse a valid UUID string."""
+        uid = uuid.uuid4()
+        assert _parse_uuid(str(uid)) == uid
+
+    def test_invalid_uuid(self) -> None:
+        """Return None for an invalid UUID."""
+        assert _parse_uuid("not-a-uuid") is None
+
+
+class TestGetMembership:
+    """Tests for _get_membership()."""
+
+    def test_no_membership(self) -> None:
+        """Return None when user is not a member."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            result_mock = MagicMock()
+            result_mock.scalar_one_or_none.return_value = None
+            db.execute.return_value = result_mock
+
+            result = await _get_membership(db, uuid.uuid4(), uuid.uuid4())
+            assert result is None
+
+        asyncio.run(_run())
+
+    def test_has_membership(self) -> None:
+        """Return (membership, tenant) when user is a member."""
+
+        async def _run() -> None:
+            tenant = MagicMock()
+            membership = MagicMock()
+            membership.tenant = tenant
+
+            db = AsyncMock()
+            result_mock = MagicMock()
+            result_mock.scalar_one_or_none.return_value = membership
+            db.execute.return_value = result_mock
+
+            result = await _get_membership(db, uuid.uuid4(), uuid.uuid4())
+            assert result is not None
+            assert result[0] is membership
+            assert result[1] is tenant
+
+        asyncio.run(_run())
+
+
+class TestSettingsOrganisationDetail:
+    """Tests for GET /ui/settings/organisations/{org_id}."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_detail(
+                _req(), str(uuid.uuid4()), AsyncMock()
+            )
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_invalid_uuid_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Show error for invalid UUID."""
+
+        async def _run() -> None:
+            mock_auth.return_value = (MagicMock(), _mock_user())
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_detail(
+                _req({"session_id": "tok"}), "bad-id", AsyncMock()
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_not_member_shows_error(
+        self,
+        mock_auth: AsyncMock,
+        mock_membership: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Show error when user is not a member."""
+
+        async def _run() -> None:
+            mock_auth.return_value = (MagicMock(), _mock_user())
+            mock_membership.return_value = None
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_detail(
+                _req({"session_id": "tok"}), str(uuid.uuid4()), AsyncMock()
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "not found" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_member_renders_detail(
+        self,
+        mock_auth: AsyncMock,
+        mock_membership: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Render detail page for a member."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+
+            tenant = MagicMock()
+            tenant.id = uuid.uuid4()
+            tenant.slug = "acme"
+            tenant.name = "Acme"
+            tenant.display_name = "Acme Corp"
+            tenant.custom_domain = None
+            tenant.is_active = True
+            tenant.is_platform = False
+            tenant.trust_mode = MagicMock(value="none")
+            tenant.created_at = datetime(2025, 1, 1, tzinfo=timezone.utc)
+
+            membership = MagicMock()
+            membership.role = "owner"
+            membership.tenant = tenant
+
+            mock_membership.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_detail(
+                _req({"session_id": "tok"}), str(tenant.id), AsyncMock()
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["org"]["slug"] == "acme"
+            assert ctx["role"] == "owner"
+            assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+
+class TestSettingsOrganisationEdit:
+    """Tests for POST /ui/settings/organisations/{org_id}."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_edit(
+                _req(),
+                str(uuid.uuid4()),
+                AsyncMock(),
+                name="X",
+                display_name="X",
+                trust_mode="none",
+            )
+            assert resp.status_code == 302
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_member_cannot_edit(
+        self,
+        mock_auth: AsyncMock,
+        mock_membership: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Show error when a regular member tries to edit."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+
+            tenant = MagicMock()
+            tenant.id = uuid.uuid4()
+            tenant.slug = "acme"
+            tenant.name = "Acme"
+            tenant.display_name = "Acme"
+            tenant.custom_domain = None
+            tenant.is_active = True
+            tenant.is_platform = False
+            tenant.trust_mode = MagicMock(value="none")
+            tenant.created_at = None
+
+            membership = MagicMock()
+            membership.role = "member"
+            membership.tenant = tenant
+
+            mock_membership.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_edit(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                AsyncMock(),
+                name="New",
+                display_name="New",
+                trust_mode="none",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "permission" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_owner_can_edit(
+        self,
+        mock_auth: AsyncMock,
+        mock_membership: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Owner can successfully edit the organisation."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+
+            tenant = MagicMock()
+            tenant.id = uuid.uuid4()
+            tenant.slug = "acme"
+            tenant.name = "Acme"
+            tenant.display_name = "Acme"
+            tenant.custom_domain = None
+            tenant.is_active = True
+            tenant.is_platform = False
+            tenant.trust_mode = MagicMock(value="none")
+            tenant.created_at = None
+
+            membership = MagicMock()
+            membership.role = "owner"
+            membership.tenant = tenant
+
+            mock_membership.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            await settings_organisation_edit(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                db,
+                name="New Name",
+                display_name="New Display",
+                trust_mode="all",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["success"] == "Organisation updated successfully."
+            assert tenant.name == "New Name"
+            assert tenant.display_name == "New Display"
+            db.flush.assert_awaited_once()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_membership")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_invalid_trust_mode(
+        self,
+        mock_auth: AsyncMock,
+        mock_membership: AsyncMock,
+        mock_render: MagicMock,
+    ) -> None:
+        """Show error for invalid trust mode."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+
+            tenant = MagicMock()
+            tenant.id = uuid.uuid4()
+            tenant.slug = "acme"
+            tenant.name = "Acme"
+            tenant.display_name = "Acme"
+            tenant.custom_domain = None
+            tenant.is_active = True
+            tenant.is_platform = False
+            tenant.trust_mode = MagicMock(value="none")
+            tenant.created_at = None
+
+            membership = MagicMock()
+            membership.role = "owner"
+            membership.tenant = tenant
+
+            mock_membership.return_value = (membership, tenant)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_edit(
+                _req({"session_id": "tok"}),
+                str(tenant.id),
+                AsyncMock(),
+                name="Acme",
+                display_name="Acme",
+                trust_mode="invalid",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid trust mode" in ctx["error"]
 
         asyncio.run(_run())
