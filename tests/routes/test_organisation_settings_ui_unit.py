@@ -11,7 +11,10 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from shomer.routes.organisation_settings_ui import (
+    _SLUG_RE,
     _get_session_user,
+    settings_organisation_create,
+    settings_organisation_new,
     settings_organisations,
 )
 
@@ -203,5 +206,194 @@ class TestSettingsOrganisations:
             mock_render.assert_called_once()
             ctx = mock_render.call_args[0][2]
             assert ctx["organisations"] == []
+
+        asyncio.run(_run())
+
+
+class TestSlugRegex:
+    """Tests for _SLUG_RE validation."""
+
+    def test_valid_slugs(self) -> None:
+        """Accept valid slugs."""
+        for slug in ("acme", "my-org", "a1b2c3", "org-123-test"):
+            assert _SLUG_RE.match(slug), f"Expected valid: {slug}"
+
+    def test_invalid_slugs(self) -> None:
+        """Reject invalid slugs."""
+        for slug in ("", "a", "AB", "-start", "end-", "has space", "UPPER"):
+            assert not _SLUG_RE.match(slug), f"Expected invalid: {slug}"
+
+
+class TestSettingsOrganisationNew:
+    """Tests for GET /ui/settings/organisations/new."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_new(_req(), AsyncMock())
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_authenticated_renders_form(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Render the create organisation form."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_new(_req({"session_id": "tok"}), AsyncMock())
+
+            mock_render.assert_called_once()
+            ctx = mock_render.call_args[0][2]
+            assert ctx["section"] == "organisations"
+            assert "trust_modes" in ctx
+            assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+
+class TestSettingsOrganisationCreate:
+    """Tests for POST /ui/settings/organisations/new."""
+
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Redirect to login when not authenticated."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_organisation_create(
+                _req(), AsyncMock(), slug="test", name="Test"
+            )
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_invalid_slug_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Show error when slug is invalid."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_render.return_value = MagicMock()
+
+            await settings_organisation_create(
+                _req({"session_id": "tok"}),
+                AsyncMock(),
+                slug="A",
+                name="Test",
+            )
+
+            mock_render.assert_called_once()
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid slug" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_duplicate_slug_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Show error when slug already exists."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            result_mock = MagicMock()
+            result_mock.scalar_one_or_none.return_value = MagicMock()  # existing
+            db.execute.return_value = result_mock
+
+            await settings_organisation_create(
+                _req({"session_id": "tok"}),
+                db,
+                slug="acme-corp",
+                name="Acme",
+            )
+
+            mock_render.assert_called_once()
+            ctx = mock_render.call_args[0][2]
+            assert "already taken" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_invalid_trust_mode_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Show error for invalid trust mode."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+            mock_render.return_value = MagicMock()
+
+            db = AsyncMock()
+            result_mock = MagicMock()
+            result_mock.scalar_one_or_none.return_value = None
+            db.execute.return_value = result_mock
+
+            await settings_organisation_create(
+                _req({"session_id": "tok"}),
+                db,
+                slug="acme-corp",
+                name="Acme",
+                trust_mode="invalid",
+            )
+
+            mock_render.assert_called_once()
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid trust mode" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.organisation_settings_ui._render")
+    @patch("shomer.routes.organisation_settings_ui._get_session_user")
+    def test_success_redirects(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Redirect to org detail on successful creation."""
+
+        async def _run() -> None:
+            user = _mock_user()
+            mock_auth.return_value = (MagicMock(), user)
+
+            db = AsyncMock()
+            result_mock = MagicMock()
+            result_mock.scalar_one_or_none.return_value = None
+            db.execute.return_value = result_mock
+
+            resp = await settings_organisation_create(
+                _req({"session_id": "tok"}),
+                db,
+                slug="acme-corp",
+                name="Acme Corp",
+                display_name="Acme Corp Inc.",
+                trust_mode="none",
+            )
+
+            mock_render.assert_not_called()
+            assert resp.status_code == 302
+            assert "/ui/settings/organisations/" in resp.headers["location"]
+            assert db.add.call_count == 2  # tenant + membership
+            assert db.flush.call_count == 2
 
         asyncio.run(_run())

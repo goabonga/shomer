@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Create Organisation — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings">Overview</a>
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+    <a href="/ui/settings/pats">Tokens</a>
+    <a href="/ui/settings/organisations" class="active">Organisations</a>
+</nav>
+
+<div class="page-header">
+    <h2>Create Organisation</h2>
+    <a href="/ui/settings/organisations">&larr; Back to list</a>
+</div>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<form method="post" action="/ui/settings/organisations/new" class="org-form">
+    <div class="form-group">
+        <label for="slug">Slug</label>
+        <input type="text" id="slug" name="slug" value="{{ form_slug|default('', true) }}" required
+               pattern="[a-z0-9][a-z0-9-]{1,61}[a-z0-9]"
+               placeholder="my-organisation" autocomplete="off">
+        <span class="hint">3-63 lowercase letters, digits, and hyphens. Used in URLs.</span>
+    </div>
+
+    <div class="form-group">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" value="{{ form_name|default('', true) }}" required
+               placeholder="My Organisation">
+    </div>
+
+    <div class="form-group">
+        <label for="display_name">Display Name</label>
+        <input type="text" id="display_name" name="display_name" value="{{ form_display_name|default('', true) }}"
+               placeholder="My Organisation Inc.">
+        <span class="hint">Optional. Shown in the UI. Defaults to the name.</span>
+    </div>
+
+    <div class="form-group">
+        <label for="trust_mode">Trust Mode</label>
+        <select id="trust_mode" name="trust_mode">
+            {% for mode in trust_modes %}
+            <option value="{{ mode }}" {% if form_trust_mode|default('none', true) == mode %}selected{% endif %}>{{ mode }}</option>
+            {% endfor %}
+        </select>
+        <span class="hint">Controls how external users can access this organisation.</span>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">Create Organisation</button>
+        <a href="/ui/settings/organisations" class="btn-secondary">Cancel</a>
+    </div>
+</form>
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .error { color: #721c24; background: #f8d7da; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .org-form { max-width: 480px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-weight: 600; margin-bottom: 4px; }
+    .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95rem; }
+    .form-group .hint { display: block; font-size: 0.8rem; color: #888; margin-top: 4px; }
+    .form-actions { display: flex; gap: 12px; margin-top: 24px; }
+    .btn-primary { background: #333; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+    .btn-secondary { padding: 8px 16px; border: 1px solid #ccc; border-radius: 4px; text-decoration: none; color: #333; font-size: 0.9rem; }
+</style>
+{% endblock %}
