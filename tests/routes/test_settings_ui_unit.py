@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from shomer.routes.settings_ui import (
     _get_session_user,
     settings_emails,
+    settings_index,
     settings_profile,
     settings_profile_update,
     settings_security,
@@ -354,5 +355,167 @@ class TestSettingsProfileUpdate:
             assert ctx["email"] == "test@example.com"
             assert ctx["success"] is None
             assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+
+class TestSettingsIndex:
+    """Tests for GET /ui/settings (index/dashboard)."""
+
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Unauthenticated request redirects to login."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_index(_req(), AsyncMock())
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_authenticated_renders_overview(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Authenticated request renders the index page with all stats."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            # Profile with some fields filled
+            mock_profile = MagicMock()
+            mock_profile.nickname = "Jo"
+            mock_profile.given_name = "John"
+            mock_profile.family_name = "Doe"
+            mock_profile.picture_url = None
+            mock_profile.phone_number = None
+            mock_profile.locale = None
+            mock_profile.zoneinfo = None
+            mock_user.profile = mock_profile
+            mock_auth.return_value = (MagicMock(), mock_user)
+
+            # db.execute returns: mfa_result, sessions_result, pat_result
+            mfa_result = MagicMock()
+            mfa_result.scalar_one_or_none.return_value = None
+            sessions_result = MagicMock()
+            sessions_result.scalar.return_value = 3
+            pat_result = MagicMock()
+            pat_result.scalar.return_value = 2
+
+            db = AsyncMock()
+            db.execute.side_effect = [mfa_result, sessions_result, pat_result]
+
+            mock_render.return_value = "html"
+            await settings_index(_req({"session_id": "tok"}), db)
+            ctx = mock_render.call_args[0][2]
+            assert ctx["section"] == "overview"
+            assert ctx["completeness"] == 43  # 3/7 = 42.86 → 43
+            assert ctx["has_verified_email"] is True
+            assert ctx["mfa_enabled"] is False
+            assert ctx["active_sessions"] == 3
+            assert ctx["active_pats"] == 2
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_no_profile_shows_zero_completeness(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """User with no profile shows 0% completeness."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_user.profile = None
+            # Unverified email
+            mock_user.emails[0].is_verified = False
+            mock_auth.return_value = (MagicMock(), mock_user)
+
+            mfa_result = MagicMock()
+            mfa_result.scalar_one_or_none.return_value = None
+            sessions_result = MagicMock()
+            sessions_result.scalar.return_value = 0
+            pat_result = MagicMock()
+            pat_result.scalar.return_value = 0
+
+            db = AsyncMock()
+            db.execute.side_effect = [mfa_result, sessions_result, pat_result]
+
+            mock_render.return_value = "html"
+            await settings_index(_req({"session_id": "tok"}), db)
+            ctx = mock_render.call_args[0][2]
+            assert ctx["completeness"] == 0
+            assert ctx["has_verified_email"] is False
+            assert ctx["active_sessions"] == 0
+            assert ctx["active_pats"] == 0
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_mfa_enabled_shows_in_context(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """MFA enabled status is reflected in context."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_user.profile = None
+            mock_auth.return_value = (MagicMock(), mock_user)
+
+            mock_mfa = MagicMock()
+            mock_mfa.is_enabled = True
+            mfa_result = MagicMock()
+            mfa_result.scalar_one_or_none.return_value = mock_mfa
+            sessions_result = MagicMock()
+            sessions_result.scalar.return_value = 1
+            pat_result = MagicMock()
+            pat_result.scalar.return_value = 0
+
+            db = AsyncMock()
+            db.execute.side_effect = [mfa_result, sessions_result, pat_result]
+
+            mock_render.return_value = "html"
+            await settings_index(_req({"session_id": "tok"}), db)
+            ctx = mock_render.call_args[0][2]
+            assert ctx["mfa_enabled"] is True
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_full_profile_shows_100_completeness(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """User with all profile fields filled shows 100% completeness."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_profile = MagicMock()
+            mock_profile.nickname = "Jo"
+            mock_profile.given_name = "John"
+            mock_profile.family_name = "Doe"
+            mock_profile.picture_url = "https://example.com/pic.jpg"
+            mock_profile.phone_number = "+33612345678"
+            mock_profile.locale = "fr-FR"
+            mock_profile.zoneinfo = "Europe/Paris"
+            mock_user.profile = mock_profile
+            mock_auth.return_value = (MagicMock(), mock_user)
+
+            mfa_result = MagicMock()
+            mfa_result.scalar_one_or_none.return_value = None
+            sessions_result = MagicMock()
+            sessions_result.scalar.return_value = 1
+            pat_result = MagicMock()
+            pat_result.scalar.return_value = 0
+
+            db = AsyncMock()
+            db.execute.side_effect = [mfa_result, sessions_result, pat_result]
+
+            mock_render.return_value = "html"
+            await settings_index(_req({"session_id": "tok"}), db)
+            ctx = mock_render.call_args[0][2]
+            assert ctx["completeness"] == 100
 
         asyncio.run(_run())

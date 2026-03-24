@@ -1,5 +1,41 @@
 Feature: User settings UI pages
 
+  Scenario: Settings index redirects to login when unauthenticated
+    When I open the page "/ui/settings"
+    Then the page should contain "Login"
+    And I take a screenshot named "settings_index_redirect"
+
+  Scenario: Settings index page shows account overview when authenticated
+    Given I register and verify "settings-idx@example.com" with password "securepassword123"
+    When I open the page "/ui/login"
+    And I fill "input[name='email']" with "settings-idx@example.com"
+    And I fill "input[name='password']" with "securepassword123"
+    And I click the "Login" button
+    Then the page URL should contain "/"
+    When I navigate to "/ui/settings"
+    Then the page should contain "Settings"
+    And the page should contain "Account Overview"
+    And the page should contain "Profile"
+    And the page should contain "Email"
+    And the page should contain "MFA"
+    And the page should contain "Active Sessions"
+    And the page should contain "Access Tokens"
+    And the page should contain "Overview"
+    And I take a screenshot named "settings_index_page"
+
+  Scenario: Settings index shows navigation links to all sections
+    Given I register and verify "settings-idx-nav@example.com" with password "securepassword123"
+    When I open the page "/ui/login"
+    And I fill "input[name='email']" with "settings-idx-nav@example.com"
+    And I fill "input[name='password']" with "securepassword123"
+    And I click the "Login" button
+    Then the page URL should contain "/"
+    When I navigate to "/ui/settings"
+    Then the page should contain "Edit profile"
+    And the page should contain "Manage emails"
+    And the page should contain "Manage tokens"
+    And I take a screenshot named "settings_index_nav"
+
   Scenario: Profile settings redirects to login when unauthenticated
     When I open the page "/ui/settings/profile"
     Then the page should contain "Login"

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Settings — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings" class="active">Overview</a>
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+    <a href="/ui/settings/pats">Tokens</a>
+</nav>
+
+<h2>Account Overview</h2>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="label">Profile</div>
+        <div class="value">{{ completeness }}%</div>
+        <div class="detail">completeness</div>
+        <a href="/ui/settings/profile" class="card-link">Edit profile</a>
+    </div>
+
+    <div class="stat-card">
+        <div class="label">Email</div>
+        <div class="value status-{{ 'ok' if has_verified_email else 'warn' }}">{{ "Verified" if has_verified_email else "Unverified" }}</div>
+        <a href="/ui/settings/emails" class="card-link">Manage emails</a>
+    </div>
+
+    <div class="stat-card">
+        <div class="label">MFA</div>
+        <div class="value status-{{ 'ok' if mfa_enabled else 'warn' }}">{{ "Enabled" if mfa_enabled else "Disabled" }}</div>
+        <a href="/ui/settings/security" class="card-link">{{ "Manage MFA" if mfa_enabled else "Set up MFA" }}</a>
+    </div>
+
+    <div class="stat-card">
+        <div class="label">Active Sessions</div>
+        <div class="value">{{ active_sessions }}</div>
+        <a href="/ui/settings/security" class="card-link">View sessions</a>
+    </div>
+
+    <div class="stat-card">
+        <div class="label">Access Tokens</div>
+        <div class="value">{{ active_pats }}</div>
+        <a href="/ui/settings/pats" class="card-link">Manage tokens</a>
+    </div>
+</div>
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .stat-card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; text-align: center; }
+    .stat-card .label { font-size: 0.85rem; color: #666; margin-bottom: 4px; }
+    .stat-card .value { font-size: 1.5rem; font-weight: 700; margin-bottom: 4px; }
+    .stat-card .detail { font-size: 0.8rem; color: #888; }
+    .stat-card .card-link { display: inline-block; margin-top: 8px; font-size: 0.85rem; }
+    .status-ok { color: #155724; }
+    .status-warn { color: #856404; }
+</style>
+{% endblock %}
