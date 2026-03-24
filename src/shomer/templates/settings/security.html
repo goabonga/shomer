@@ -19,8 +19,31 @@
 </div>
 
 <div class="security-section">
-    <h3>Active Sessions</h3>
-    <p>You have <strong>{{ active_sessions }}</strong> active session(s).</p>
+    <h3>Active Sessions ({{ active_sessions }})</h3>
+    <table class="sessions-table">
+        <thead>
+            <tr>
+                <th>IP Address</th>
+                <th>User Agent</th>
+                <th>Last Activity</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for s in sessions %}
+            <tr>
+                <td>{{ s.ip_address or "Unknown" }}</td>
+                <td class="ua-cell">{{ s.user_agent or "Unknown" }}</td>
+                <td>{{ s.last_activity.strftime("%Y-%m-%d %H:%M UTC") }}</td>
+                <td>
+                    {% if s.id | string == current_session_id %}
+                        <span class="badge current">Current</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
 </div>
 
 <div class="security-section">
@@ -46,5 +69,11 @@
     .mfa-enabled { color: #060; }
     .mfa-disabled { color: #c00; }
     .mfa-link { color: #333; }
+    .sessions-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .sessions-table th, .sessions-table td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; }
+    .sessions-table th { font-size: 0.85em; color: #666; }
+    .ua-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge { font-size: 0.75em; padding: 2px 6px; border-radius: 3px; }
+    .badge.current { background: #333; color: #fff; }
 </style>
 {% endblock %}
