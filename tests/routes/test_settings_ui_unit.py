@@ -964,3 +964,155 @@ class TestSettingsEmailsResend:
             assert ctx["error"] == "Invalid email ID."
 
         asyncio.run(_run())
+
+
+class TestSettingsEmailsSetPrimary:
+    """Tests for POST /ui/settings/emails action=set_primary."""
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_set_primary_success(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Set primary on a verified email succeeds."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            target_email = MagicMock()
+            target_email.is_verified = True
+
+            eid = uuid.uuid4()
+            old_primary = MagicMock()
+            old_primary.id = uuid.uuid4()
+            old_primary.is_primary = True
+            new_primary = MagicMock()
+            new_primary.id = eid
+            new_primary.is_primary = False
+
+            scalars_mock = MagicMock()
+            scalars_mock.all.return_value = [old_primary, new_primary]
+
+            db = AsyncMock()
+            # First: find target email
+            find_result = MagicMock()
+            find_result.scalar_one_or_none.return_value = target_email
+            # Second: get all emails for user
+            all_result = MagicMock()
+            all_result.scalars.return_value = scalars_mock
+            # Third: re-load user
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [find_result, all_result, reload_result]
+
+            await settings_emails_post(
+                _req({"session_id": "tok"}),
+                db,
+                action="set_primary",
+                email_id=str(eid),
+            )
+
+            db.flush.assert_awaited()
+            assert old_primary.is_primary is False
+            assert new_primary.is_primary is True
+            ctx = mock_render.call_args[0][2]
+            assert ctx["success"] == "Primary email updated."
+            assert ctx["error"] is None
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_set_primary_unverified_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Set primary on unverified email shows error."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            target_email = MagicMock()
+            target_email.is_verified = False
+
+            db = AsyncMock()
+            find_result = MagicMock()
+            find_result.scalar_one_or_none.return_value = target_email
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [find_result, reload_result]
+
+            await settings_emails_post(
+                _req({"session_id": "tok"}),
+                db,
+                action="set_primary",
+                email_id=str(uuid.uuid4()),
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Cannot set unverified email as primary."
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_set_primary_nonexistent_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Set primary on non-existent email shows error."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            db = AsyncMock()
+            find_result = MagicMock()
+            find_result.scalar_one_or_none.return_value = None
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [find_result, reload_result]
+
+            await settings_emails_post(
+                _req({"session_id": "tok"}),
+                db,
+                action="set_primary",
+                email_id=str(uuid.uuid4()),
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Email not found."
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_set_primary_invalid_uuid_shows_error(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Set primary with invalid UUID shows error."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            db = AsyncMock()
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.return_value = reload_result
+
+            await settings_emails_post(
+                _req({"session_id": "tok"}),
+                db,
+                action="set_primary",
+                email_id="bad",
+            )
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Invalid email ID."
+
+        asyncio.run(_run())

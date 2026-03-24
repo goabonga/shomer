@@ -34,6 +34,13 @@
             <button type="submit" class="btn-sm btn-resend">Resend</button>
         </form>
         {% endif %}
+        {% if not email.is_primary and email.is_verified %}
+        <form method="post" action="/ui/settings/emails" class="inline-form">
+            <input type="hidden" name="action" value="set_primary">
+            <input type="hidden" name="email_id" value="{{ email.id }}">
+            <button type="submit" class="btn-sm btn-primary-action">Set Primary</button>
+        </form>
+        {% endif %}
         {% if not email.is_primary %}
         <form method="post" action="/ui/settings/emails" class="inline-form">
             <input type="hidden" name="action" value="remove">
@@ -67,6 +74,7 @@
     .btn-danger { background: #c00; color: #fff; border: none; }
     .btn-verify { background: #060; color: #fff; border: none; }
     .btn-resend { background: #555; color: #fff; border: none; }
+    .btn-primary-action { background: #336; color: #fff; border: none; }
     .code-input { width: 80px; padding: 2px 6px; font-size: 0.85em; border: 1px solid #ccc; border-radius: 3px; }
     .msg { padding: 8px 12px; border-radius: 4px; margin-bottom: 16px; }
     .msg.ok { background: #e6ffe6; color: #060; }
