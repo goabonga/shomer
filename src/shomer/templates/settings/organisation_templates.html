@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Email Templates — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings">Overview</a>
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+    <a href="/ui/settings/pats">Tokens</a>
+    <a href="/ui/settings/organisations" class="active">Organisations</a>
+</nav>
+
+{% if org %}
+<div class="page-header">
+    <h2>{{ org.display_name }} — Email Templates</h2>
+    <a href="/ui/settings/organisations/{{ org.id }}">&larr; Back to organisation</a>
+</div>
+
+<div class="org-nav">
+    <a href="/ui/settings/organisations/{{ org.id }}">General</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/members">Members</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/roles">Roles</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/idps">Identity Providers</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/branding">Branding</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/trust">Trust Policies</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/domains">Domains</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/templates" class="active">Templates</a>
+</div>
+{% else %}
+<div class="page-header">
+    <h2>Email Templates</h2>
+    <a href="/ui/settings/organisations">&larr; Back to list</a>
+</div>
+{% endif %}
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+
+{% if org %}
+{% if role in ('owner', 'admin') %}
+<div class="create-section">
+    <h3>Create Template Override</h3>
+    <form method="post" action="/ui/settings/organisations/{{ org.id }}/templates" class="template-form">
+        <input type="hidden" name="action" value="create">
+        <div class="form-group">
+            <label for="template_name">Template Name</label>
+            <input type="text" id="template_name" name="template_name" placeholder="e.g. emails/mjml/password_reset.mjml" required>
+        </div>
+        <div class="form-group">
+            <label for="description">Description</label>
+            <input type="text" id="description" name="description" placeholder="Optional description">
+        </div>
+        <div class="form-group">
+            <label for="content">Content</label>
+            <textarea id="content" name="content" rows="8" placeholder="Jinja2 template content..." required></textarea>
+        </div>
+        <button type="submit" class="btn-primary">Create Template</button>
+    </form>
+</div>
+{% endif %}
+
+<h3>Template Overrides</h3>
+{% if templates %}
+<table class="templates-table">
+    <thead>
+        <tr>
+            <th>Template</th>
+            <th>Description</th>
+            <th>Status</th>
+            {% if role in ('owner', 'admin') %}<th>Actions</th>{% endif %}
+        </tr>
+    </thead>
+    <tbody>
+    {% for t in templates %}
+        <tr>
+            <td><code>{{ t.template_name }}</code></td>
+            <td>{{ t.description }}</td>
+            <td>
+                {% if t.is_active %}
+                    <span class="badge-active">Active</span>
+                {% else %}
+                    <span class="badge-inactive">Inactive</span>
+                {% endif %}
+            </td>
+            {% if role in ('owner', 'admin') %}
+            <td class="action-cell">
+                <form method="post" action="/ui/settings/organisations/{{ org.id }}/templates" style="display:inline">
+                    <input type="hidden" name="action" value="toggle">
+                    <input type="hidden" name="template_id" value="{{ t.id }}">
+                    <button type="submit" class="btn-sm">
+                        {% if t.is_active %}Disable{% else %}Enable{% endif %}
+                    </button>
+                </form>
+                <form method="post" action="/ui/settings/organisations/{{ org.id }}/templates" style="display:inline">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="template_id" value="{{ t.id }}">
+                    <button type="submit" class="remove-btn">Delete</button>
+                </form>
+            </td>
+            {% endif %}
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No custom template overrides configured.</p>
+{% endif %}
+{% endif %}
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .org-nav { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .org-nav a { text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 0.9rem; color: #555; }
+    .org-nav a.active { background: #e8e8e8; color: #333; font-weight: 600; }
+    .error { color: #721c24; background: #f8d7da; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .success { color: #155724; background: #d4edda; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .create-section { margin-bottom: 24px; padding: 16px; background: #f8f9fa; border-radius: 8px; }
+    .template-form .form-group { margin-bottom: 12px; }
+    .template-form label { display: block; font-weight: 600; font-size: 0.85em; margin-bottom: 4px; color: #555; }
+    .template-form input, .template-form textarea { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%; max-width: 500px; box-sizing: border-box; }
+    .template-form textarea { font-family: monospace; font-size: 0.85em; }
+    .btn-primary { background: #333; color: #fff; padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; }
+    .templates-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    .templates-table th, .templates-table td { padding: 10px 8px; text-align: left; border-bottom: 1px solid #eee; }
+    .templates-table th { font-weight: 600; color: #666; font-size: 0.85em; text-transform: uppercase; }
+    .badge-active { background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 3px; font-size: 0.85em; }
+    .badge-inactive { background: #f8d7da; color: #721c24; padding: 2px 8px; border-radius: 3px; font-size: 0.85em; }
+    .btn-sm { background: #333; color: #fff; padding: 4px 10px; border: none; border-radius: 3px; cursor: pointer; font-size: 0.85em; }
+    .action-cell { white-space: nowrap; }
+    .remove-btn { background: #dc3545; color: #fff; border: none; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 0.85em; margin-left: 4px; }
+</style>
+{% endblock %}
