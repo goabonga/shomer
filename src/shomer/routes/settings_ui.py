@@ -565,13 +565,14 @@ async def settings_emails(request: Request, db: DbSession) -> Any:
 
 
 @router.post("/emails", response_class=HTMLResponse)
-async def settings_emails_add(
+async def settings_emails_post(
     request: Request,
     db: DbSession,
     action: str = Form("add"),
     email: str = Form(""),
+    email_id: str = Form(""),
 ) -> Any:
-    """Handle email addition form submission.
+    """Handle email management form submissions (add, remove).
 
     Parameters
     ----------
@@ -580,9 +581,11 @@ async def settings_emails_add(
     db : DbSession
         Database session.
     action : str
-        Form action (``add``).
+        Form action (``add`` or ``remove``).
     email : str
-        Email address to add.
+        Email address to add (for ``add`` action).
+    email_id : str
+        UUID of the email to remove (for ``remove`` action).
 
     Returns
     -------
@@ -648,14 +651,40 @@ async def settings_emails_add(
                 )
                 success = "Email added. Check your inbox for verification."
 
+    elif action == "remove":
+        import uuid as _uuid
+
+        try:
+            eid = _uuid.UUID(email_id)
+        except ValueError:
+            error = "Invalid email ID."
+        else:
+            stmt = select(UserEmail).where(
+                UserEmail.id == eid,
+                UserEmail.user_id == user.id,
+            )
+            result = await db.execute(stmt)
+            email_record = result.scalar_one_or_none()
+
+            if email_record is None:
+                error = "Email not found."
+            elif email_record.is_primary:
+                error = "Cannot delete primary email."
+            else:
+                await db.delete(email_record)
+                await db.flush()
+                success = "Email removed."
+
     # Re-load user with emails
-    stmt = (
+    reload_stmt = (
         select(User)
         .where(User.id == user.id)
         .options(selectinload(User.profile), selectinload(User.emails))
     )
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none() or user
+    reload_result = await db.execute(reload_stmt)
+    refreshed = reload_result.scalar_one_or_none()
+    if refreshed is not None:
+        user = refreshed
 
     return _render(
         request,
