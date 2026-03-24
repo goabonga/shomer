@@ -247,6 +247,43 @@ class TestPATAction:
 
         asyncio.run(_run())
 
+    def test_revoke_all_success(self) -> None:
+        """Revoke all action calls revoke_all_for_user and shows count."""
+
+        async def _run() -> None:
+            with (
+                patch(
+                    "shomer.routes.pat_ui._get_session_user_id",
+                    new_callable=AsyncMock,
+                    return_value=uuid.uuid4(),
+                ),
+                patch("shomer.routes.pat_ui.PATService") as mock_cls,
+                patch("shomer.app.templates") as mock_tpl,
+            ):
+                mock_svc = AsyncMock()
+                mock_svc.revoke_all_for_user.return_value = 3
+                mock_svc.list_for_user.return_value = []
+                mock_cls.return_value = mock_svc
+                mock_tpl.TemplateResponse.return_value = MagicMock()
+
+                req = MagicMock()
+                await pat_action(
+                    req,
+                    AsyncMock(),
+                    action="revoke_all",
+                    pat_id="",
+                    name="",
+                    scopes="",
+                    expires_at="",
+                )
+                mock_svc.revoke_all_for_user.assert_awaited_once()
+                call_args = mock_tpl.TemplateResponse.call_args
+                ctx = call_args[0][2] if len(call_args[0]) > 2 else call_args[1]
+                assert "3" in ctx["success"]
+                assert "revoked" in ctx["success"].lower()
+
+        asyncio.run(_run())
+
     def test_revoke_success(self) -> None:
         async def _run() -> None:
             with (

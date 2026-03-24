@@ -300,6 +300,32 @@ class PATService:
             expires_at=expires_at,
         )
 
+    async def revoke_all_for_user(self, user_id: uuid.UUID) -> int:
+        """Revoke all active PATs for a user.
+
+        Parameters
+        ----------
+        user_id : uuid.UUID
+            The token owner's ID.
+
+        Returns
+        -------
+        int
+            Number of tokens revoked.
+        """
+        stmt = select(PersonalAccessToken).where(
+            PersonalAccessToken.user_id == user_id,
+            PersonalAccessToken.is_revoked.is_(False),
+        )
+        result = await self.session.execute(stmt)
+        pats = result.scalars().all()
+
+        for pat in pats:
+            pat.is_revoked = True
+
+        await self.session.flush()
+        return len(pats)
+
     async def list_for_user(self, user_id: uuid.UUID) -> list[PATInfo]:
         """List all PATs for a user (metadata only).
 
