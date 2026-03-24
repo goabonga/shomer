@@ -198,6 +198,55 @@ class TestPATAction:
 
         asyncio.run(_run())
 
+    def test_regenerate_returns_new_token(self) -> None:
+        """Regenerate action revokes old and returns a new raw token."""
+
+        async def _run() -> None:
+            now = datetime.now(timezone.utc)
+            mock_result = PATCreateResult(
+                id=uuid.uuid4(),
+                name="ci",
+                token="shm_pat_regenerated",
+                token_prefix="shm_pat_regener",
+                scopes="api:read",
+                expires_at=None,
+                created_at=now,
+            )
+
+            with (
+                patch(
+                    "shomer.routes.pat_ui._get_session_user_id",
+                    new_callable=AsyncMock,
+                    return_value=uuid.uuid4(),
+                ),
+                patch("shomer.routes.pat_ui.PATService") as mock_cls,
+                patch("shomer.app.templates") as mock_tpl,
+            ):
+                mock_svc = AsyncMock()
+                mock_svc.regenerate.return_value = mock_result
+                mock_svc.list_for_user.return_value = []
+                mock_cls.return_value = mock_svc
+                mock_tpl.TemplateResponse.return_value = MagicMock()
+
+                req = MagicMock()
+                pid = str(uuid.uuid4())
+                await pat_action(
+                    req,
+                    AsyncMock(),
+                    action="regenerate",
+                    pat_id=pid,
+                    name="",
+                    scopes="",
+                    expires_at="",
+                )
+                mock_svc.regenerate.assert_awaited_once()
+                call_args = mock_tpl.TemplateResponse.call_args
+                ctx = call_args[0][2] if len(call_args[0]) > 2 else call_args[1]
+                assert ctx["new_token"] == "shm_pat_regenerated"
+                assert "regenerated" in ctx["success"].lower()
+
+        asyncio.run(_run())
+
     def test_revoke_success(self) -> None:
         async def _run() -> None:
             with (

@@ -74,6 +74,11 @@
                 <td>
                     {% if not pat.is_revoked %}
                     <form method="post" action="/ui/settings/pats" style="display:inline">
+                        <input type="hidden" name="action" value="regenerate">
+                        <input type="hidden" name="pat_id" value="{{ pat.id }}">
+                        <button type="submit" class="regenerate-btn">Regenerate</button>
+                    </form>
+                    <form method="post" action="/ui/settings/pats" style="display:inline">
                         <input type="hidden" name="action" value="revoke">
                         <input type="hidden" name="pat_id" value="{{ pat.id }}">
                         <button type="submit" class="revoke-btn">Revoke</button>
@@ -121,6 +126,7 @@ function applyExpirationPreset() {
     .revoked td { opacity: 0.5; }
     .revoked-badge { color: #c00; font-size: 0.85em; }
     .active-badge { color: #060; font-size: 0.85em; }
+    .regenerate-btn { background: #1976d2; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.85em; margin-right: 4px; }
     .revoke-btn { background: #c00; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.85em; }
 </style>
 {% endblock %}
