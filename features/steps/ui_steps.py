@@ -56,6 +56,12 @@ def step_attach_file(context, filename, selector):
     context.page.set_input_files(selector, str(file_path))
 
 
+@when('I select "{value}" from "{selector}"')
+def step_select_option(context, value, selector):
+    """Select an option from a dropdown by its visible label."""
+    context.page.select_option(selector, label=value)
+
+
 @when('I click the "{text}" button')
 def step_click_button(context, text):
     context._last_navigation_url = ""
