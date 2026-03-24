@@ -1,0 +1,117 @@
+# CLAUDE.md
+
+## Project
+
+Shomer - OIDC/OAuth2 authentication server in Python/FastAPI.
+
+## Skills
+
+Use the project skills (`.claude/skills/`) to execute workflow tasks:
+
+| Skill | Usage | Description |
+|-------|-------|-------------|
+| `/implement <task>` | `/implement "UserProfile model with OIDC claims"` | Implement a task from the current issue's checklist |
+| `/check` | `/check` | Run all quality checks (format, lint, typecheck, test, bdd, license) |
+| `/commit <desc>` | `/commit "add UserProfile model"` | Create a conventional commit for one task |
+| `/push` | `/push` | Run all checks then push to remote |
+| `/start-issue <n>` | `/start-issue 5` | Start or resume branch + draft PR for an issue |
+| `/update-issue <n>` | `/update-issue 5 "UserProfile model"` | Check off completed tasks on the GitHub issue |
+| `/update-pr` | `/update-pr` | Update PR body (changes + test plan results) |
+| `/license` | `/license` or `/license check` | Add or verify SPDX license headers |
+| `/migrate` | `/migrate` or `/migrate auto "message"` | Run or generate Alembic migrations |
+| `/rebase` | `/rebase` | Rebase current branch onto main and resolve conflicts |
+| `/kind-test` | `/kind-test` | Test Helm chart with local kind cluster |
+| `/doc <topic>` | `/doc "Authorization Code Flow"` | Write user documentation page (English, mkdocs-material) |
+
+The `conventions` skill is loaded automatically when writing or reviewing code.
+
+### Typical workflow
+
+See `.claude/workflow/working-on-issue.md`.
+**MANDATORY**: Always follow it — never substitute skills with manual commands.
+
+## Workflow rules
+
+### Commits
+
+- **One commit per task** from the issue checklist. Do not bundle multiple tasks in a single commit.
+- Follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`.
+- Reference the issue in the commit body: `ref #<number>` (or `Closes #<number>` on the final commit).
+- Use `feat` and `fix` **only** for changes that affect the application code (they trigger a version bump via commitizen). Changes to Makefile, CI, docs, scripts, or tooling must use `chore`, `ci`, `docs`, or `style` — these do not increment the version.
+- **Every commit** must pass `/check` before being created. Do not commit code that fails any check.
+
+### Branches and PRs
+
+- Branch naming: see `BRANCHES.md`.
+- Use `/start-issue <n>` to create the branch and draft PR.
+- PR body templates are in `.github/prs/`.
+- **After each push**, use `/update-issue` and `/update-pr` to keep the issue checklist and PR body in sync with progress. Do not defer updates to the end — update incrementally after each task.
+
+### BDD Features
+
+- **Every** API endpoint and UI page must have corresponding Gherkin feature files in `features/`.
+- API features use `http_steps.py` (GET, POST with JSON, status codes, response body checks).
+- UI features that test **HTML pages** (rendered templates) must use `ui_steps.py` (Playwright browser automation) — not `http_steps.py`. Playwright verifies the actual DOM, JavaScript interactions, and visual rendering.
+- BDD tests run against the Docker Compose stack via `make bdd`.
+
+### Docstrings
+
+- **All** public modules, classes, functions and methods must have docstrings.
+- Use **numpy** style (`Parameters`, `Returns`, `Raises`, `Attributes`).
+- This is required for mkdocs/mkdocstrings to render the API reference.
+
+### Code quality checks
+
+Use `/check` to run all checks, or run them individually:
+
+```bash
+make format       # isort + ruff format
+make lint         # ruff check
+make typecheck    # mypy --strict
+make test         # pytest with coverage
+make bdd          # behave + playwright
+make check-license # SPDX headers
+```
+
+If any file in `chart/` is modified, also run `/kind-test` and add `make kind-bdd` to the PR test plan.
+
+All source files must have an SPDX license header (use `/license` to add them):
+
+```python
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Chris <goabonga@pm.me>
+```
+
+### Never commit or push
+
+The following files and directories are local-only planning artifacts. **Never** `git add`, commit, or push them:
+
+- `.github/issues/`
+- `.github/prs/`
+- `.github/scripts/`
+- `BRANCHES.md`
+- `FEATURES.md`
+- `PLAN.md`
+
+### Dependencies
+
+- Runtime dependencies used only by the server must be **optional** and included in the `server` extra.
+- Runtime dependencies used only by the worker must be **optional** and included in the `worker` extra.
+- Dev/test dependencies go in their respective groups (`dev`, `test`).
+
+## Tech stack
+
+- Python >= 3.10, FastAPI, SQLAlchemy async, Alembic, Celery, Redis
+- Argon2id (password hashing), AES-256-GCM (encryption), RS256 (JWT signing)
+- PostgreSQL, Jinja2/HTMX (UI), MJML (emails)
+- pytest, behave + playwright (BDD), mypy, ruff, isort
+
+## Key paths
+
+- Source: `src/shomer/`
+- Tests: `tests/`
+- BDD features: `features/`
+- Issue files: `.github/issues/M<N>-<name>/`
+- PR templates: `.github/prs/`
+- Scripts: `.github/scripts/`
+- Skills: `.claude/skills/`

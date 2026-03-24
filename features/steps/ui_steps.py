@@ -48,6 +48,14 @@ def step_fill_input(context, selector, value):
     context.page.fill(selector, value)
 
 
+@when('I attach file "{filename}" to "{selector}"')
+def step_attach_file(context, filename, selector):
+    """Attach a file to a file input element."""
+    fixtures_dir = Path(__file__).parent.parent / "fixtures"
+    file_path = fixtures_dir / filename
+    context.page.set_input_files(selector, str(file_path))
+
+
 @when('I click the "{text}" button')
 def step_click_button(context, text):
     context._last_navigation_url = ""
