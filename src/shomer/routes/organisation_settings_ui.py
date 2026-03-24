@@ -23,8 +23,11 @@ from sqlalchemy.orm import selectinload
 from shomer.deps import DbSession
 from shomer.models.identity_provider import IdentityProvider, IdentityProviderType
 from shomer.models.tenant import Tenant, TenantTrustMode
+from shomer.models.tenant_branding import TenantBranding
 from shomer.models.tenant_custom_role import TenantCustomRole
 from shomer.models.tenant_member import TenantMember
+from shomer.models.tenant_template import TenantTemplate
+from shomer.models.tenant_trusted_source import TenantTrustedSource
 from shomer.models.user import User
 from shomer.models.user_email import UserEmail
 from shomer.services.session_service import SessionService
@@ -1860,5 +1863,946 @@ async def settings_organisation_idps_action(
     return _render(
         request,
         "settings/organisation_idps.html",
+        await _ctx(error="Unknown action."),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Branding customization
+# ---------------------------------------------------------------------------
+
+#: Regex for CSS hex color (3 or 6 digit).
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
+
+#: Branding color fields that can be updated.
+_BRANDING_COLOR_FIELDS = (
+    "primary_color",
+    "secondary_color",
+    "accent_color",
+    "background_color",
+    "surface_color",
+    "text_color",
+    "text_muted_color",
+    "error_color",
+    "success_color",
+    "border_color",
+    "warning_color",
+    "info_color",
+)
+
+
+def _branding_to_dict(branding: TenantBranding | None) -> dict[str, Any]:
+    """Convert a TenantBranding to a template-friendly dict.
+
+    Parameters
+    ----------
+    branding : TenantBranding or None
+        The branding object.
+
+    Returns
+    -------
+    dict
+        Branding fields as a dict, or empty defaults.
+    """
+    if branding is None:
+        return {
+            "logo_url": "",
+            "favicon_url": "",
+            "primary_color": "",
+            "font_family": "",
+            "custom_css": "",
+            "show_powered_by": True,
+        }
+    return {
+        "logo_url": branding.logo_url or "",
+        "favicon_url": branding.favicon_url or "",
+        "primary_color": branding.primary_color or "",
+        "secondary_color": branding.secondary_color or "",
+        "accent_color": branding.accent_color or "",
+        "background_color": branding.background_color or "",
+        "font_family": branding.font_family or "",
+        "custom_css": branding.custom_css or "",
+        "show_powered_by": branding.show_powered_by,
+    }
+
+
+@router.get("/organisations/{org_id}/branding", response_class=HTMLResponse)
+async def settings_organisation_branding(
+    request: Request, org_id: str, db: DbSession
+) -> Any:
+    """Render the branding customization page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Branding page, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/branding",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_branding.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_branding.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    branding_result = await db.execute(
+        select(TenantBranding).where(TenantBranding.tenant_id == tid)
+    )
+    branding = branding_result.scalar_one_or_none()
+
+    return _render(
+        request,
+        "settings/organisation_branding.html",
+        {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "branding": _branding_to_dict(branding),
+            "role": membership.role,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@router.post("/organisations/{org_id}/branding", response_class=HTMLResponse)
+async def settings_organisation_branding_update(
+    request: Request,
+    org_id: str,
+    db: DbSession,
+    logo_url: str = Form(""),
+    favicon_url: str = Form(""),
+    primary_color: str = Form(""),
+    secondary_color: str = Form(""),
+    accent_color: str = Form(""),
+    background_color: str = Form(""),
+    font_family: str = Form(""),
+    custom_css: str = Form(""),
+    show_powered_by: str = Form(""),
+) -> Any:
+    """Handle branding update form submission.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+    logo_url : str
+        Logo URL.
+    favicon_url : str
+        Favicon URL.
+    primary_color : str
+        Primary brand color (hex).
+    secondary_color : str
+        Secondary brand color (hex).
+    accent_color : str
+        Accent color (hex).
+    background_color : str
+        Background color (hex).
+    font_family : str
+        CSS font family.
+    custom_css : str
+        Custom CSS.
+    show_powered_by : str
+        Whether to show "Powered by" footer ("on" or empty).
+
+    Returns
+    -------
+    HTMLResponse
+        Branding page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/branding",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_branding.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_branding.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    branding_result = await db.execute(
+        select(TenantBranding).where(TenantBranding.tenant_id == tid)
+    )
+    branding = branding_result.scalar_one_or_none()
+
+    def _ctx(*, error: str | None = None, success: str | None = None) -> dict[str, Any]:
+        return {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "branding": _branding_to_dict(branding),
+            "role": membership.role,
+            "error": error,
+            "success": success,
+        }
+
+    if membership.role not in ("owner", "admin"):
+        return _render(
+            request,
+            "settings/organisation_branding.html",
+            _ctx(error="You do not have permission to update branding."),
+        )
+
+    # Validate color fields
+    for color_val, color_name in [
+        (primary_color, "primary"),
+        (secondary_color, "secondary"),
+        (accent_color, "accent"),
+        (background_color, "background"),
+    ]:
+        if color_val.strip() and not _HEX_COLOR_RE.match(color_val.strip()):
+            return _render(
+                request,
+                "settings/organisation_branding.html",
+                _ctx(
+                    error=f"Invalid {color_name} color. Use hex format (#RGB or #RRGGBB)."
+                ),
+            )
+
+    if branding is None:
+        branding = TenantBranding(tenant_id=tid)
+        db.add(branding)
+
+    branding.logo_url = logo_url.strip() or None
+    branding.favicon_url = favicon_url.strip() or None
+    branding.primary_color = primary_color.strip() or None
+    branding.secondary_color = secondary_color.strip() or None
+    branding.accent_color = accent_color.strip() or None
+    branding.background_color = background_color.strip() or None
+    branding.font_family = font_family.strip() or None
+    branding.custom_css = custom_css.strip() or None
+    branding.show_powered_by = show_powered_by == "on"
+    await db.flush()
+
+    return _render(
+        request,
+        "settings/organisation_branding.html",
+        _ctx(success="Branding updated successfully."),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Trust policies
+# ---------------------------------------------------------------------------
+
+
+@router.get("/organisations/{org_id}/trust", response_class=HTMLResponse)
+async def settings_organisation_trust(
+    request: Request, org_id: str, db: DbSession
+) -> Any:
+    """Render the trust policies page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Trust policies page, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/trust",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_trust.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_trust.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    sources_stmt = (
+        select(TenantTrustedSource)
+        .where(TenantTrustedSource.tenant_id == tid)
+        .options(selectinload(TenantTrustedSource.trusted_tenant))
+        .order_by(TenantTrustedSource.created_at)
+    )
+    sources_result = await db.execute(sources_stmt)
+    sources = [
+        {
+            "id": str(s.id),
+            "trusted_tenant_slug": s.trusted_tenant.slug,
+            "trusted_tenant_name": s.trusted_tenant.display_name,
+            "description": s.description or "",
+        }
+        for s in sources_result.scalars().all()
+    ]
+
+    return _render(
+        request,
+        "settings/organisation_trust.html",
+        {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "trust_mode": _trust_mode_str(tenant),
+            "trust_modes": [m.value for m in TenantTrustMode],
+            "sources": sources,
+            "role": membership.role,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@router.post("/organisations/{org_id}/trust", response_class=HTMLResponse)
+async def settings_organisation_trust_action(
+    request: Request,
+    org_id: str,
+    db: DbSession,
+    action: str = Form(...),
+    trust_mode: str = Form(""),
+    trusted_slug: str = Form(""),
+    description: str = Form(""),
+    source_id: str = Form(""),
+) -> Any:
+    """Handle trust policy actions (update mode, add source, remove source).
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+    action : str
+        Action: ``update_mode``, ``add_source``, or ``remove_source``.
+    trust_mode : str
+        New trust mode value (for update_mode).
+    trusted_slug : str
+        Slug of tenant to trust (for add_source).
+    description : str
+        Description of the trust relationship (for add_source).
+    source_id : str
+        UUID of the source to remove (for remove_source).
+
+    Returns
+    -------
+    HTMLResponse
+        Trust page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/trust",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_trust.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_trust.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    async def _ctx(
+        *, error: str | None = None, success: str | None = None
+    ) -> dict[str, Any]:
+        sources_stmt = (
+            select(TenantTrustedSource)
+            .where(TenantTrustedSource.tenant_id == tid)
+            .options(selectinload(TenantTrustedSource.trusted_tenant))
+            .order_by(TenantTrustedSource.created_at)
+        )
+        sources_result = await db.execute(sources_stmt)
+        sources = [
+            {
+                "id": str(s.id),
+                "trusted_tenant_slug": s.trusted_tenant.slug,
+                "trusted_tenant_name": s.trusted_tenant.display_name,
+                "description": s.description or "",
+            }
+            for s in sources_result.scalars().all()
+        ]
+        return {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "trust_mode": _trust_mode_str(tenant),
+            "trust_modes": [m.value for m in TenantTrustMode],
+            "sources": sources,
+            "role": membership.role,
+            "error": error,
+            "success": success,
+        }
+
+    if membership.role not in ("owner", "admin"):
+        return _render(
+            request,
+            "settings/organisation_trust.html",
+            await _ctx(error="You do not have permission to manage trust policies."),
+        )
+
+    if action == "update_mode":
+        try:
+            new_mode = TenantTrustMode(trust_mode)
+        except ValueError:
+            return _render(
+                request,
+                "settings/organisation_trust.html",
+                await _ctx(error=f"Invalid trust mode: {trust_mode}"),
+            )
+        tenant.trust_mode = new_mode
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_trust.html",
+            await _ctx(success=f"Trust mode updated to {new_mode.value}."),
+        )
+
+    elif action == "add_source":
+        slug = trusted_slug.strip()
+        if not slug:
+            return _render(
+                request,
+                "settings/organisation_trust.html",
+                await _ctx(error="Trusted organisation slug is required."),
+            )
+        trusted_result = await db.execute(select(Tenant).where(Tenant.slug == slug))
+        trusted_tenant = trusted_result.scalar_one_or_none()
+        if trusted_tenant is None:
+            return _render(
+                request,
+                "settings/organisation_trust.html",
+                await _ctx(error=f"Organisation '{slug}' not found."),
+            )
+        if trusted_tenant.id == tid:
+            return _render(
+                request,
+                "settings/organisation_trust.html",
+                await _ctx(error="Cannot trust your own organisation."),
+            )
+        # Check duplicate
+        dup_result = await db.execute(
+            select(TenantTrustedSource).where(
+                TenantTrustedSource.tenant_id == tid,
+                TenantTrustedSource.trusted_tenant_id == trusted_tenant.id,
+            )
+        )
+        if dup_result.scalar_one_or_none() is not None:
+            return _render(
+                request,
+                "settings/organisation_trust.html",
+                await _ctx(error=f"Organisation '{slug}' is already trusted."),
+            )
+        source = TenantTrustedSource(
+            tenant_id=tid,
+            trusted_tenant_id=trusted_tenant.id,
+            description=description.strip() or None,
+        )
+        db.add(source)
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_trust.html",
+            await _ctx(success=f"Trusted source '{slug}' added."),
+        )
+
+    elif action == "remove_source":
+        sid = _parse_uuid(source_id)
+        if sid is None:
+            return _render(
+                request,
+                "settings/organisation_trust.html",
+                await _ctx(error="Invalid source ID."),
+            )
+        source_result = await db.execute(
+            select(TenantTrustedSource).where(
+                TenantTrustedSource.id == sid, TenantTrustedSource.tenant_id == tid
+            )
+        )
+        source_obj = source_result.scalar_one_or_none()
+        if source_obj is None:
+            return _render(
+                request,
+                "settings/organisation_trust.html",
+                await _ctx(error="Trusted source not found."),
+            )
+        await db.delete(source_obj)
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_trust.html",
+            await _ctx(success="Trusted source removed."),
+        )
+
+    return _render(
+        request,
+        "settings/organisation_trust.html",
+        await _ctx(error="Unknown action."),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Email template management
+# ---------------------------------------------------------------------------
+
+
+@router.get("/organisations/{org_id}/templates", response_class=HTMLResponse)
+async def settings_organisation_templates(
+    request: Request, org_id: str, db: DbSession
+) -> Any:
+    """Render the email template management page.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Templates page, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/templates",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_templates.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_templates.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    tmpl_stmt = (
+        select(TenantTemplate)
+        .where(TenantTemplate.tenant_id == tid)
+        .order_by(TenantTemplate.template_name)
+    )
+    tmpl_result = await db.execute(tmpl_stmt)
+    templates_list = [
+        {
+            "id": str(t.id),
+            "template_name": t.template_name,
+            "description": t.description or "",
+            "is_active": t.is_active,
+        }
+        for t in tmpl_result.scalars().all()
+    ]
+
+    return _render(
+        request,
+        "settings/organisation_templates.html",
+        {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "templates": templates_list,
+            "role": membership.role,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@router.post("/organisations/{org_id}/templates", response_class=HTMLResponse)
+async def settings_organisation_templates_action(
+    request: Request,
+    org_id: str,
+    db: DbSession,
+    action: str = Form(...),
+    template_name: str = Form(""),
+    content: str = Form(""),
+    description: str = Form(""),
+    template_id: str = Form(""),
+) -> Any:
+    """Handle template management actions (create, update, toggle, delete).
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    org_id : str
+        UUID of the organisation.
+    db : DbSession
+        Database session.
+    action : str
+        Action: ``create``, ``update``, ``toggle``, or ``delete``.
+    template_name : str
+        Template path (for create).
+    content : str
+        Template content (for create/update).
+    description : str
+        Description (for create/update).
+    template_id : str
+        UUID of the template (for update/toggle/delete).
+
+    Returns
+    -------
+    HTMLResponse
+        Templates page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url=f"/ui/login?next=/ui/settings/organisations/{org_id}/templates",
+            status_code=302,
+        )
+
+    _, user = auth
+
+    tid = _parse_uuid(org_id)
+    if tid is None:
+        return _render(
+            request,
+            "settings/organisation_templates.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Invalid organisation ID.",
+            },
+        )
+
+    result = await _get_membership(db, user.id, tid)
+    if result is None:
+        return _render(
+            request,
+            "settings/organisation_templates.html",
+            {
+                "user": user,
+                "section": "organisations",
+                "error": "Organisation not found.",
+            },
+        )
+
+    membership, tenant = result
+
+    async def _ctx(
+        *, error: str | None = None, success: str | None = None
+    ) -> dict[str, Any]:
+        tmpl_stmt = (
+            select(TenantTemplate)
+            .where(TenantTemplate.tenant_id == tid)
+            .order_by(TenantTemplate.template_name)
+        )
+        tmpl_result = await db.execute(tmpl_stmt)
+        templates_list = [
+            {
+                "id": str(t.id),
+                "template_name": t.template_name,
+                "description": t.description or "",
+                "is_active": t.is_active,
+            }
+            for t in tmpl_result.scalars().all()
+        ]
+        return {
+            "user": user,
+            "section": "organisations",
+            "org": {
+                "id": str(tenant.id),
+                "slug": tenant.slug,
+                "display_name": tenant.display_name,
+            },
+            "templates": templates_list,
+            "role": membership.role,
+            "error": error,
+            "success": success,
+        }
+
+    if membership.role not in ("owner", "admin"):
+        return _render(
+            request,
+            "settings/organisation_templates.html",
+            await _ctx(error="You do not have permission to manage templates."),
+        )
+
+    if action == "create":
+        name = template_name.strip()
+        if not name:
+            return _render(
+                request,
+                "settings/organisation_templates.html",
+                await _ctx(error="Template name is required."),
+            )
+        if not content.strip():
+            return _render(
+                request,
+                "settings/organisation_templates.html",
+                await _ctx(error="Template content is required."),
+            )
+        # Check duplicate
+        dup_result = await db.execute(
+            select(TenantTemplate).where(
+                TenantTemplate.tenant_id == tid,
+                TenantTemplate.template_name == name,
+            )
+        )
+        if dup_result.scalar_one_or_none() is not None:
+            return _render(
+                request,
+                "settings/organisation_templates.html",
+                await _ctx(error=f"Template '{name}' already exists."),
+            )
+        tmpl = TenantTemplate(
+            tenant_id=tid,
+            template_name=name,
+            content=content.strip(),
+            description=description.strip() or None,
+        )
+        db.add(tmpl)
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_templates.html",
+            await _ctx(success=f"Template '{name}' created."),
+        )
+
+    elif action == "update":
+        tmpl_id = _parse_uuid(template_id)
+        if tmpl_id is None:
+            return _render(
+                request,
+                "settings/organisation_templates.html",
+                await _ctx(error="Invalid template ID."),
+            )
+        update_result = await db.execute(
+            select(TenantTemplate).where(
+                TenantTemplate.id == tmpl_id, TenantTemplate.tenant_id == tid
+            )
+        )
+        update_tmpl = update_result.scalar_one_or_none()
+        if update_tmpl is None:
+            return _render(
+                request,
+                "settings/organisation_templates.html",
+                await _ctx(error="Template not found."),
+            )
+        if content.strip():
+            update_tmpl.content = content.strip()
+        if description.strip():
+            update_tmpl.description = description.strip()
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_templates.html",
+            await _ctx(success=f"Template '{update_tmpl.template_name}' updated."),
+        )
+
+    elif action == "toggle":
+        tmpl_id = _parse_uuid(template_id)
+        if tmpl_id is None:
+            return _render(
+                request,
+                "settings/organisation_templates.html",
+                await _ctx(error="Invalid template ID."),
+            )
+        toggle_result = await db.execute(
+            select(TenantTemplate).where(
+                TenantTemplate.id == tmpl_id, TenantTemplate.tenant_id == tid
+            )
+        )
+        toggle_tmpl = toggle_result.scalar_one_or_none()
+        if toggle_tmpl is None:
+            return _render(
+                request,
+                "settings/organisation_templates.html",
+                await _ctx(error="Template not found."),
+            )
+        toggle_tmpl.is_active = not toggle_tmpl.is_active
+        await db.flush()
+        state = "enabled" if toggle_tmpl.is_active else "disabled"
+        return _render(
+            request,
+            "settings/organisation_templates.html",
+            await _ctx(success=f"Template '{toggle_tmpl.template_name}' {state}."),
+        )
+
+    elif action == "delete":
+        tmpl_id = _parse_uuid(template_id)
+        if tmpl_id is None:
+            return _render(
+                request,
+                "settings/organisation_templates.html",
+                await _ctx(error="Invalid template ID."),
+            )
+        delete_result = await db.execute(
+            select(TenantTemplate).where(
+                TenantTemplate.id == tmpl_id, TenantTemplate.tenant_id == tid
+            )
+        )
+        delete_tmpl = delete_result.scalar_one_or_none()
+        if delete_tmpl is None:
+            return _render(
+                request,
+                "settings/organisation_templates.html",
+                await _ctx(error="Template not found."),
+            )
+        await db.delete(delete_tmpl)
+        await db.flush()
+        return _render(
+            request,
+            "settings/organisation_templates.html",
+            await _ctx(success="Template deleted."),
+        )
+
+    return _render(
+        request,
+        "settings/organisation_templates.html",
         await _ctx(error="Unknown action."),
     )
