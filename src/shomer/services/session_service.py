@@ -167,6 +167,32 @@ class SessionService:
         rc: int = getattr(result, "rowcount", 0) or 0
         return rc
 
+    async def delete_all_for_user_except(
+        self, user_id: uuid.UUID, exclude_session_id: uuid.UUID
+    ) -> int:
+        """Delete all sessions for a user except the specified one.
+
+        Parameters
+        ----------
+        user_id : uuid.UUID
+            User whose sessions should be deleted.
+        exclude_session_id : uuid.UUID
+            Session ID to keep (typically the current session).
+
+        Returns
+        -------
+        int
+            Number of sessions deleted.
+        """
+        stmt = delete(Session).where(
+            Session.user_id == user_id,
+            Session.id != exclude_session_id,
+        )
+        result = await self.db.execute(stmt)
+        await self.db.flush()
+        rc: int = getattr(result, "rowcount", 0) or 0
+        return rc
+
     async def list_active(self, user_id: uuid.UUID) -> list[Session]:
         """List all active (non-expired) sessions for a user.
 

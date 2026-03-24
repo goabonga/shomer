@@ -18,6 +18,7 @@ from shomer.routes.settings_ui import (
     settings_profile,
     settings_profile_avatar,
     settings_profile_update,
+    settings_revoke_all_sessions,
     settings_revoke_session,
     settings_security,
 )
@@ -878,5 +879,49 @@ class TestSettingsRevokeSession:
             )
             assert resp.status_code == 303
             mock_svc.delete.assert_not_called()
+
+        asyncio.run(_run())
+
+
+class TestSettingsRevokeAllSessions:
+    """Tests for POST /ui/settings/sessions/revoke-all."""
+
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """Unauthenticated request redirects to login."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_revoke_all_sessions(_req(), AsyncMock())
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui.SessionService")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_revokes_all_except_current(
+        self, mock_auth: AsyncMock, mock_svc_cls: MagicMock
+    ) -> None:
+        """Deletes all sessions except the current one."""
+
+        async def _run() -> None:
+            current_id = uuid.uuid4()
+            mock_session = MagicMock()
+            mock_session.id = current_id
+            mock_user = _mock_user()
+            mock_auth.return_value = (mock_session, mock_user)
+
+            mock_svc = AsyncMock()
+            mock_svc.delete_all_for_user_except.return_value = 3
+            mock_svc_cls.return_value = mock_svc
+
+            resp = await settings_revoke_all_sessions(
+                _req({"session_id": "tok"}), AsyncMock()
+            )
+            assert resp.status_code == 303
+            mock_svc.delete_all_for_user_except.assert_awaited_once_with(
+                mock_user.id, current_id
+            )
 
         asyncio.run(_run())

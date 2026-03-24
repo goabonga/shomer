@@ -235,6 +235,44 @@ class TestDeleteAllForUser:
         asyncio.run(_run())
 
 
+class TestDeleteAllForUserExcept:
+    """Tests for SessionService.delete_all_for_user_except()."""
+
+    def test_deletes_all_except_current(self) -> None:
+        """Returns the count of deleted sessions excluding the given one."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            db.flush = AsyncMock()
+
+            mock_result = MagicMock()
+            mock_result.rowcount = 2
+            db.execute.return_value = mock_result
+
+            svc = SessionService(db)
+            count = await svc.delete_all_for_user_except(uuid.uuid4(), uuid.uuid4())
+            assert count == 2
+
+        asyncio.run(_run())
+
+    def test_returns_zero_when_only_current(self) -> None:
+        """Returns 0 when the user has only the excluded session."""
+
+        async def _run() -> None:
+            db = AsyncMock()
+            db.flush = AsyncMock()
+
+            mock_result = MagicMock()
+            mock_result.rowcount = 0
+            db.execute.return_value = mock_result
+
+            svc = SessionService(db)
+            count = await svc.delete_all_for_user_except(uuid.uuid4(), uuid.uuid4())
+            assert count == 0
+
+        asyncio.run(_run())
+
+
 class TestListActive:
     """Tests for SessionService.list_active()."""
 

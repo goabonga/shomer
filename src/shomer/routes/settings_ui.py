@@ -663,3 +663,35 @@ async def settings_revoke_session(
         await svc.delete(session_id)
 
     return RedirectResponse(url="/ui/settings/security", status_code=303)
+
+
+@router.post("/sessions/revoke-all", response_class=HTMLResponse)
+async def settings_revoke_all_sessions(
+    request: Request,
+    db: DbSession,
+) -> Any:
+    """Revoke all sessions except the current one.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+
+    Returns
+    -------
+    HTMLResponse
+        Redirect to security settings page.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url="/ui/login?next=/ui/settings/security", status_code=302
+        )
+
+    current_session, user = auth
+    svc = SessionService(db)
+    await svc.delete_all_for_user_except(user.id, current_session.id)
+
+    return RedirectResponse(url="/ui/settings/security", status_code=303)
