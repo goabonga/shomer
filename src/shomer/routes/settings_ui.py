@@ -9,14 +9,17 @@ Requires session authentication.
 
 from __future__ import annotations
 
+import uuid as uuid_mod
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
+from shomer.core.settings import get_settings
 from shomer.deps import DbSession
 from shomer.models.personal_access_token import PersonalAccessToken
 from shomer.models.session import Session
@@ -25,6 +28,15 @@ from shomer.models.user_profile import UserProfile
 from shomer.services.session_service import SessionService
 
 router = APIRouter(prefix="/ui/settings", tags=["ui"], include_in_schema=False)
+
+_ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_AVATAR_EXT: dict[str, str] = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+_MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 def _templates() -> Jinja2Templates:
@@ -373,6 +385,141 @@ async def settings_profile_update(
             "success": "Profile updated successfully.",
             "error": None,
         },
+    )
+
+
+def _build_profile_ctx(
+    user: Any,
+    *,
+    profile: Any | None = None,
+    success: str | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Build template context for the profile settings page.
+
+    Parameters
+    ----------
+    user : User
+        The authenticated user.
+    profile : UserProfile or None
+        Explicit profile to use. Defaults to ``user.profile``.
+    success : str or None
+        Success flash message.
+    error : str or None
+        Error flash message.
+
+    Returns
+    -------
+    dict
+        Template context dictionary.
+    """
+    if profile is None:
+        profile = user.profile
+    primary_email = next(
+        (e.email for e in user.emails if e.is_primary),
+        user.emails[0].email if user.emails else None,
+    )
+    return {
+        "user": user,
+        "profile": profile,
+        "email": primary_email,
+        "section": "profile",
+        "success": success,
+        "error": error,
+    }
+
+
+@router.post("/profile/avatar", response_class=HTMLResponse)
+async def settings_profile_avatar(
+    request: Request,
+    db: DbSession,
+    avatar: UploadFile = File(...),
+) -> Any:
+    """Handle avatar file upload and update profile picture.
+
+    Validates file type (JPEG, PNG, GIF, WebP) and size (max 5 MB),
+    saves the file to the configured upload directory, and updates
+    the user's ``picture_url``.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+    avatar : UploadFile
+        Uploaded avatar image file.
+
+    Returns
+    -------
+    HTMLResponse
+        Profile page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url="/ui/login?next=/ui/settings/profile", status_code=302
+        )
+
+    _, user = auth
+
+    # Validate content type
+    content_type = avatar.content_type or ""
+    if content_type not in _ALLOWED_AVATAR_TYPES:
+        return _render(
+            request,
+            "settings/profile.html",
+            _build_profile_ctx(
+                user, error="Invalid file type. Use JPEG, PNG, GIF, or WebP."
+            ),
+        )
+
+    # Read and validate size
+    data = await avatar.read()
+    if len(data) == 0:
+        return _render(
+            request,
+            "settings/profile.html",
+            _build_profile_ctx(user, error="File is empty."),
+        )
+
+    if len(data) > _MAX_AVATAR_SIZE:
+        return _render(
+            request,
+            "settings/profile.html",
+            _build_profile_ctx(user, error="File too large. Maximum size is 5 MB."),
+        )
+
+    # Determine file extension and generate unique filename
+    ext = _AVATAR_EXT[content_type]
+    filename = f"{uuid_mod.uuid4().hex}{ext}"
+
+    # Save file to upload directory
+    upload_dir = Path(get_settings().avatar_upload_dir) / str(user.id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # Remove previous avatar files
+    for old_file in upload_dir.iterdir():
+        if old_file.is_file():
+            old_file.unlink()
+
+    (upload_dir / filename).write_bytes(data)
+
+    # Update or create profile
+    profile = user.profile
+    if profile is None:
+        profile = UserProfile(user_id=user.id)
+        db.add(profile)
+
+    profile.picture_url = f"/uploads/avatars/{user.id}/{filename}"
+    await db.flush()
+
+    return _render(
+        request,
+        "settings/profile.html",
+        _build_profile_ctx(
+            user, profile=profile, success="Avatar updated successfully."
+        ),
     )
 
 

@@ -19,6 +19,27 @@
 <div class="flash-success">{{ success }}</div>
 {% endif %}
 
+<!-- Avatar Section -->
+<div class="avatar-section">
+    <div class="avatar-area">
+        {% if profile and profile.picture_url %}
+        <img src="{{ profile.picture_url }}" alt="Profile avatar" class="avatar-img">
+        {% else %}
+        <div class="avatar-fallback">
+            {{ (profile.given_name[0] if profile and profile.given_name else user.username[0] if user and user.username else '?') | upper }}
+        </div>
+        {% endif %}
+        <form method="post" action="/ui/settings/profile/avatar" enctype="multipart/form-data" class="avatar-upload-form">
+            <div class="form-group">
+                <label for="avatar">Upload avatar</label>
+                <input type="file" id="avatar" name="avatar" accept="image/jpeg,image/png,image/gif,image/webp">
+                <p class="hint">JPEG, PNG, GIF, or WebP. Max 5 MB.</p>
+            </div>
+            <button type="submit" class="btn-upload">Upload</button>
+        </form>
+    </div>
+</div>
+
 <form method="post" action="/ui/settings/profile">
     <div class="form-group">
         <label for="email">Email</label>
@@ -115,17 +136,7 @@
         </div>
     </details>
 
-    <!-- Picture URL Section (Collapsible) -->
-    <details class="optional-section">
-        <summary>Picture URL (Optional)</summary>
-        <div class="section-content">
-            <div class="form-group">
-                <label for="picture_url">Profile picture URL</label>
-                <input type="text" id="picture_url" name="picture_url" value="{{ profile.picture_url or '' if profile else '' }}" placeholder="https://example.com/avatar.jpg">
-                <p class="hint">Use an external image URL for your profile picture.</p>
-            </div>
-        </div>
-    </details>
+    <input type="hidden" name="picture_url" value="{{ profile.picture_url or '' if profile else '' }}">
 
     <!-- Address Section (Collapsible) -->
     <details class="optional-section">
@@ -183,6 +194,12 @@
     .optional-section summary:hover { background: #f9f9f9; }
     .optional-section[open] summary { border-bottom: 1px solid #ddd; }
     .optional-section .section-content { padding: 14px 20px; }
+    .avatar-section { margin-bottom: 20px; padding: 16px 20px; border: 1px solid #ddd; border-radius: 4px; }
+    .avatar-area { display: flex; align-items: center; gap: 20px; }
+    .avatar-img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #ddd; }
+    .avatar-fallback { width: 80px; height: 80px; border-radius: 50%; background: #333; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 600; flex-shrink: 0; }
+    .avatar-upload-form { display: flex; align-items: flex-end; gap: 12px; }
+    .btn-upload { padding: 6px 16px; white-space: nowrap; }
     .btn-save { margin-top: 16px; padding: 8px 24px; }
     .flash-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; }
     .flash-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; }

@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from shomer.routes.settings_ui import (
+    _build_profile_ctx,
     _get_session_user,
     settings_emails,
     settings_index,
     settings_profile,
+    settings_profile_avatar,
     settings_profile_update,
     settings_security,
 )
@@ -517,5 +520,253 @@ class TestSettingsIndex:
             await settings_index(_req({"session_id": "tok"}), db)
             ctx = mock_render.call_args[0][2]
             assert ctx["completeness"] == 100
+
+        asyncio.run(_run())
+
+
+def _mock_upload(
+    content: bytes = b"\x89PNG\r\n",
+    content_type: str | None = "image/png",
+    filename: str = "avatar.png",
+) -> AsyncMock:
+    """Create a mock UploadFile."""
+    f = AsyncMock()
+    f.filename = filename
+    f.content_type = content_type
+    f.read.return_value = content
+    return f
+
+
+class TestBuildProfileCtx:
+    """Tests for _build_profile_ctx helper."""
+
+    def test_uses_user_profile_by_default(self) -> None:
+        user = _mock_user()
+        ctx = _build_profile_ctx(user)
+        assert ctx["profile"] is user.profile
+        assert ctx["email"] == "test@example.com"
+        assert ctx["section"] == "profile"
+        assert ctx["success"] is None
+        assert ctx["error"] is None
+
+    def test_explicit_profile_overrides(self) -> None:
+        user = _mock_user()
+        new_profile = MagicMock()
+        ctx = _build_profile_ctx(user, profile=new_profile, success="ok")
+        assert ctx["profile"] is new_profile
+        assert ctx["success"] == "ok"
+
+
+class TestSettingsProfileAvatar:
+    """Tests for POST /ui/settings/profile/avatar."""
+
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
+        """POST without session redirects to login."""
+
+        async def _run() -> None:
+            mock_auth.return_value = None
+            resp = await settings_profile_avatar(_req(), AsyncMock(), _mock_upload())
+            assert resp.status_code == 302
+            assert "/ui/login" in resp.headers["location"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_invalid_content_type(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """Rejects file with unsupported content type."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            upload = _mock_upload(content_type="application/pdf")
+            await settings_profile_avatar(
+                _req({"session_id": "tok"}), AsyncMock(), upload
+            )
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid file type" in ctx["error"]
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_empty_file(self, mock_auth: AsyncMock, mock_render: MagicMock) -> None:
+        """Rejects empty file upload."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            upload = _mock_upload(content=b"")
+            await settings_profile_avatar(
+                _req({"session_id": "tok"}), AsyncMock(), upload
+            )
+            ctx = mock_render.call_args[0][2]
+            assert "empty" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_file_too_large(self, mock_auth: AsyncMock, mock_render: MagicMock) -> None:
+        """Rejects file exceeding 5 MB."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            big_data = b"x" * (5 * 1024 * 1024 + 1)
+            upload = _mock_upload(content=big_data)
+            await settings_profile_avatar(
+                _req({"session_id": "tok"}), AsyncMock(), upload
+            )
+            ctx = mock_render.call_args[0][2]
+            assert "too large" in ctx["error"].lower()
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui.get_settings")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_successful_upload(
+        self,
+        mock_auth: AsyncMock,
+        mock_settings: MagicMock,
+        mock_render: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Successful upload saves file and updates picture_url."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_profile = MagicMock()
+            mock_user.profile = mock_profile
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+            mock_settings.return_value = MagicMock(avatar_upload_dir=str(tmp_path))
+
+            upload = _mock_upload(content=b"\x89PNG\r\nfakeimage")
+            db = AsyncMock()
+            await settings_profile_avatar(_req({"session_id": "tok"}), db, upload)
+
+            # Verify file was written
+            user_dir = tmp_path / str(mock_user.id)
+            assert user_dir.exists()
+            files = list(user_dir.iterdir())
+            assert len(files) == 1
+            assert files[0].suffix == ".png"
+            assert files[0].read_bytes() == b"\x89PNG\r\nfakeimage"
+
+            # Verify profile was updated
+            assert mock_profile.picture_url.startswith(
+                f"/uploads/avatars/{mock_user.id}/"
+            )
+            assert mock_profile.picture_url.endswith(".png")
+            db.flush.assert_awaited_once()
+
+            ctx = mock_render.call_args[0][2]
+            assert ctx["success"] == "Avatar updated successfully."
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui.UserProfile")
+    @patch("shomer.routes.settings_ui.get_settings")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_creates_profile_if_none(
+        self,
+        mock_auth: AsyncMock,
+        mock_settings: MagicMock,
+        mock_up_cls: MagicMock,
+        mock_render: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Creates UserProfile when user has no profile."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_user.profile = None
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+            mock_settings.return_value = MagicMock(avatar_upload_dir=str(tmp_path))
+
+            new_profile = MagicMock()
+            mock_up_cls.return_value = new_profile
+
+            upload = _mock_upload(
+                content=b"\xff\xd8\xff\xe0",
+                content_type="image/jpeg",
+            )
+            db = AsyncMock()
+            await settings_profile_avatar(_req({"session_id": "tok"}), db, upload)
+
+            db.add.assert_called_once_with(new_profile)
+            db.flush.assert_awaited_once()
+            assert new_profile.picture_url.endswith(".jpg")
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui.get_settings")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_removes_old_avatar(
+        self,
+        mock_auth: AsyncMock,
+        mock_settings: MagicMock,
+        mock_render: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Uploading a new avatar removes the previous file."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_user.profile = MagicMock()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+            mock_settings.return_value = MagicMock(avatar_upload_dir=str(tmp_path))
+
+            # Pre-create an existing avatar file
+            user_dir = tmp_path / str(mock_user.id)
+            user_dir.mkdir(parents=True)
+            old_file = user_dir / "old_avatar.png"
+            old_file.write_bytes(b"old")
+
+            upload = _mock_upload(content=b"newimage")
+            await settings_profile_avatar(
+                _req({"session_id": "tok"}), AsyncMock(), upload
+            )
+
+            files = list(user_dir.iterdir())
+            assert len(files) == 1
+            assert files[0].name != "old_avatar.png"
+            assert files[0].read_bytes() == b"newimage"
+
+        asyncio.run(_run())
+
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_none_content_type_rejected(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
+    ) -> None:
+        """File with None content_type is rejected."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            upload = _mock_upload(content_type=None)
+            await settings_profile_avatar(
+                _req({"session_id": "tok"}), AsyncMock(), upload
+            )
+            ctx = mock_render.call_args[0][2]
+            assert "Invalid file type" in ctx["error"]
 
         asyncio.run(_run())

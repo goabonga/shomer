@@ -50,6 +50,14 @@ def create_app() -> FastAPI:
         name="static",
     )
 
+    avatar_dir = Path(settings.avatar_upload_dir)
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    application.mount(
+        "/uploads/avatars",
+        StaticFiles(directory=str(avatar_dir)),
+        name="avatars",
+    )
+
     from shomer.middleware.cors import setup_cors
     from shomer.middleware.session import SessionMiddleware
     from shomer.routes.admin_clients import router as admin_clients_router
