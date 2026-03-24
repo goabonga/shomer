@@ -27,6 +27,7 @@ from shomer.deps import DbSession
 from shomer.models.personal_access_token import PersonalAccessToken
 from shomer.models.session import Session
 from shomer.models.user import User
+from shomer.models.user_email import UserEmail
 from shomer.models.user_profile import UserProfile
 from shomer.services.session_service import SessionService
 
@@ -557,6 +558,114 @@ async def settings_emails(request: Request, db: DbSession) -> Any:
             "user": user,
             "emails": user.emails,
             "section": "emails",
+            "success": None,
+            "error": None,
+        },
+    )
+
+
+@router.post("/emails", response_class=HTMLResponse)
+async def settings_emails_add(
+    request: Request,
+    db: DbSession,
+    action: str = Form("add"),
+    email: str = Form(""),
+) -> Any:
+    """Handle email addition form submission.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    db : DbSession
+        Database session.
+    action : str
+        Form action (``add``).
+    email : str
+        Email address to add.
+
+    Returns
+    -------
+    HTMLResponse
+        Email settings page with success/error message, or redirect to login.
+    """
+    auth = await _get_session_user(request, db)
+    if auth is None:
+        return RedirectResponse(
+            url="/ui/login?next=/ui/settings/emails", status_code=302
+        )
+
+    _, user = auth
+    error = None
+    success = None
+
+    if action == "add":
+        email = email.strip().lower()
+        if not email:
+            error = "Email address is required."
+        else:
+            # Check if email already exists
+            existing = await db.execute(
+                select(UserEmail).where(UserEmail.email == email)
+            )
+            if existing.scalar_one_or_none() is not None:
+                error = "Email already registered."
+            else:
+                new_email = UserEmail(
+                    user_id=user.id,
+                    email=email,
+                    is_primary=False,
+                    is_verified=False,
+                )
+                db.add(new_email)
+                await db.flush()
+
+                # Trigger verification email
+                from shomer.services.auth_service import AuthService
+
+                svc = AuthService(db)
+                code = svc._generate_code()
+
+                from datetime import datetime, timedelta, timezone
+
+                from shomer.models.verification_code import VerificationCode
+
+                vc = VerificationCode(
+                    email=email,
+                    code=code,
+                    expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+                )
+                db.add(vc)
+                await db.flush()
+
+                from shomer.tasks.email import send_email_task
+
+                send_email_task.delay(
+                    to=email,
+                    subject="Verify your email",
+                    template="verification.html",
+                    context={"code": code},
+                )
+                success = "Email added. Check your inbox for verification."
+
+    # Re-load user with emails
+    stmt = (
+        select(User)
+        .where(User.id == user.id)
+        .options(selectinload(User.profile), selectinload(User.emails))
+    )
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none() or user
+
+    return _render(
+        request,
+        "settings/emails.html",
+        {
+            "user": user,
+            "emails": user.emails,
+            "section": "emails",
+            "success": success,
+            "error": error,
         },
     )
 

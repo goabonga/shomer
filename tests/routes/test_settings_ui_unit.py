@@ -7,19 +7,14 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from shomer.routes.settings_ui import (
-    _build_profile_ctx,
     _get_session_user,
     settings_emails,
-    settings_index,
+    settings_emails_add,
     settings_profile,
-    settings_profile_avatar,
     settings_profile_update,
-    settings_revoke_all_sessions,
-    settings_revoke_session,
     settings_security,
 )
 
@@ -159,57 +154,46 @@ class TestSettingsSecurity:
 
         asyncio.run(_run())
 
-    @patch("shomer.routes.settings_ui.SessionService")
     @patch("shomer.routes.settings_ui._render")
     @patch("shomer.routes.settings_ui._get_session_user")
     def test_authenticated_renders_page(
-        self, mock_auth: AsyncMock, mock_render: MagicMock, mock_svc_cls: MagicMock
+        self, mock_auth: AsyncMock, mock_render: MagicMock
     ) -> None:
         async def _run() -> None:
             mock_user = _mock_user()
             mock_session = MagicMock()
-            mock_session.id = uuid.uuid4()
             mock_auth.return_value = (mock_session, mock_user)
 
-            sessions_list = [MagicMock(), MagicMock()]
-            mock_svc = AsyncMock()
-            mock_svc.list_active.return_value = sessions_list
-            mock_svc_cls.return_value = mock_svc
-
+            count_result = MagicMock()
+            count_result.scalar.return_value = 2
             mfa_result = MagicMock()
             mfa_result.scalar_one_or_none.return_value = None
 
             db = AsyncMock()
-            db.execute.return_value = mfa_result
+            db.execute.side_effect = [count_result, mfa_result]
 
             mock_render.return_value = "html"
             await settings_security(_req({"session_id": "tok"}), db)
             ctx = mock_render.call_args[0][2]
             assert ctx["section"] == "security"
-            assert ctx["sessions"] == sessions_list
             assert ctx["active_sessions"] == 2
-            assert ctx["current_session_id"] == str(mock_session.id)
             assert ctx["mfa_enabled"] is False
             assert ctx["mfa_methods"] == []
 
         asyncio.run(_run())
 
-    @patch("shomer.routes.settings_ui.SessionService")
     @patch("shomer.routes.settings_ui._render")
     @patch("shomer.routes.settings_ui._get_session_user")
     def test_mfa_enabled_shows_in_context(
-        self, mock_auth: AsyncMock, mock_render: MagicMock, mock_svc_cls: MagicMock
+        self, mock_auth: AsyncMock, mock_render: MagicMock
     ) -> None:
         async def _run() -> None:
             mock_user = _mock_user()
             mock_session = MagicMock()
-            mock_session.id = uuid.uuid4()
             mock_auth.return_value = (mock_session, mock_user)
 
-            mock_svc = AsyncMock()
-            mock_svc.list_active.return_value = [MagicMock()]
-            mock_svc_cls.return_value = mock_svc
-
+            count_result = MagicMock()
+            count_result.scalar.return_value = 1
             mock_mfa = MagicMock()
             mock_mfa.is_enabled = True
             mock_mfa.methods = ["totp", "backup"]
@@ -217,7 +201,7 @@ class TestSettingsSecurity:
             mfa_result.scalar_one_or_none.return_value = mock_mfa
 
             db = AsyncMock()
-            db.execute.return_value = mfa_result
+            db.execute.side_effect = [count_result, mfa_result]
 
             mock_render.return_value = "html"
             await settings_security(_req({"session_id": "tok"}), db)
@@ -375,203 +359,8 @@ class TestSettingsProfileUpdate:
         asyncio.run(_run())
 
 
-class TestSettingsIndex:
-    """Tests for GET /ui/settings (index/dashboard)."""
-
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
-        """Unauthenticated request redirects to login."""
-
-        async def _run() -> None:
-            mock_auth.return_value = None
-            resp = await settings_index(_req(), AsyncMock())
-            assert resp.status_code == 302
-            assert "/ui/login" in resp.headers["location"]
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._render")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_authenticated_renders_overview(
-        self, mock_auth: AsyncMock, mock_render: MagicMock
-    ) -> None:
-        """Authenticated request renders the index page with all stats."""
-
-        async def _run() -> None:
-            mock_user = _mock_user()
-            # Profile with some fields filled
-            mock_profile = MagicMock()
-            mock_profile.nickname = "Jo"
-            mock_profile.given_name = "John"
-            mock_profile.family_name = "Doe"
-            mock_profile.picture_url = None
-            mock_profile.phone_number = None
-            mock_profile.locale = None
-            mock_profile.zoneinfo = None
-            mock_user.profile = mock_profile
-            mock_auth.return_value = (MagicMock(), mock_user)
-
-            # db.execute returns: mfa_result, sessions_result, pat_result
-            mfa_result = MagicMock()
-            mfa_result.scalar_one_or_none.return_value = None
-            sessions_result = MagicMock()
-            sessions_result.scalar.return_value = 3
-            pat_result = MagicMock()
-            pat_result.scalar.return_value = 2
-
-            db = AsyncMock()
-            db.execute.side_effect = [mfa_result, sessions_result, pat_result]
-
-            mock_render.return_value = "html"
-            await settings_index(_req({"session_id": "tok"}), db)
-            ctx = mock_render.call_args[0][2]
-            assert ctx["section"] == "overview"
-            assert ctx["completeness"] == 43  # 3/7 = 42.86 → 43
-            assert ctx["has_verified_email"] is True
-            assert ctx["mfa_enabled"] is False
-            assert ctx["active_sessions"] == 3
-            assert ctx["active_pats"] == 2
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._render")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_no_profile_shows_zero_completeness(
-        self, mock_auth: AsyncMock, mock_render: MagicMock
-    ) -> None:
-        """User with no profile shows 0% completeness."""
-
-        async def _run() -> None:
-            mock_user = _mock_user()
-            mock_user.profile = None
-            # Unverified email
-            mock_user.emails[0].is_verified = False
-            mock_auth.return_value = (MagicMock(), mock_user)
-
-            mfa_result = MagicMock()
-            mfa_result.scalar_one_or_none.return_value = None
-            sessions_result = MagicMock()
-            sessions_result.scalar.return_value = 0
-            pat_result = MagicMock()
-            pat_result.scalar.return_value = 0
-
-            db = AsyncMock()
-            db.execute.side_effect = [mfa_result, sessions_result, pat_result]
-
-            mock_render.return_value = "html"
-            await settings_index(_req({"session_id": "tok"}), db)
-            ctx = mock_render.call_args[0][2]
-            assert ctx["completeness"] == 0
-            assert ctx["has_verified_email"] is False
-            assert ctx["active_sessions"] == 0
-            assert ctx["active_pats"] == 0
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._render")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_mfa_enabled_shows_in_context(
-        self, mock_auth: AsyncMock, mock_render: MagicMock
-    ) -> None:
-        """MFA enabled status is reflected in context."""
-
-        async def _run() -> None:
-            mock_user = _mock_user()
-            mock_user.profile = None
-            mock_auth.return_value = (MagicMock(), mock_user)
-
-            mock_mfa = MagicMock()
-            mock_mfa.is_enabled = True
-            mfa_result = MagicMock()
-            mfa_result.scalar_one_or_none.return_value = mock_mfa
-            sessions_result = MagicMock()
-            sessions_result.scalar.return_value = 1
-            pat_result = MagicMock()
-            pat_result.scalar.return_value = 0
-
-            db = AsyncMock()
-            db.execute.side_effect = [mfa_result, sessions_result, pat_result]
-
-            mock_render.return_value = "html"
-            await settings_index(_req({"session_id": "tok"}), db)
-            ctx = mock_render.call_args[0][2]
-            assert ctx["mfa_enabled"] is True
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._render")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_full_profile_shows_100_completeness(
-        self, mock_auth: AsyncMock, mock_render: MagicMock
-    ) -> None:
-        """User with all profile fields filled shows 100% completeness."""
-
-        async def _run() -> None:
-            mock_user = _mock_user()
-            mock_profile = MagicMock()
-            mock_profile.nickname = "Jo"
-            mock_profile.given_name = "John"
-            mock_profile.family_name = "Doe"
-            mock_profile.picture_url = "https://example.com/pic.jpg"
-            mock_profile.phone_number = "+33612345678"
-            mock_profile.locale = "fr-FR"
-            mock_profile.zoneinfo = "Europe/Paris"
-            mock_user.profile = mock_profile
-            mock_auth.return_value = (MagicMock(), mock_user)
-
-            mfa_result = MagicMock()
-            mfa_result.scalar_one_or_none.return_value = None
-            sessions_result = MagicMock()
-            sessions_result.scalar.return_value = 1
-            pat_result = MagicMock()
-            pat_result.scalar.return_value = 0
-
-            db = AsyncMock()
-            db.execute.side_effect = [mfa_result, sessions_result, pat_result]
-
-            mock_render.return_value = "html"
-            await settings_index(_req({"session_id": "tok"}), db)
-            ctx = mock_render.call_args[0][2]
-            assert ctx["completeness"] == 100
-
-        asyncio.run(_run())
-
-
-def _mock_upload(
-    content: bytes = b"\x89PNG\r\n",
-    content_type: str | None = "image/png",
-    filename: str = "avatar.png",
-) -> AsyncMock:
-    """Create a mock UploadFile."""
-    f = AsyncMock()
-    f.filename = filename
-    f.content_type = content_type
-    f.read.return_value = content
-    return f
-
-
-class TestBuildProfileCtx:
-    """Tests for _build_profile_ctx helper."""
-
-    def test_uses_user_profile_by_default(self) -> None:
-        user = _mock_user()
-        ctx = _build_profile_ctx(user)
-        assert ctx["profile"] is user.profile
-        assert ctx["email"] == "test@example.com"
-        assert ctx["section"] == "profile"
-        assert ctx["success"] is None
-        assert ctx["error"] is None
-
-    def test_explicit_profile_overrides(self) -> None:
-        user = _mock_user()
-        new_profile = MagicMock()
-        ctx = _build_profile_ctx(user, profile=new_profile, success="ok")
-        assert ctx["profile"] is new_profile
-        assert ctx["success"] == "ok"
-
-
-class TestSettingsProfileAvatar:
-    """Tests for POST /ui/settings/profile/avatar."""
+class TestSettingsEmailsAdd:
+    """Tests for POST /ui/settings/emails (add email)."""
 
     @patch("shomer.routes.settings_ui._get_session_user")
     def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
@@ -579,7 +368,7 @@ class TestSettingsProfileAvatar:
 
         async def _run() -> None:
             mock_auth.return_value = None
-            resp = await settings_profile_avatar(_req(), AsyncMock(), _mock_upload())
+            resp = await settings_emails_add(_req(), AsyncMock())
             assert resp.status_code == 302
             assert "/ui/login" in resp.headers["location"]
 
@@ -587,341 +376,125 @@ class TestSettingsProfileAvatar:
 
     @patch("shomer.routes.settings_ui._render")
     @patch("shomer.routes.settings_ui._get_session_user")
-    def test_invalid_content_type(
+    def test_empty_email_shows_error(
         self, mock_auth: AsyncMock, mock_render: MagicMock
     ) -> None:
-        """Rejects file with unsupported content type."""
+        """POST with blank email shows validation error."""
 
         async def _run() -> None:
             mock_user = _mock_user()
             mock_auth.return_value = (MagicMock(), mock_user)
             mock_render.return_value = "html"
 
-            upload = _mock_upload(content_type="application/pdf")
-            await settings_profile_avatar(
-                _req({"session_id": "tok"}), AsyncMock(), upload
-            )
-            ctx = mock_render.call_args[0][2]
-            assert "Invalid file type" in ctx["error"]
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._render")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_empty_file(self, mock_auth: AsyncMock, mock_render: MagicMock) -> None:
-        """Rejects empty file upload."""
-
-        async def _run() -> None:
-            mock_user = _mock_user()
-            mock_auth.return_value = (MagicMock(), mock_user)
-            mock_render.return_value = "html"
-
-            upload = _mock_upload(content=b"")
-            await settings_profile_avatar(
-                _req({"session_id": "tok"}), AsyncMock(), upload
-            )
-            ctx = mock_render.call_args[0][2]
-            assert "empty" in ctx["error"].lower()
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._render")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_file_too_large(self, mock_auth: AsyncMock, mock_render: MagicMock) -> None:
-        """Rejects file exceeding 5 MB."""
-
-        async def _run() -> None:
-            mock_user = _mock_user()
-            mock_auth.return_value = (MagicMock(), mock_user)
-            mock_render.return_value = "html"
-
-            big_data = b"x" * (5 * 1024 * 1024 + 1)
-            upload = _mock_upload(content=big_data)
-            await settings_profile_avatar(
-                _req({"session_id": "tok"}), AsyncMock(), upload
-            )
-            ctx = mock_render.call_args[0][2]
-            assert "too large" in ctx["error"].lower()
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._render")
-    @patch("shomer.routes.settings_ui.get_settings")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_successful_upload(
-        self,
-        mock_auth: AsyncMock,
-        mock_settings: MagicMock,
-        mock_render: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Successful upload saves file and updates picture_url."""
-
-        async def _run() -> None:
-            mock_user = _mock_user()
-            mock_profile = MagicMock()
-            mock_user.profile = mock_profile
-            mock_auth.return_value = (MagicMock(), mock_user)
-            mock_render.return_value = "html"
-            mock_settings.return_value = MagicMock(avatar_upload_dir=str(tmp_path))
-
-            upload = _mock_upload(content=b"\x89PNG\r\nfakeimage")
             db = AsyncMock()
-            await settings_profile_avatar(_req({"session_id": "tok"}), db, upload)
+            # Re-load query
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.return_value = reload_result
 
-            # Verify file was written
-            user_dir = tmp_path / str(mock_user.id)
-            assert user_dir.exists()
-            files = list(user_dir.iterdir())
-            assert len(files) == 1
-            assert files[0].suffix == ".png"
-            assert files[0].read_bytes() == b"\x89PNG\r\nfakeimage"
-
-            # Verify profile was updated
-            assert mock_profile.picture_url.startswith(
-                f"/uploads/avatars/{mock_user.id}/"
+            await settings_emails_add(
+                _req({"session_id": "tok"}), db, action="add", email=""
             )
-            assert mock_profile.picture_url.endswith(".png")
-            db.flush.assert_awaited_once()
+            ctx = mock_render.call_args[0][2]
+            assert ctx["error"] == "Email address is required."
+            assert ctx["success"] is None
+
+        asyncio.run(_run())
+
+    @patch("shomer.tasks.email.send_email_task")
+    @patch("shomer.services.auth_service.AuthService")
+    @patch("shomer.routes.settings_ui._render")
+    @patch("shomer.routes.settings_ui._get_session_user")
+    def test_add_email_success(
+        self,
+        mock_auth: AsyncMock,
+        mock_render: MagicMock,
+        mock_auth_svc_cls: MagicMock,
+        mock_send_task: MagicMock,
+    ) -> None:
+        """POST with valid email adds it and shows success."""
+
+        async def _run() -> None:
+            mock_user = _mock_user()
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
+
+            mock_auth_svc = MagicMock()
+            mock_auth_svc._generate_code.return_value = "123456"
+            mock_auth_svc_cls.return_value = mock_auth_svc
+
+            db = AsyncMock()
+            # First call: check existing email (not found)
+            existing_result = MagicMock()
+            existing_result.scalar_one_or_none.return_value = None
+            # Second call: re-load user
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [existing_result, reload_result]
+
+            await settings_emails_add(
+                _req({"session_id": "tok"}), db, action="add", email="new@example.com"
+            )
+
+            # Verify email was added
+            db.add.assert_called()
+            db.flush.assert_awaited()
 
             ctx = mock_render.call_args[0][2]
-            assert ctx["success"] == "Avatar updated successfully."
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._render")
-    @patch("shomer.routes.settings_ui.UserProfile")
-    @patch("shomer.routes.settings_ui.get_settings")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_creates_profile_if_none(
-        self,
-        mock_auth: AsyncMock,
-        mock_settings: MagicMock,
-        mock_up_cls: MagicMock,
-        mock_render: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Creates UserProfile when user has no profile."""
-
-        async def _run() -> None:
-            mock_user = _mock_user()
-            mock_user.profile = None
-            mock_auth.return_value = (MagicMock(), mock_user)
-            mock_render.return_value = "html"
-            mock_settings.return_value = MagicMock(avatar_upload_dir=str(tmp_path))
-
-            new_profile = MagicMock()
-            mock_up_cls.return_value = new_profile
-
-            upload = _mock_upload(
-                content=b"\xff\xd8\xff\xe0",
-                content_type="image/jpeg",
-            )
-            db = AsyncMock()
-            await settings_profile_avatar(_req({"session_id": "tok"}), db, upload)
-
-            db.add.assert_called_once_with(new_profile)
-            db.flush.assert_awaited_once()
-            assert new_profile.picture_url.endswith(".jpg")
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._render")
-    @patch("shomer.routes.settings_ui.get_settings")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_removes_old_avatar(
-        self,
-        mock_auth: AsyncMock,
-        mock_settings: MagicMock,
-        mock_render: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Uploading a new avatar removes the previous file."""
-
-        async def _run() -> None:
-            mock_user = _mock_user()
-            mock_user.profile = MagicMock()
-            mock_auth.return_value = (MagicMock(), mock_user)
-            mock_render.return_value = "html"
-            mock_settings.return_value = MagicMock(avatar_upload_dir=str(tmp_path))
-
-            # Pre-create an existing avatar file
-            user_dir = tmp_path / str(mock_user.id)
-            user_dir.mkdir(parents=True)
-            old_file = user_dir / "old_avatar.png"
-            old_file.write_bytes(b"old")
-
-            upload = _mock_upload(content=b"newimage")
-            await settings_profile_avatar(
-                _req({"session_id": "tok"}), AsyncMock(), upload
-            )
-
-            files = list(user_dir.iterdir())
-            assert len(files) == 1
-            assert files[0].name != "old_avatar.png"
-            assert files[0].read_bytes() == b"newimage"
+            assert ctx["success"] == "Email added. Check your inbox for verification."
+            assert ctx["error"] is None
 
         asyncio.run(_run())
 
     @patch("shomer.routes.settings_ui._render")
     @patch("shomer.routes.settings_ui._get_session_user")
-    def test_none_content_type_rejected(
+    def test_duplicate_email_shows_error(
         self, mock_auth: AsyncMock, mock_render: MagicMock
     ) -> None:
-        """File with None content_type is rejected."""
+        """POST with already-registered email shows conflict error."""
 
         async def _run() -> None:
             mock_user = _mock_user()
             mock_auth.return_value = (MagicMock(), mock_user)
             mock_render.return_value = "html"
 
-            upload = _mock_upload(content_type=None)
-            await settings_profile_avatar(
-                _req({"session_id": "tok"}), AsyncMock(), upload
+            db = AsyncMock()
+            # First call: check existing email (found)
+            existing_result = MagicMock()
+            existing_result.scalar_one_or_none.return_value = MagicMock()
+            # Second call: re-load user
+            reload_result = MagicMock()
+            reload_result.scalar_one_or_none.return_value = mock_user
+            db.execute.side_effect = [existing_result, reload_result]
+
+            await settings_emails_add(
+                _req({"session_id": "tok"}),
+                db,
+                action="add",
+                email="taken@example.com",
             )
+
             ctx = mock_render.call_args[0][2]
-            assert "Invalid file type" in ctx["error"]
+            assert ctx["error"] == "Email already registered."
+            assert ctx["success"] is None
 
         asyncio.run(_run())
 
-
-class TestSettingsRevokeSession:
-    """Tests for POST /ui/settings/sessions/{session_id}/revoke."""
-
+    @patch("shomer.routes.settings_ui._render")
     @patch("shomer.routes.settings_ui._get_session_user")
-    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
-        """Unauthenticated request redirects to login."""
-
-        async def _run() -> None:
-            mock_auth.return_value = None
-            resp = await settings_revoke_session(
-                _req(), AsyncMock(), session_id=uuid.uuid4()
-            )
-            assert resp.status_code == 302
-            assert "/ui/login" in resp.headers["location"]
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_cannot_revoke_current_session(self, mock_auth: AsyncMock) -> None:
-        """Revoking the current session redirects without deleting."""
-
-        async def _run() -> None:
-            current_id = uuid.uuid4()
-            mock_session = MagicMock()
-            mock_session.id = current_id
-            mock_auth.return_value = (mock_session, _mock_user())
-
-            db = AsyncMock()
-            resp = await settings_revoke_session(
-                _req({"session_id": "tok"}), db, session_id=current_id
-            )
-            assert resp.status_code == 303
-            db.execute.assert_not_called()
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui.SessionService")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_revokes_other_session(
-        self, mock_auth: AsyncMock, mock_svc_cls: MagicMock
+    def test_get_emails_includes_success_error_none(
+        self, mock_auth: AsyncMock, mock_render: MagicMock
     ) -> None:
-        """Successfully revokes a session belonging to the user."""
+        """GET emails page passes success=None and error=None in context."""
 
         async def _run() -> None:
-            current_id = uuid.uuid4()
-            target_id = uuid.uuid4()
-            mock_session = MagicMock()
-            mock_session.id = current_id
             mock_user = _mock_user()
-            mock_auth.return_value = (mock_session, mock_user)
+            mock_auth.return_value = (MagicMock(), mock_user)
+            mock_render.return_value = "html"
 
-            target_session = MagicMock()
-            db_result = MagicMock()
-            db_result.scalar_one_or_none.return_value = target_session
-            db = AsyncMock()
-            db.execute.return_value = db_result
-
-            mock_svc = AsyncMock()
-            mock_svc_cls.return_value = mock_svc
-
-            resp = await settings_revoke_session(
-                _req({"session_id": "tok"}), db, session_id=target_id
-            )
-            assert resp.status_code == 303
-            mock_svc.delete.assert_awaited_once_with(target_id)
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui.SessionService")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_nonexistent_session_no_delete(
-        self, mock_auth: AsyncMock, mock_svc_cls: MagicMock
-    ) -> None:
-        """Revoking a nonexistent session does not call delete."""
-
-        async def _run() -> None:
-            current_id = uuid.uuid4()
-            mock_session = MagicMock()
-            mock_session.id = current_id
-            mock_auth.return_value = (mock_session, _mock_user())
-
-            db_result = MagicMock()
-            db_result.scalar_one_or_none.return_value = None
-            db = AsyncMock()
-            db.execute.return_value = db_result
-
-            mock_svc = AsyncMock()
-            mock_svc_cls.return_value = mock_svc
-
-            resp = await settings_revoke_session(
-                _req({"session_id": "tok"}), db, session_id=uuid.uuid4()
-            )
-            assert resp.status_code == 303
-            mock_svc.delete.assert_not_called()
-
-        asyncio.run(_run())
-
-
-class TestSettingsRevokeAllSessions:
-    """Tests for POST /ui/settings/sessions/revoke-all."""
-
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_unauthenticated_redirects(self, mock_auth: AsyncMock) -> None:
-        """Unauthenticated request redirects to login."""
-
-        async def _run() -> None:
-            mock_auth.return_value = None
-            resp = await settings_revoke_all_sessions(_req(), AsyncMock())
-            assert resp.status_code == 302
-            assert "/ui/login" in resp.headers["location"]
-
-        asyncio.run(_run())
-
-    @patch("shomer.routes.settings_ui.SessionService")
-    @patch("shomer.routes.settings_ui._get_session_user")
-    def test_revokes_all_except_current(
-        self, mock_auth: AsyncMock, mock_svc_cls: MagicMock
-    ) -> None:
-        """Deletes all sessions except the current one."""
-
-        async def _run() -> None:
-            current_id = uuid.uuid4()
-            mock_session = MagicMock()
-            mock_session.id = current_id
-            mock_user = _mock_user()
-            mock_auth.return_value = (mock_session, mock_user)
-
-            mock_svc = AsyncMock()
-            mock_svc.delete_all_for_user_except.return_value = 3
-            mock_svc_cls.return_value = mock_svc
-
-            resp = await settings_revoke_all_sessions(
-                _req({"session_id": "tok"}), AsyncMock()
-            )
-            assert resp.status_code == 303
-            mock_svc.delete_all_for_user_except.assert_awaited_once_with(
-                mock_user.id, current_id
-            )
+            await settings_emails(_req({"session_id": "tok"}), AsyncMock())
+            ctx = mock_render.call_args[0][2]
+            assert ctx["success"] is None
+            assert ctx["error"] is None
 
         asyncio.run(_run())
