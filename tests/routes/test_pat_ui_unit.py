@@ -150,6 +150,54 @@ class TestPATAction:
 
         asyncio.run(_run())
 
+    def test_create_with_preset_expiration(self) -> None:
+        """Preset dropdown computes a date and submits it via expires_at."""
+
+        async def _run() -> None:
+            now = datetime.now(timezone.utc)
+            mock_result = PATCreateResult(
+                id=uuid.uuid4(),
+                name="ci",
+                token="shm_pat_abc",
+                token_prefix="shm_pat_",
+                scopes="",
+                expires_at=datetime(2026, 4, 23, tzinfo=timezone.utc),
+                created_at=now,
+            )
+
+            with (
+                patch(
+                    "shomer.routes.pat_ui._get_session_user_id",
+                    new_callable=AsyncMock,
+                    return_value=uuid.uuid4(),
+                ),
+                patch("shomer.routes.pat_ui.PATService") as mock_cls,
+                patch("shomer.app.templates") as mock_tpl,
+            ):
+                mock_svc = AsyncMock()
+                mock_svc.create.return_value = mock_result
+                mock_svc.list_for_user.return_value = []
+                mock_cls.return_value = mock_svc
+                mock_tpl.TemplateResponse.return_value = MagicMock()
+
+                req = MagicMock()
+                await pat_action(
+                    req,
+                    AsyncMock(),
+                    action="create",
+                    name="ci",
+                    scopes="",
+                    expires_at="2026-04-23",
+                    pat_id="",
+                )
+                call_kwargs = mock_svc.create.call_args
+                assert call_kwargs[1]["expires_at"] is not None
+                assert call_kwargs[1]["expires_at"].year == 2026
+                assert call_kwargs[1]["expires_at"].month == 4
+                assert call_kwargs[1]["expires_at"].day == 23
+
+        asyncio.run(_run())
+
     def test_revoke_success(self) -> None:
         async def _run() -> None:
             with (
