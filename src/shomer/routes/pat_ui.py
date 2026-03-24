@@ -90,6 +90,8 @@ async def pat_list_page(request: Request, db: DbSession) -> Any:
             "scopes": p.scopes,
             "expires_at": p.expires_at.isoformat() if p.expires_at else None,
             "last_used_at": p.last_used_at.isoformat() if p.last_used_at else None,
+            "last_used_ip": p.last_used_ip,
+            "use_count": p.use_count,
             "is_revoked": p.is_revoked,
         }
         for p in pats
@@ -193,6 +195,8 @@ async def pat_action(
             "scopes": p.scopes,
             "expires_at": p.expires_at.isoformat() if p.expires_at else None,
             "last_used_at": p.last_used_at.isoformat() if p.last_used_at else None,
+            "last_used_ip": p.last_used_ip,
+            "use_count": p.use_count,
             "is_revoked": p.is_revoked,
         }
         for p in pats

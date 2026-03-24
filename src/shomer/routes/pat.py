@@ -114,6 +114,8 @@ async def list_pats(user: CurrentUser, db: DbSession) -> JSONResponse:
                     "last_used_at": (
                         p.last_used_at.isoformat() if p.last_used_at else None
                     ),
+                    "last_used_ip": p.last_used_ip,
+                    "use_count": p.use_count,
                     "is_revoked": p.is_revoked,
                     "created_at": p.created_at.isoformat(),
                 }
