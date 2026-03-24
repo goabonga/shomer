@@ -84,6 +84,10 @@ class PATInfo:
         Expiration timestamp.
     last_used_at : datetime or None
         Last usage timestamp.
+    last_used_ip : str or None
+        IP address of last usage.
+    use_count : int
+        Total number of authentications with this token.
     is_revoked : bool
         Whether the token is revoked.
     created_at : datetime
@@ -96,6 +100,8 @@ class PATInfo:
     scopes: str
     expires_at: datetime | None
     last_used_at: datetime | None
+    last_used_ip: str | None
+    use_count: int
     is_revoked: bool
     created_at: datetime
 
@@ -170,16 +176,21 @@ class PATService:
             created_at=now,
         )
 
-    async def validate(self, raw_token: str) -> PersonalAccessToken:
+    async def validate(
+        self, raw_token: str, *, client_ip: str | None = None
+    ) -> PersonalAccessToken:
         """Validate a PAT by hash lookup.
 
         Checks that the token exists, is not revoked, and has not
-        expired. Updates ``last_used_at`` on success.
+        expired. Updates usage stats (``last_used_at``, ``last_used_ip``,
+        ``use_count``) on success.
 
         Parameters
         ----------
         raw_token : str
             The full raw token (``shm_pat_...``).
+        client_ip : str or None
+            The client's IP address for usage tracking.
 
         Returns
         -------
@@ -214,6 +225,9 @@ class PATService:
 
         # Track usage
         pat.last_used_at = now
+        pat.use_count = (pat.use_count or 0) + 1
+        if client_ip is not None:
+            pat.last_used_ip = client_ip
         await self.session.flush()
 
         return pat
@@ -355,6 +369,8 @@ class PATService:
                 scopes=p.scopes,
                 expires_at=p.expires_at,
                 last_used_at=p.last_used_at,
+                last_used_ip=p.last_used_ip,
+                use_count=p.use_count,
                 is_revoked=p.is_revoked,
                 created_at=p.created_at,
             )

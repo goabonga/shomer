@@ -201,7 +201,8 @@ async def _try_pat(request: Request, db: AsyncSession) -> CurrentUserInfo | None
 
     svc = PATService(db)
     try:
-        pat = await svc.validate(token)
+        client_ip = request.client.host if request.client else None
+        pat = await svc.validate(token, client_ip=client_ip)
     except PATError:
         return None
 

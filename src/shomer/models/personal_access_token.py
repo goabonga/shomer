@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -46,6 +46,10 @@ class PersonalAccessToken(Base, UUIDMixin, TimestampMixin):
         Optional expiration. ``None`` means non-expiring.
     last_used_at : datetime or None
         Timestamp of the last API call using this token.
+    last_used_ip : str or None
+        IP address of the last API call using this token.
+    use_count : int
+        Number of times this token has been used for authentication.
     is_revoked : bool
         Whether the token has been revoked.
     user : User
@@ -89,6 +93,15 @@ class PersonalAccessToken(Base, UUIDMixin, TimestampMixin):
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+    last_used_ip: Mapped[str | None] = mapped_column(
+        String(45),
+        nullable=True,
+    )
+    use_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
     )
     is_revoked: Mapped[bool] = mapped_column(
         Boolean,

@@ -70,6 +70,8 @@ class TestListPATs:
                     scopes="api:read",
                     expires_at=None,
                     last_used_at=now,
+                    last_used_ip="127.0.0.1",
+                    use_count=5,
                     is_revoked=False,
                     created_at=now,
                 ),

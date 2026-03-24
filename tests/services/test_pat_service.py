@@ -86,6 +86,7 @@ class TestPATValidate:
             mock_pat.is_revoked = False
             mock_pat.expires_at = None
             mock_pat.last_used_at = None
+            mock_pat.use_count = 0
 
             mock_result = MagicMock()
             mock_result.scalar_one_or_none.return_value = mock_pat
@@ -97,7 +98,65 @@ class TestPATValidate:
             pat = await svc.validate(raw)
             assert pat is mock_pat
             assert pat.last_used_at is not None
+            assert pat.use_count == 1
             db.flush.assert_awaited_once()
+
+        asyncio.run(_run())
+
+    def test_validate_tracks_client_ip(self) -> None:
+        async def _run() -> None:
+            import hashlib
+
+            raw = f"{PAT_PREFIX}test-secret-ip"
+            token_hash = hashlib.sha256(raw.encode()).hexdigest()
+
+            mock_pat = MagicMock()
+            mock_pat.token_hash = token_hash
+            mock_pat.is_revoked = False
+            mock_pat.expires_at = None
+            mock_pat.last_used_at = None
+            mock_pat.last_used_ip = None
+            mock_pat.use_count = 5
+
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = mock_pat
+
+            db = AsyncMock()
+            db.execute.return_value = mock_result
+
+            svc = PATService(db)
+            pat = await svc.validate(raw, client_ip="192.168.1.42")
+            assert pat.last_used_ip == "192.168.1.42"
+            assert pat.use_count == 6
+
+        asyncio.run(_run())
+
+    def test_validate_without_client_ip_preserves_existing(self) -> None:
+        async def _run() -> None:
+            import hashlib
+
+            raw = f"{PAT_PREFIX}test-no-ip"
+            token_hash = hashlib.sha256(raw.encode()).hexdigest()
+
+            mock_pat = MagicMock()
+            mock_pat.token_hash = token_hash
+            mock_pat.is_revoked = False
+            mock_pat.expires_at = None
+            mock_pat.last_used_at = None
+            mock_pat.last_used_ip = "10.0.0.1"
+            mock_pat.use_count = 3
+
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = mock_pat
+
+            db = AsyncMock()
+            db.execute.return_value = mock_result
+
+            svc = PATService(db)
+            await svc.validate(raw)
+            # last_used_ip should not be overwritten when client_ip is None
+            assert mock_pat.last_used_ip == "10.0.0.1"
+            assert mock_pat.use_count == 4
 
         asyncio.run(_run())
 
@@ -165,6 +224,7 @@ class TestPATValidate:
             mock_pat.is_revoked = False
             mock_pat.expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
             mock_pat.last_used_at = None
+            mock_pat.use_count = 0
 
             mock_result = MagicMock()
             mock_result.scalar_one_or_none.return_value = mock_pat
@@ -333,6 +393,8 @@ class TestPATListForUser:
             mock_pat.scopes = "api:read"
             mock_pat.expires_at = None
             mock_pat.last_used_at = now
+            mock_pat.last_used_ip = "10.0.0.1"
+            mock_pat.use_count = 42
             mock_pat.is_revoked = False
             mock_pat.created_at = now
 
@@ -348,6 +410,8 @@ class TestPATListForUser:
             assert isinstance(pats[0], PATInfo)
             assert pats[0].name == "my-key"
             assert pats[0].token_prefix == "shm_pat_abc"
+            assert pats[0].last_used_ip == "10.0.0.1"
+            assert pats[0].use_count == 42
 
         asyncio.run(_run())
 
