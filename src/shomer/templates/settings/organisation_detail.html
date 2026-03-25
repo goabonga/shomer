@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{{ org.display_name if org else 'Organisation' }} — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings">Overview</a>
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+    <a href="/ui/settings/pats">Tokens</a>
+    <a href="/ui/settings/organisations" class="active">Organisations</a>
+</nav>
+
+<div class="page-header">
+    <h2>{{ org.display_name if org else 'Organisation' }}</h2>
+    <a href="/ui/settings/organisations">&larr; Back to list</a>
+</div>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+
+{% if org %}
+<div class="org-nav">
+    <a href="/ui/settings/organisations/{{ org.id }}" class="active">General</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/members">Members</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/roles">Roles</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/idps">Identity Providers</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/branding">Branding</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/trust">Trust Policies</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/domains">Domains</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/templates">Templates</a>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="label">Slug</div>
+        <div class="value"><code>{{ org.slug }}</code></div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Status</div>
+        <div class="value status-{{ 'ok' if org.is_active else 'warn' }}">{{ "Active" if org.is_active else "Inactive" }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Your Role</div>
+        <div class="value"><span class="role-badge role-{{ role }}">{{ role }}</span></div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Trust Mode</div>
+        <div class="value">{{ org.trust_mode }}</div>
+    </div>
+</div>
+
+{% if role in ('owner', 'admin') %}
+<h3>Edit Organisation</h3>
+<form method="post" action="/ui/settings/organisations/{{ org.id }}" class="org-form">
+    <div class="form-group">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" value="{{ org.name }}" required>
+    </div>
+
+    <div class="form-group">
+        <label for="display_name">Display Name</label>
+        <input type="text" id="display_name" name="display_name" value="{{ org.display_name }}">
+    </div>
+
+    <div class="form-group">
+        <label for="trust_mode">Trust Mode</label>
+        <select id="trust_mode" name="trust_mode">
+            {% for mode in trust_modes %}
+            <option value="{{ mode }}" {% if org.trust_mode == mode %}selected{% endif %}>{{ mode }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">Save Changes</button>
+    </div>
+</form>
+{% endif %}
+
+<div class="info-section">
+    <h3>Details</h3>
+    <table class="info-table">
+        <tr><th>Created</th><td>{{ org.created_at.strftime('%Y-%m-%d %H:%M') if org.created_at else '—' }}</td></tr>
+        <tr><th>Custom Domain</th><td>{{ org.custom_domain or '—' }}</td></tr>
+        <tr><th>Platform</th><td>{{ 'Yes' if org.is_platform else 'No' }}</td></tr>
+    </table>
+</div>
+{% endif %}
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .org-nav { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .org-nav a { text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 0.9rem; color: #555; }
+    .org-nav a.active { background: #e8e8e8; color: #333; font-weight: 600; }
+    .error { color: #721c24; background: #f8d7da; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .success { color: #155724; background: #d4edda; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .stat-card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; text-align: center; }
+    .stat-card .label { font-size: 0.85rem; color: #666; margin-bottom: 4px; }
+    .stat-card .value { font-size: 1.2rem; font-weight: 700; }
+    .status-ok { color: #155724; }
+    .status-warn { color: #856404; }
+    .role-badge { font-size: 0.85em; padding: 2px 8px; border-radius: 4px; }
+    .role-owner { background: #fff3cd; color: #856404; }
+    .role-admin { background: #d4edda; color: #155724; }
+    .role-member { background: #e2e3e5; color: #383d41; }
+    .org-form { max-width: 480px; margin-bottom: 32px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-weight: 600; margin-bottom: 4px; }
+    .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95rem; }
+    .form-actions { display: flex; gap: 12px; margin-top: 24px; }
+    .btn-primary { background: #333; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+    .info-section { margin-top: 32px; }
+    .info-table { border-collapse: collapse; }
+    .info-table th, .info-table td { padding: 6px 12px; text-align: left; border-bottom: 1px solid #eee; }
+    .info-table th { color: #666; font-weight: 600; font-size: 0.9em; }
+</style>
+{% endblock %}

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Members — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings">Overview</a>
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+    <a href="/ui/settings/pats">Tokens</a>
+    <a href="/ui/settings/organisations" class="active">Organisations</a>
+</nav>
+
+{% if org %}
+<div class="page-header">
+    <h2>{{ org.display_name }} — Members</h2>
+    <a href="/ui/settings/organisations/{{ org.id }}">&larr; Back to organisation</a>
+</div>
+
+<div class="org-nav">
+    <a href="/ui/settings/organisations/{{ org.id }}">General</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/members" class="active">Members</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/roles">Roles</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/idps">Identity Providers</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/branding">Branding</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/trust">Trust Policies</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/domains">Domains</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/templates">Templates</a>
+</div>
+{% else %}
+<div class="page-header">
+    <h2>Members</h2>
+    <a href="/ui/settings/organisations">&larr; Back to list</a>
+</div>
+{% endif %}
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+
+{% if org %}
+{% if role in ('owner', 'admin') %}
+<div class="add-section">
+    <h3>Add Member</h3>
+    <form method="post" action="/ui/settings/organisations/{{ org.id }}/members" class="inline-form">
+        <input type="hidden" name="action" value="add">
+        <input type="email" name="email" placeholder="user@example.com" required>
+        <select name="member_role">
+            {% for r in roles %}
+            <option value="{{ r }}">{{ r }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn-primary">Add</button>
+    </form>
+</div>
+{% endif %}
+
+<h3>Current Members</h3>
+{% if members %}
+<table class="members-table">
+    <thead>
+        <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Joined</th>
+            {% if role in ('owner', 'admin') %}<th>Actions</th>{% endif %}
+        </tr>
+    </thead>
+    <tbody>
+    {% for m in members %}
+        <tr>
+            <td>{{ m.username }}</td>
+            <td>
+                {% if role in ('owner', 'admin') and m.user_id != user.id|string %}
+                <form method="post" action="/ui/settings/organisations/{{ org.id }}/members" class="inline-form">
+                    <input type="hidden" name="action" value="update_role">
+                    <input type="hidden" name="member_id" value="{{ m.id }}">
+                    <select name="member_role" onchange="this.form.submit()">
+                        {% for r in roles %}
+                        <option value="{{ r }}" {% if m.role == r %}selected{% endif %}>{{ r }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+                {% else %}
+                <span class="role-badge role-{{ m.role }}">{{ m.role }}</span>
+                {% endif %}
+            </td>
+            <td>{{ m.joined_at.strftime('%Y-%m-%d') if m.joined_at else '—' }}</td>
+            {% if role in ('owner', 'admin') %}
+            <td>
+                {% if m.user_id != user.id|string %}
+                <form method="post" action="/ui/settings/organisations/{{ org.id }}/members" style="display:inline">
+                    <input type="hidden" name="action" value="remove">
+                    <input type="hidden" name="member_id" value="{{ m.id }}">
+                    <button type="submit" class="remove-btn">Remove</button>
+                </form>
+                {% else %}
+                <span class="hint">You</span>
+                {% endif %}
+            </td>
+            {% endif %}
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No members yet.</p>
+{% endif %}
+{% endif %}
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .org-nav { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .org-nav a { text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 0.9rem; color: #555; }
+    .org-nav a.active { background: #e8e8e8; color: #333; font-weight: 600; }
+    .error { color: #721c24; background: #f8d7da; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .success { color: #155724; background: #d4edda; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .add-section { margin-bottom: 24px; padding: 16px; background: #f8f9fa; border-radius: 8px; }
+    .inline-form { display: flex; gap: 8px; align-items: center; }
+    .inline-form input[type="email"] { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1; }
+    .inline-form select { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; }
+    .btn-primary { background: #333; color: #fff; padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; }
+    .members-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    .members-table th, .members-table td { padding: 10px 8px; text-align: left; border-bottom: 1px solid #eee; }
+    .members-table th { font-weight: 600; color: #666; font-size: 0.85em; text-transform: uppercase; }
+    .role-badge { font-size: 0.85em; padding: 2px 8px; border-radius: 4px; }
+    .role-owner { background: #fff3cd; color: #856404; }
+    .role-admin { background: #d4edda; color: #155724; }
+    .role-member { background: #e2e3e5; color: #383d41; }
+    .remove-btn { background: #dc3545; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85em; }
+    .hint { font-size: 0.8rem; color: #888; }
+</style>
+{% endblock %}

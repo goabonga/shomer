@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Branding — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings">Overview</a>
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+    <a href="/ui/settings/pats">Tokens</a>
+    <a href="/ui/settings/organisations" class="active">Organisations</a>
+</nav>
+
+{% if org %}
+<div class="page-header">
+    <h2>{{ org.display_name }} — Branding</h2>
+    <a href="/ui/settings/organisations/{{ org.id }}">&larr; Back to organisation</a>
+</div>
+
+<div class="org-nav">
+    <a href="/ui/settings/organisations/{{ org.id }}">General</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/members">Members</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/roles">Roles</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/idps">Identity Providers</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/branding" class="active">Branding</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/trust">Trust Policies</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/domains">Domains</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/templates">Templates</a>
+</div>
+{% else %}
+<div class="page-header">
+    <h2>Branding</h2>
+    <a href="/ui/settings/organisations">&larr; Back to list</a>
+</div>
+{% endif %}
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+
+{% if org %}
+{% if role in ('owner', 'admin') %}
+<form method="post" action="/ui/settings/organisations/{{ org.id }}/branding" class="branding-form">
+    <h3>Logo &amp; Icons</h3>
+    <div class="form-group">
+        <label for="logo_url">Logo URL</label>
+        <input type="url" id="logo_url" name="logo_url" value="{{ branding.logo_url }}" placeholder="https://...">
+    </div>
+    <div class="form-group">
+        <label for="favicon_url">Favicon URL</label>
+        <input type="url" id="favicon_url" name="favicon_url" value="{{ branding.favicon_url }}" placeholder="https://...">
+    </div>
+
+    <h3>Colors</h3>
+    <div class="color-grid">
+        <div class="form-group">
+            <label for="primary_color">Primary</label>
+            <input type="text" id="primary_color" name="primary_color" value="{{ branding.primary_color }}" placeholder="#333333" maxlength="7">
+        </div>
+        <div class="form-group">
+            <label for="secondary_color">Secondary</label>
+            <input type="text" id="secondary_color" name="secondary_color" value="{{ branding.secondary_color }}" placeholder="#666666" maxlength="7">
+        </div>
+        <div class="form-group">
+            <label for="accent_color">Accent</label>
+            <input type="text" id="accent_color" name="accent_color" value="{{ branding.accent_color }}" placeholder="#0066cc" maxlength="7">
+        </div>
+        <div class="form-group">
+            <label for="background_color">Background</label>
+            <input type="text" id="background_color" name="background_color" value="{{ branding.background_color }}" placeholder="#ffffff" maxlength="7">
+        </div>
+    </div>
+
+    <h3>Typography</h3>
+    <div class="form-group">
+        <label for="font_family">Font Family</label>
+        <input type="text" id="font_family" name="font_family" value="{{ branding.font_family }}" placeholder="Inter, system-ui, sans-serif">
+    </div>
+
+    <h3>Custom CSS</h3>
+    <div class="form-group">
+        <label for="custom_css">Custom CSS</label>
+        <textarea id="custom_css" name="custom_css" rows="6" placeholder="/* Custom styles for auth pages */">{{ branding.custom_css }}</textarea>
+    </div>
+
+    <h3>Settings</h3>
+    <div class="form-group checkbox-group">
+        <label>
+            <input type="checkbox" name="show_powered_by" {% if branding.show_powered_by %}checked{% endif %}>
+            Show "Powered by Shomer" footer
+        </label>
+    </div>
+
+    <button type="submit" class="btn-primary">Save Branding</button>
+</form>
+{% else %}
+<p>Only owners and admins can edit branding settings.</p>
+{% endif %}
+{% endif %}
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .org-nav { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .org-nav a { text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 0.9rem; color: #555; }
+    .org-nav a.active { background: #e8e8e8; color: #333; font-weight: 600; }
+    .error { color: #721c24; background: #f8d7da; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .success { color: #155724; background: #d4edda; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .branding-form { max-width: 600px; }
+    .branding-form h3 { margin-top: 24px; margin-bottom: 12px; font-size: 1rem; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-weight: 600; font-size: 0.85em; margin-bottom: 4px; color: #555; }
+    .form-group input[type="url"], .form-group input[type="text"], .form-group textarea { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%; box-sizing: border-box; }
+    .form-group textarea { font-family: monospace; font-size: 0.85em; }
+    .color-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .checkbox-group label { display: flex; align-items: center; gap: 8px; font-weight: normal; font-size: 0.9em; }
+    .btn-primary { background: #333; color: #fff; padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 16px; }
+</style>
+{% endblock %}

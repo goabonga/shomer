@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Custom Domain — Shomer{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<nav class="settings-nav">
+    <a href="/ui/settings">Overview</a>
+    <a href="/ui/settings/profile">Profile</a>
+    <a href="/ui/settings/emails">Emails</a>
+    <a href="/ui/settings/security">Security</a>
+    <a href="/ui/settings/pats">Tokens</a>
+    <a href="/ui/settings/organisations" class="active">Organisations</a>
+</nav>
+
+{% if org %}
+<div class="page-header">
+    <h2>{{ org.display_name }} — Custom Domain</h2>
+    <a href="/ui/settings/organisations/{{ org.id }}">&larr; Back to organisation</a>
+</div>
+
+<div class="org-nav">
+    <a href="/ui/settings/organisations/{{ org.id }}">General</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/members">Members</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/roles">Roles</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/idps">Identity Providers</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/branding">Branding</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/trust">Trust Policies</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/domains" class="active">Domains</a>
+    <a href="/ui/settings/organisations/{{ org.id }}/templates">Templates</a>
+</div>
+{% else %}
+<div class="page-header">
+    <h2>Custom Domain</h2>
+    <a href="/ui/settings/organisations">&larr; Back to list</a>
+</div>
+{% endif %}
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if success %}<p class="success">{{ success }}</p>{% endif %}
+
+{% if org %}
+<div class="domain-info">
+    <h3>Current Domain</h3>
+    {% if custom_domain %}
+    <p>Your organisation is accessible at: <strong>{{ custom_domain }}</strong></p>
+    {% else %}
+    <p>No custom domain configured.</p>
+    {% endif %}
+</div>
+
+{% if role in ('owner', 'admin') %}
+<h3>{{ 'Update' if custom_domain else 'Set' }} Custom Domain</h3>
+<form method="post" action="/ui/settings/organisations/{{ org.id }}/domains" class="org-form">
+    <div class="form-group">
+        <label for="custom_domain">Domain</label>
+        <input type="text" id="custom_domain" name="custom_domain" value="{{ custom_domain or '' }}"
+               placeholder="auth.example.com">
+        <span class="hint">Enter a fully qualified domain name. Leave empty to remove.</span>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">Save Domain</button>
+    </div>
+</form>
+
+<div class="dns-instructions">
+    <h3>DNS Configuration</h3>
+    <p>To use a custom domain, add the following DNS record:</p>
+    <table class="info-table">
+        <tr><th>Type</th><td>CNAME</td></tr>
+        <tr><th>Name</th><td>{{ custom_domain or 'auth.example.com' }}</td></tr>
+        <tr><th>Value</th><td>{{ org.slug }}.shomer.app</td></tr>
+    </table>
+</div>
+{% endif %}
+{% endif %}
+
+<style>
+    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+    .settings-nav a.active { background: #333; color: #fff; }
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .org-nav { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    .org-nav a { text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 0.9rem; color: #555; }
+    .org-nav a.active { background: #e8e8e8; color: #333; font-weight: 600; }
+    .error { color: #721c24; background: #f8d7da; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .success { color: #155724; background: #d4edda; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
+    .domain-info { margin-bottom: 24px; padding: 16px; background: #f8f9fa; border-radius: 8px; }
+    .org-form { max-width: 480px; margin-bottom: 32px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-weight: 600; margin-bottom: 4px; }
+    .form-group input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95rem; }
+    .form-group .hint { display: block; font-size: 0.8rem; color: #888; margin-top: 4px; }
+    .form-actions { display: flex; gap: 12px; margin-top: 24px; }
+    .btn-primary { background: #333; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+    .dns-instructions { margin-top: 32px; padding: 16px; background: #e8f4fd; border-radius: 8px; }
+    .info-table { border-collapse: collapse; margin-top: 8px; }
+    .info-table th, .info-table td { padding: 6px 12px; text-align: left; border-bottom: 1px solid #cce5ff; }
+    .info-table th { color: #004085; font-weight: 600; font-size: 0.9em; }
+</style>
+{% endblock %}
