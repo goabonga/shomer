@@ -7,35 +7,35 @@
 </div>
 
 {% if success %}
-<div style="background: #d4edda; color: #155724; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px;">{{ success }}</div>
+<div class="alert alert-success">{{ success }}</div>
 {% endif %}
 
-<div class="card" style="margin-bottom: 24px;">
+<div class="card mb-2">
     <h3>Roles</h3>
-    <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+    <table class="table mt-1">
         <thead>
-            <tr style="border-bottom: 2px solid #eee; text-align: left;">
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Name</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Description</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">System</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Scopes</th>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>System</th>
+                <th>Scopes</th>
             </tr>
         </thead>
         <tbody>
             {% for r in roles %}
-            <tr style="border-bottom: 1px solid #f0f0f0;">
-                <td style="padding: 10px 8px; font-weight: 500;">{{ r.name }}</td>
-                <td style="padding: 10px 8px; font-size: 13px; color: #666;">{{ r.description or '—' }}</td>
-                <td style="padding: 10px 8px;">{% if r.is_system %}Yes{% else %}No{% endif %}</td>
-                <td style="padding: 10px 8px;">
+            <tr>
+                <td>{{ r.name }}</td>
+                <td class="text-muted">{{ r.description or '—' }}</td>
+                <td>{% if r.is_system %}Yes{% else %}No{% endif %}</td>
+                <td>
                     {% for s in r.scopes %}
-                    <span style="background: #e0e7ff; color: #3730a3; padding: 1px 6px; border-radius: 8px; font-size: 11px; margin-right: 4px;">{{ s }}</span>
+                    <span class="badge badge-info">{{ s }}</span>
                     {% endfor %}
                 </td>
             </tr>
             {% endfor %}
             {% if not roles %}
-            <tr><td colspan="4" style="padding: 20px; text-align: center; color: #999;">No roles defined.</td></tr>
+            <tr><td colspan="4" class="text-muted" style="padding:20px;text-align:center">No roles defined.</td></tr>
             {% endif %}
         </tbody>
     </table>
@@ -43,22 +43,22 @@
 
 <div class="card">
     <h3>Scopes</h3>
-    <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+    <table class="table mt-1">
         <thead>
-            <tr style="border-bottom: 2px solid #eee; text-align: left;">
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Name</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Description</th>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
             </tr>
         </thead>
         <tbody>
             {% for s in scopes %}
-            <tr style="border-bottom: 1px solid #f0f0f0;">
-                <td style="padding: 10px 8px; font-family: monospace; font-size: 13px;">{{ s.name }}</td>
-                <td style="padding: 10px 8px; font-size: 13px; color: #666;">{{ s.description or '—' }}</td>
+            <tr>
+                <td class="mono">{{ s.name }}</td>
+                <td class="text-muted">{{ s.description or '—' }}</td>
             </tr>
             {% endfor %}
             {% if not scopes %}
-            <tr><td colspan="2" style="padding: 20px; text-align: center; color: #999;">No scopes defined.</td></tr>
+            <tr><td colspan="2" class="text-muted" style="padding:20px;text-align:center">No scopes defined.</td></tr>
             {% endif %}
         </tbody>
     </table>

@@ -1,64 +1,49 @@
-{% extends "base.html" %}
+{% extends "settings/base.html" %}
 {% block title %}Connected Applications — Shomer{% endblock %}
 {% block content %}
-<h1>Settings</h1>
-<nav class="settings-nav">
-    <a href="/ui/settings">Overview</a>
-    <a href="/ui/settings/profile">Profile</a>
-    <a href="/ui/settings/emails">Emails</a>
-    <a href="/ui/settings/security">Security</a>
-    <a href="/ui/settings/pats">Tokens</a>
-    <a href="/ui/settings/applications" class="active">Applications</a>
-</nav>
+<div class="page-header">
+    <h1>Connected Applications</h1>
+    <p>Applications authorized to access your account</p>
+</div>
 
-<h2>Connected Applications</h2>
-
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-{% if success %}<p class="success">{{ success }}</p>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
 
 {% if apps %}
-<table class="app-table">
-    <thead>
-        <tr>
-            <th>Application</th>
-            <th>Scopes</th>
-            <th>Authorized</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for app in apps %}
-        <tr>
-            <td>
-                {% if app.logo_uri %}<img src="{{ app.logo_uri }}" alt="" class="app-logo">{% endif %}
-                {{ app.client_name }}
-            </td>
-            <td>{{ app.scopes or "—" }}</td>
-            <td>{{ app.authorized_at[:10] }}</td>
-            <td>
-                <form method="post" action="/ui/settings/applications" style="display:inline">
-                    <input type="hidden" name="action" value="revoke">
-                    <input type="hidden" name="client_id" value="{{ app.client_id }}">
-                    <button type="submit" class="revoke-btn">Revoke</button>
-                </form>
-            </td>
-        </tr>
-    {% endfor %}
-    </tbody>
-</table>
+<div class="card">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Application</th>
+                <th>Scopes</th>
+                <th>Authorized</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for app in apps %}
+            <tr>
+                <td>
+                    {% if app.logo_uri %}<img src="{{ app.logo_uri }}" alt="" style="width:20px;height:20px;vertical-align:middle;margin-right:6px;border-radius:4px">{% endif %}
+                    {{ app.client_name }}
+                </td>
+                <td>{{ app.scopes or "—" }}</td>
+                <td class="text-muted">{{ app.authorized_at[:10] }}</td>
+                <td>
+                    <form method="post" action="/ui/settings/applications" style="display:inline">
+                        <input type="hidden" name="action" value="revoke">
+                        <input type="hidden" name="client_id" value="{{ app.client_id }}">
+                        <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% else %}
-<p>No connected applications.</p>
+<div class="card">
+    <p class="text-muted">No connected applications.</p>
+</div>
 {% endif %}
-
-<style>
-    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
-    .settings-nav a.active { background: #333; color: #fff; }
-    .app-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-    .app-table th, .app-table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
-    .app-logo { width: 20px; height: 20px; vertical-align: middle; margin-right: 6px; border-radius: 4px; }
-    .revoke-btn { background: #c00; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.85em; }
-    .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; }
-    .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; }
-</style>
 {% endblock %}

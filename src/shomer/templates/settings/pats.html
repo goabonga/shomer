@@ -1,60 +1,65 @@
-{% extends "base.html" %}
+{% extends "settings/base.html" %}
 {% block title %}Personal Access Tokens — Shomer{% endblock %}
 {% block content %}
-<h1>Settings</h1>
-<nav class="settings-nav">
-    <a href="/ui/settings">Overview</a>
-    <a href="/ui/settings/profile">Profile</a>
-    <a href="/ui/settings/emails">Emails</a>
-    <a href="/ui/settings/security">Security</a>
-    <a href="/ui/settings/pats" class="active">Tokens</a>
-    <a href="/ui/settings/applications">Applications</a>
-</nav>
+<div class="page-header">
+    <h1>Personal Access Tokens</h1>
+    <p>Create and manage your API tokens</p>
+</div>
 
-<h2>Personal Access Tokens</h2>
-
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-{% if success %}<p class="success">{{ success }}</p>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
 
 {% if new_token %}
-<div class="token-created">
+<div class="alert alert-success">
     <h3>Token Created</h3>
     <p>Copy this token now — it will not be shown again:</p>
-    <div class="token-display">
-        <code id="pat-value">{{ new_token }}</code>
-        <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('pat-value').textContent)">Copy</button>
+    <div class="flex-row mt-1">
+        <code id="pat-value" class="mono">{{ new_token }}</code>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('pat-value').textContent)">Copy</button>
     </div>
 </div>
 {% endif %}
 
-<div class="create-section">
+<div class="card">
     <h3>Create New Token</h3>
     <form method="post" action="/ui/settings/pats">
         <input type="hidden" name="action" value="create">
-        <input type="text" name="name" placeholder="Token name (e.g. CI deploy key)" required>
-        <input type="text" name="scopes" placeholder="Scopes (space-separated, e.g. api:read)">
-        <select id="expires-preset" name="expires_preset" onchange="applyExpirationPreset()">
-            <option value="">No expiration</option>
-            <option value="7">7 days</option>
-            <option value="30">30 days</option>
-            <option value="60">60 days</option>
-            <option value="90">90 days</option>
-            <option value="365">1 year</option>
-            <option value="custom">Custom…</option>
-        </select>
-        <input type="date" id="expires-custom" name="expires_at" style="display:none">
+        <div class="form-group">
+            <label class="form-label">Token name</label>
+            <input type="text" name="name" placeholder="Token name (e.g. CI deploy key)" required>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Scopes</label>
+            <input type="text" name="scopes" placeholder="Scopes (space-separated, e.g. api:read)">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Expiration</label>
+            <select id="expires-preset" name="expires_preset" onchange="applyExpirationPreset()">
+                <option value="">No expiration</option>
+                <option value="7">7 days</option>
+                <option value="30">30 days</option>
+                <option value="60">60 days</option>
+                <option value="90">90 days</option>
+                <option value="365">1 year</option>
+                <option value="custom">Custom...</option>
+            </select>
+        </div>
+        <div class="form-group" id="expires-custom-group" style="display:none">
+            <label class="form-label">Custom date</label>
+            <input type="date" id="expires-custom" name="expires_at">
+        </div>
         <button type="submit">Create Token</button>
     </form>
 </div>
 
-<div class="list-section">
+<div class="card">
     <h3>Existing Tokens</h3>
     {% if tokens %}
-    <form method="post" action="/ui/settings/pats" style="margin-bottom:12px; text-align:right">
+    <form method="post" action="/ui/settings/pats" class="mb-2" style="text-align:right">
         <input type="hidden" name="action" value="revoke_all">
-        <button type="submit" class="revoke-all-btn">Revoke All</button>
+        <button type="submit" class="btn btn-danger btn-sm">Revoke All</button>
     </form>
-    <table class="pat-table">
+    <table class="table">
         <thead>
             <tr>
                 <th>Name</th>
@@ -70,27 +75,35 @@
         </thead>
         <tbody>
         {% for pat in tokens %}
-            <tr class="{% if pat.is_revoked %}revoked{% endif %}">
+            <tr>
                 <td>{{ pat.name }}</td>
-                <td><code>{{ pat.token_prefix }}...</code></td>
+                <td><code class="mono">{{ pat.token_prefix }}...</code></td>
                 <td>{{ pat.scopes or "—" }}</td>
                 <td>{{ pat.use_count }}</td>
-                <td>{{ pat.last_used_at[:10] if pat.last_used_at else "Never" }}</td>
-                <td>{{ pat.last_used_ip or "—" }}</td>
-                <td>{{ pat.expires_at[:10] if pat.expires_at else "Never" }}</td>
-                <td>{% if pat.is_revoked %}<span class="revoked-badge">Revoked</span>{% else %}<span class="active-badge">Active</span>{% endif %}</td>
+                <td class="text-muted">{{ pat.last_used_at[:10] if pat.last_used_at else "Never" }}</td>
+                <td class="text-muted">{{ pat.last_used_ip or "—" }}</td>
+                <td class="text-muted">{{ pat.expires_at[:10] if pat.expires_at else "Never" }}</td>
+                <td>
+                    {% if pat.is_revoked %}
+                    <span class="badge badge-danger">Revoked</span>
+                    {% else %}
+                    <span class="badge badge-success">Active</span>
+                    {% endif %}
+                </td>
                 <td>
                     {% if not pat.is_revoked %}
-                    <form method="post" action="/ui/settings/pats" style="display:inline">
-                        <input type="hidden" name="action" value="regenerate">
-                        <input type="hidden" name="pat_id" value="{{ pat.id }}">
-                        <button type="submit" class="regenerate-btn">Regenerate</button>
-                    </form>
-                    <form method="post" action="/ui/settings/pats" style="display:inline">
-                        <input type="hidden" name="action" value="revoke">
-                        <input type="hidden" name="pat_id" value="{{ pat.id }}">
-                        <button type="submit" class="revoke-btn">Revoke</button>
-                    </form>
+                    <div class="flex-row">
+                        <form method="post" action="/ui/settings/pats" style="display:inline">
+                            <input type="hidden" name="action" value="regenerate">
+                            <input type="hidden" name="pat_id" value="{{ pat.id }}">
+                            <button type="submit" class="btn btn-secondary btn-sm">Regenerate</button>
+                        </form>
+                        <form method="post" action="/ui/settings/pats" style="display:inline">
+                            <input type="hidden" name="action" value="revoke">
+                            <input type="hidden" name="pat_id" value="{{ pat.id }}">
+                            <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+                        </form>
+                    </div>
                     {% endif %}
                 </td>
             </tr>
@@ -98,7 +111,7 @@
         </tbody>
     </table>
     {% else %}
-    <p>No personal access tokens yet.</p>
+    <p class="text-muted">No personal access tokens yet.</p>
     {% endif %}
 </div>
 
@@ -106,36 +119,19 @@
 function applyExpirationPreset() {
     var sel = document.getElementById('expires-preset');
     var custom = document.getElementById('expires-custom');
+    var customGroup = document.getElementById('expires-custom-group');
     if (sel.value === 'custom') {
-        custom.style.display = '';
+        customGroup.style.display = '';
         custom.value = '';
     } else if (sel.value === '') {
-        custom.style.display = 'none';
+        customGroup.style.display = 'none';
         custom.value = '';
     } else {
-        custom.style.display = 'none';
+        customGroup.style.display = 'none';
         var d = new Date();
         d.setDate(d.getDate() + parseInt(sel.value, 10));
         custom.value = d.toISOString().slice(0, 10);
     }
 }
 </script>
-
-<style>
-    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
-    .settings-nav a.active { background: #333; color: #fff; }
-    .token-created { background: #e8f5e9; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
-    .token-display { display: flex; gap: 8px; align-items: center; background: #fff; padding: 8px; border-radius: 4px; margin-top: 8px; }
-    .token-display code { flex: 1; word-break: break-all; font-size: 0.9em; }
-    .create-section { margin-bottom: 32px; }
-    .pat-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-    .pat-table th, .pat-table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
-    .revoked td { opacity: 0.5; }
-    .revoked-badge { color: #c00; font-size: 0.85em; }
-    .active-badge { color: #060; font-size: 0.85em; }
-    .revoke-all-btn { background: #c00; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85em; }
-    .regenerate-btn { background: #1976d2; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.85em; margin-right: 4px; }
-    .revoke-btn { background: #c00; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.85em; }
-</style>
 {% endblock %}

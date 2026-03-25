@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Settings — Shomer{% endblock %}</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/shomer.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <input type="checkbox" id="hamburger-toggle" class="hamburger-toggle">
+    <header class="mobile-header">
+        <h2>Settings</h2>
+        <label for="hamburger-toggle" class="hamburger-btn" aria-label="Toggle menu">
+            <span></span><span></span><span></span>
+        </label>
+    </header>
+    <label for="hamburger-toggle" class="menu-overlay"></label>
+
+    <div class="layout">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>Settings</h2>
+                <span>Account</span>
+            </div>
+            <div class="sidebar-nav">
+                <a href="/ui/settings/profile" class="{% if section == 'profile' %}active{% endif %}">Profile</a>
+                <a href="/ui/settings/emails" class="{% if section == 'emails' %}active{% endif %}">Emails</a>
+                <a href="/ui/settings/security" class="{% if section == 'security' %}active{% endif %}">Security</a>
+                <a href="/ui/settings/pats" class="{% if section == 'pats' %}active{% endif %}">Tokens</a>
+                <a href="/ui/settings/applications" class="{% if section == 'applications' %}active{% endif %}">Applications</a>
+                <div class="nav-separator"></div>
+                <a href="/ui/logout">Logout</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

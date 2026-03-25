@@ -2,8 +2,8 @@
 {% block title %}MFA Verification — Shomer{% endblock %}
 {% block content %}
 <h1>MFA Verification</h1>
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-{% if success %}<p class="success">{{ success }}</p>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
 
 {% if method == "email" %}
 <p>Enter the 6-digit code sent to your email.</p>
@@ -31,8 +31,8 @@
 </form>
 {% endif %}
 
-<hr>
-<p>
+<div class="divider"></div>
+<p class="footer-links">
 {% if method != "email" %}
     <a href="/ui/mfa/challenge?mfa_token={{ mfa_token }}&method=email">Use email code instead</a> |
 {% endif %}

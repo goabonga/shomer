@@ -5,19 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Shomer{% endblock %}</title>
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/shomer.css">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    {% if branding and branding.font_url %}
+    <link href="{{ branding.font_url }}" rel="stylesheet">
+    {% endif %}
+    {% if branding %}
     <style>
-        body { font-family: system-ui, sans-serif; max-width: 400px; margin: 60px auto; padding: 0 16px; }
-        h1 { text-align: center; }
-        form { display: flex; flex-direction: column; gap: 12px; }
-        input { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-        button { padding: 10px; background: #333; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-        .error { color: #c00; }
-        .success { color: #060; }
-        a { color: #333; }
+        :root {
+            {% if branding.primary_color %}--primary-color: {{ branding.primary_color }};{% endif %}
+            {% if branding.secondary_color %}--secondary-color: {{ branding.secondary_color }};{% endif %}
+            {% if branding.accent_color %}--accent-color: {{ branding.accent_color }};{% endif %}
+            {% if branding.background_color %}--background-color: {{ branding.background_color }};{% endif %}
+            {% if branding.surface_color %}--surface-color: {{ branding.surface_color }};{% endif %}
+            {% if branding.text_color %}--text-color: {{ branding.text_color }};{% endif %}
+            {% if branding.font_family %}--font-family: {{ branding.font_family }};{% endif %}
+        }
     </style>
+    {% endif %}
+    {% block head %}{% endblock %}
 </head>
 <body>
-    {% block content %}{% endblock %}
+    {% block body %}
+    <div class="auth-container">
+        {% block content %}{% endblock %}
+    </div>
+    {% endblock %}
 </body>
 </html>

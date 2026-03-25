@@ -4,17 +4,17 @@
 <h1>Device Verification</h1>
 
 {% if success %}
-<p class="success">{{ success }}</p>
+<div class="alert alert-success">{{ success }}</div>
 {% else %}
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
 
 <p>Enter the code displayed on your device:</p>
 <form method="post" action="/ui/device">
-    <input type="text" name="user_code" value="{{ user_code or '' }}" placeholder="XXXX-XXXX" required maxlength="9" style="text-transform: uppercase; text-align: center; font-size: 1.5em; letter-spacing: 4px;">
+    <input type="text" name="user_code" value="{{ user_code or '' }}" placeholder="XXXX-XXXX" required maxlength="9" style="text-transform:uppercase;text-align:center;font-size:1.5em;letter-spacing:4px">
 
-    <div style="display: flex; gap: 12px; margin-top: 16px;">
-        <button type="submit" name="action" value="approve" style="flex: 1; background: #060;">Authorize</button>
-        <button type="submit" name="action" value="deny" style="flex: 1; background: #eee; color: #333; border: 1px solid #ccc;">Deny</button>
+    <div class="flex-row mt-2">
+        <button type="submit" name="action" value="approve" class="btn btn-success" style="flex:1">Authorize</button>
+        <button type="submit" name="action" value="deny" class="btn btn-secondary" style="flex:1">Deny</button>
     </div>
 </form>
 {% endif %}

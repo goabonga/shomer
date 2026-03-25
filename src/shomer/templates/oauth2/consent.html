@@ -1,72 +1,51 @@
 {% extends "base.html" %}
 {% block title %}Authorize — Shomer{% endblock %}
 {% block content %}
-<div class="consent-card">
-    {% if logo_uri %}
-    <div class="client-logo">
-        <img src="{{ logo_uri }}" alt="{{ client_name }}" width="64" height="64">
-    </div>
-    {% endif %}
-
-    <h1>Authorize {{ client_name }}</h1>
-    <p class="consent-description"><strong>{{ client_name }}</strong> is requesting access to your account.</p>
-
-    {% if scopes %}
-    <div class="scope-list">
-        <p>This application will be able to:</p>
-        <ul>
-        {% for scope in scopes %}
-            <li>
-                <span class="scope-description">{{ scope.description }}</span>
-                <span class="scope-name">({{ scope.name }})</span>
-            </li>
-        {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
-
-    <form method="post" action="/oauth2/authorize">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="client_id" value="{{ client_id }}">
-        <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
-        <input type="hidden" name="response_type" value="{{ response_type }}">
-        <input type="hidden" name="scope" value="{{ scope }}">
-        <input type="hidden" name="state" value="{{ state }}">
-        <input type="hidden" name="nonce" value="{{ nonce }}">
-        <input type="hidden" name="code_challenge" value="{{ code_challenge }}">
-        <input type="hidden" name="code_challenge_method" value="{{ code_challenge_method }}">
-
-        <div class="consent-buttons">
-            <button type="submit" name="consent" value="approve" class="btn-approve">Authorize</button>
-            <button type="submit" name="consent" value="deny" class="btn-deny">Deny</button>
-        </div>
-    </form>
-
-    {% if policy_uri or tos_uri %}
-    <div class="client-links">
-        {% if policy_uri %}<a href="{{ policy_uri }}" target="_blank" rel="noopener">Privacy Policy</a>{% endif %}
-        {% if policy_uri and tos_uri %} · {% endif %}
-        {% if tos_uri %}<a href="{{ tos_uri }}" target="_blank" rel="noopener">Terms of Service</a>{% endif %}
-    </div>
-    {% endif %}
+{% if logo_uri %}
+<div style="text-align:center;margin-bottom:1rem">
+    <img src="{{ logo_uri }}" alt="{{ client_name }}" width="64" height="64" style="border-radius:12px">
 </div>
+{% endif %}
 
-<style>
-    .consent-card { text-align: center; }
-    .client-logo { margin-bottom: 16px; }
-    .client-logo img { border-radius: 12px; }
-    .consent-description { color: #555; }
-    .scope-list { text-align: left; margin: 20px 0; }
-    .scope-list ul { list-style: none; padding: 0; }
-    .scope-list li { padding: 8px 0; border-bottom: 1px solid #eee; }
-    .scope-description { font-weight: 500; }
-    .scope-name { color: #999; font-size: 0.85em; }
-    .consent-buttons { display: flex; gap: 12px; margin-top: 20px; }
-    .btn-approve { flex: 1; background: #060; color: #fff; padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; }
-    .btn-approve:hover { background: #080; }
-    .btn-deny { flex: 1; background: #eee; color: #333; padding: 12px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 1em; }
-    .btn-deny:hover { background: #ddd; }
-    .client-links { margin-top: 20px; font-size: 0.85em; color: #999; }
-    .client-links a { color: #666; }
-</style>
+<h1>Authorize {{ client_name }}</h1>
+<p class="text-muted"><strong>{{ client_name }}</strong> is requesting access to your account.</p>
+
+{% if scopes %}
+<div class="card mt-2">
+    <p>This application will be able to:</p>
+    <ul style="list-style:none;padding:0;margin-top:0.5rem">
+    {% for scope in scopes %}
+        <li style="padding:0.5rem 0;border-bottom:1px solid var(--border-color)">
+            <strong>{{ scope.description }}</strong>
+            <span class="text-muted mono">({{ scope.name }})</span>
+        </li>
+    {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<form method="post" action="/oauth2/authorize">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="client_id" value="{{ client_id }}">
+    <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+    <input type="hidden" name="response_type" value="{{ response_type }}">
+    <input type="hidden" name="scope" value="{{ scope }}">
+    <input type="hidden" name="state" value="{{ state }}">
+    <input type="hidden" name="nonce" value="{{ nonce }}">
+    <input type="hidden" name="code_challenge" value="{{ code_challenge }}">
+    <input type="hidden" name="code_challenge_method" value="{{ code_challenge_method }}">
+
+    <div class="flex-row mt-2">
+        <button type="submit" name="consent" value="approve" class="btn btn-success" style="flex:1">Authorize</button>
+        <button type="submit" name="consent" value="deny" class="btn btn-secondary" style="flex:1">Deny</button>
+    </div>
+</form>
+
+{% if policy_uri or tos_uri %}
+<div class="footer-links mt-2">
+    {% if policy_uri %}<a href="{{ policy_uri }}" target="_blank" rel="noopener">Privacy Policy</a>{% endif %}
+    {% if policy_uri and tos_uri %} · {% endif %}
+    {% if tos_uri %}<a href="{{ tos_uri }}" target="_blank" rel="noopener">Terms of Service</a>{% endif %}
+</div>
+{% endif %}
 {% endblock %}

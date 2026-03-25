@@ -6,32 +6,32 @@
     <p>Monitor and revoke user sessions</p>
 </div>
 <div class="card">
-    <table style="width: 100%; border-collapse: collapse;">
+    <table class="table">
         <thead>
-            <tr style="border-bottom: 2px solid #eee; text-align: left;">
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">User ID</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">IP Address</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Last Activity</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Expires</th>
-                <th style="padding: 10px 8px;"></th>
+            <tr>
+                <th>User ID</th>
+                <th>IP Address</th>
+                <th>Last Activity</th>
+                <th>Expires</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
             {% for s in sessions %}
-            <tr style="border-bottom: 1px solid #f0f0f0;">
-                <td style="padding: 10px 8px; font-family: monospace; font-size: 12px;">{{ s.user_id[:8] }}…</td>
-                <td style="padding: 10px 8px;">{{ s.ip_address or '—' }}</td>
-                <td style="padding: 10px 8px; font-size: 13px;">{{ s.last_activity[:16] if s.last_activity else '—' }}</td>
-                <td style="padding: 10px 8px; font-size: 13px;">{{ s.expires_at[:16] if s.expires_at else '—' }}</td>
-                <td style="padding: 10px 8px;">
-                    <form method="post" action="/ui/admin/sessions/{{ s.id }}/revoke" style="display: inline;">
-                        <button type="submit" style="padding: 4px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Revoke</button>
+            <tr>
+                <td class="mono">{{ s.user_id[:8] }}...</td>
+                <td>{{ s.ip_address or '—' }}</td>
+                <td class="text-muted">{{ s.last_activity[:16] if s.last_activity else '—' }}</td>
+                <td class="text-muted">{{ s.expires_at[:16] if s.expires_at else '—' }}</td>
+                <td>
+                    <form method="post" action="/ui/admin/sessions/{{ s.id }}/revoke" style="display:inline">
+                        <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
                     </form>
                 </td>
             </tr>
             {% endfor %}
             {% if not sessions %}
-            <tr><td colspan="5" style="padding: 20px; text-align: center; color: #999;">No active sessions.</td></tr>
+            <tr><td colspan="5" class="text-muted" style="padding:20px;text-align:center">No active sessions.</td></tr>
             {% endif %}
         </tbody>
     </table>
