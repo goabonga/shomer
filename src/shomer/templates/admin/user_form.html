@@ -3,40 +3,38 @@
 {% block content %}
 <div class="page-header">
     <h1>{{ 'Edit' if edit else 'Create' }} User</h1>
-    <p><a href="/ui/admin/users" style="color: #6366f1;">&larr; Back to users</a></p>
+    <p><a href="/ui/admin/users">&larr; Back to users</a></p>
 </div>
 
 {% if error %}
-<div style="background: #f8d7da; color: #721c24; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px;">{{ error }}</div>
+<div class="alert alert-error">{{ error }}</div>
 {% endif %}
 {% if success %}
-<div style="background: #d4edda; color: #155724; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px;">{{ success }}</div>
+<div class="alert alert-success">{{ success }}</div>
 {% endif %}
 
-<div class="card">
+<div class="card card-wide">
     <form method="post" action="/ui/admin/users/{{ 'new' if not edit else user_id }}">
-        <div style="display: grid; gap: 16px; max-width: 500px;">
-            <div>
-                <label style="font-size: 13px; font-weight: 500;">Email</label>
-                <input type="email" name="email" value="{{ email or '' }}" {% if edit %}disabled{% endif %} required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            </div>
-            {% if not edit %}
-            <div>
-                <label style="font-size: 13px; font-weight: 500;">Password</label>
-                <input type="password" name="password" required minlength="8" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            </div>
-            {% endif %}
-            <div>
-                <label style="font-size: 13px; font-weight: 500;">Username</label>
-                <input type="text" name="username" value="{{ username or '' }}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            </div>
-            <div>
-                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
-                    <input type="checkbox" name="is_active" {% if is_active is not defined or is_active %}checked{% endif %}> Active
-                </label>
-            </div>
-            <button type="submit" style="padding: 10px 24px; background: #1a1a2e; color: #fff; border: none; border-radius: 4px; cursor: pointer; width: fit-content;">{{ 'Save Changes' if edit else 'Create User' }}</button>
+        <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" name="email" value="{{ email or '' }}" {% if edit %}disabled{% endif %} required>
         </div>
+        {% if not edit %}
+        <div class="form-group">
+            <label class="form-label">Password</label>
+            <input type="password" name="password" required minlength="8">
+        </div>
+        {% endif %}
+        <div class="form-group">
+            <label class="form-label">Username</label>
+            <input type="text" name="username" value="{{ username or '' }}">
+        </div>
+        <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem">
+                <input type="checkbox" name="is_active" {% if is_active is not defined or is_active %}checked{% endif %}> Active
+            </label>
+        </div>
+        <button type="submit" class="btn">{{ 'Save Changes' if edit else 'Create User' }}</button>
     </form>
 </div>
 {% endblock %}

@@ -1,14 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shomer</title>
-    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
-</head>
-<body>
-    <h1>Shomer</h1>
-    <p>OIDC/OAuth2 authentication service.</p>
-    <p>v{{ version }}</p>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Shomer{% endblock %}
+{% block content %}
+<h1>Shomer</h1>
+<p>OIDC/OAuth2 authentication service.</p>
+<p class="text-muted">v{{ version }}</p>
+{% endblock %}

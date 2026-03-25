@@ -1,87 +1,54 @@
-{% extends "base.html" %}
+{% extends "settings/base.html" %}
 {% block title %}Profile Settings — Shomer{% endblock %}
 {% block content %}
-<h1>Settings</h1>
-<nav class="settings-nav">
-    <a href="/ui/settings">Overview</a>
-    <a href="/ui/settings/profile" class="active">Profile</a>
-    <a href="/ui/settings/emails">Emails</a>
-    <a href="/ui/settings/security">Security</a>
-    <a href="/ui/settings/pats">Tokens</a>
-    <a href="/ui/settings/applications">Applications</a>
-</nav>
-
-<h2>Profile</h2>
-
-{% if error %}
-<div class="flash-error">{{ error }}</div>
-{% endif %}
-{% if success %}
-<div class="flash-success">{{ success }}</div>
-{% endif %}
-
-<!-- Avatar Section -->
-<div class="avatar-section">
-    <div class="avatar-area">
-        {% if profile and profile.picture_url %}
-        <img src="{{ profile.picture_url }}" alt="Profile avatar" class="avatar-img">
-        {% else %}
-        <div class="avatar-fallback">
-            {{ (profile.given_name[0] if profile and profile.given_name else user.username[0] if user and user.username else '?') | upper }}
-        </div>
-        {% endif %}
-        <form method="post" action="/ui/settings/profile/avatar" enctype="multipart/form-data" class="avatar-upload-form">
-            <div class="form-group">
-                <label for="avatar">Upload avatar</label>
-                <input type="file" id="avatar" name="avatar" accept="image/jpeg,image/png,image/gif,image/webp">
-                <p class="hint">JPEG, PNG, GIF, or WebP. Max 5 MB.</p>
-            </div>
-            <button type="submit" class="btn-upload">Upload</button>
-        </form>
-    </div>
+<div class="page-header">
+    <h1>Profile</h1>
+    <p>Manage your personal information</p>
 </div>
 
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+{% if success %}
+<div class="alert alert-success">{{ success }}</div>
+{% endif %}
+
 <form method="post" action="/ui/settings/profile">
-    <div class="form-group">
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" value="{{ email or '' }}" disabled>
-        <p class="hint">Email cannot be changed here. Use the Emails tab.</p>
+    <div class="card">
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" value="{{ email or '' }}" disabled>
+            <div class="hint">Email cannot be changed here. Use the Emails tab.</div>
+        </div>
     </div>
 
-    <!-- Identity Section (Always visible) -->
-    <fieldset class="profile-fieldset">
-        <legend>Identity</legend>
-
+    <div class="card">
+        <h3>Identity</h3>
         <div class="form-group">
             <label for="nickname">Display name</label>
             <input type="text" id="nickname" name="nickname" value="{{ profile.nickname or '' if profile else '' }}" placeholder="How you want to be called">
         </div>
-
         <div class="form-group">
             <label for="preferred_username">Preferred username</label>
             <input type="text" id="preferred_username" name="preferred_username" value="{{ profile.preferred_username or '' if profile else '' }}" placeholder="username">
         </div>
-
-        <div class="name-grid">
+        <div class="three-col">
             <div class="form-group">
                 <label for="given_name">First name</label>
                 <input type="text" id="given_name" name="given_name" value="{{ profile.given_name or '' if profile else '' }}">
             </div>
-
             <div class="form-group">
                 <label for="middle_name">Middle name</label>
                 <input type="text" id="middle_name" name="middle_name" value="{{ profile.middle_name or '' if profile else '' }}">
             </div>
-
             <div class="form-group">
                 <label for="family_name">Last name</label>
                 <input type="text" id="family_name" name="family_name" value="{{ profile.family_name or '' if profile else '' }}">
             </div>
         </div>
-    </fieldset>
+    </div>
 
-    <!-- Personal Information Section (Collapsible) -->
-    <details class="optional-section">
+    <details class="collapsible">
         <summary>Personal Information (Optional)</summary>
         <div class="section-content">
             <div class="two-col">
@@ -95,41 +62,35 @@
                         <option value="prefer_not_to_say" {% if profile and profile.gender == 'prefer_not_to_say' %}selected{% endif %}>Prefer not to say</option>
                     </select>
                 </div>
-
                 <div class="form-group">
                     <label for="birthdate">Birthdate</label>
                     <input type="date" id="birthdate" name="birthdate" value="{{ profile.birthdate or '' if profile else '' }}">
                 </div>
             </div>
-
             <div class="two-col">
                 <div class="form-group">
                     <label for="locale">Locale</label>
                     <input type="text" id="locale" name="locale" value="{{ profile.locale or '' if profile else '' }}" placeholder="en-US, fr-FR, etc.">
                 </div>
-
                 <div class="form-group">
                     <label for="zoneinfo">Timezone</label>
-                    <input type="text" id="zoneinfo" name="zoneinfo" value="{{ profile.zoneinfo or '' if profile else '' }}" placeholder="Europe/Paris, America/New_York, etc.">
+                    <input type="text" id="zoneinfo" name="zoneinfo" value="{{ profile.zoneinfo or '' if profile else '' }}" placeholder="Europe/Paris">
                 </div>
             </div>
         </div>
     </details>
 
-    <!-- Contact Section (Collapsible) -->
-    <details class="optional-section">
+    <details class="collapsible">
         <summary>Contact (Optional)</summary>
         <div class="section-content">
             <div class="form-group">
                 <label for="phone_number">Phone number</label>
                 <input type="tel" id="phone_number" name="phone_number" value="{{ profile.phone_number or '' if profile else '' }}" placeholder="+33 6 12 34 56 78">
             </div>
-
             <div class="form-group">
                 <label for="website">Website</label>
                 <input type="url" id="website" name="website" value="{{ profile.website or '' if profile else '' }}" placeholder="https://yourwebsite.com">
             </div>
-
             <div class="form-group">
                 <label for="profile_url">Profile URL</label>
                 <input type="url" id="profile_url" name="profile_url" value="{{ profile.profile_url or '' if profile else '' }}" placeholder="https://linkedin.com/in/yourprofile">
@@ -137,35 +98,39 @@
         </div>
     </details>
 
-    <input type="hidden" name="picture_url" value="{{ profile.picture_url or '' if profile else '' }}">
+    <details class="collapsible">
+        <summary>Picture URL (Optional)</summary>
+        <div class="section-content">
+            <div class="form-group">
+                <label for="picture_url">Profile picture URL</label>
+                <input type="text" id="picture_url" name="picture_url" value="{{ profile.picture_url or '' if profile else '' }}" placeholder="https://example.com/avatar.jpg">
+                <div class="hint">Use an external image URL for your profile picture.</div>
+            </div>
+        </div>
+    </details>
 
-    <!-- Address Section (Collapsible) -->
-    <details class="optional-section">
+    <details class="collapsible">
         <summary>Address (Optional)</summary>
         <div class="section-content">
             <div class="form-group">
                 <label for="address_street">Street address</label>
                 <input type="text" id="address_street" name="address_street" value="{{ profile.address_street or '' if profile else '' }}" placeholder="123 Main Street">
             </div>
-
             <div class="two-col">
                 <div class="form-group">
                     <label for="address_locality">City</label>
                     <input type="text" id="address_locality" name="address_locality" value="{{ profile.address_locality or '' if profile else '' }}" placeholder="Paris">
                 </div>
-
                 <div class="form-group">
                     <label for="address_region">Region / State</label>
                     <input type="text" id="address_region" name="address_region" value="{{ profile.address_region or '' if profile else '' }}" placeholder="Île-de-France">
                 </div>
             </div>
-
             <div class="two-col">
                 <div class="form-group">
                     <label for="address_postal_code">Postal code</label>
                     <input type="text" id="address_postal_code" name="address_postal_code" value="{{ profile.address_postal_code or '' if profile else '' }}" placeholder="75001">
                 </div>
-
                 <div class="form-group">
                     <label for="address_country">Country</label>
                     <input type="text" id="address_country" name="address_country" value="{{ profile.address_country or '' if profile else '' }}" placeholder="France">
@@ -174,35 +139,6 @@
         </div>
     </details>
 
-    <button type="submit" class="btn-save">Save changes</button>
+    <button type="submit" class="btn mt-2">Save changes</button>
 </form>
-
-<style>
-    .settings-nav { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-    .settings-nav a { text-decoration: none; padding: 4px 8px; border-radius: 4px; }
-    .settings-nav a.active { background: #333; color: #fff; }
-    .form-group { margin-bottom: 12px; }
-    .form-group label { display: block; font-weight: 500; margin-bottom: 4px; }
-    .form-group input, .form-group select { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-    .form-group input:disabled { background: #f5f5f5; color: #888; }
-    .hint { font-size: 0.8rem; color: #888; margin-top: 4px; }
-    .profile-fieldset { border: 1px solid #ddd; border-radius: 4px; padding: 16px 20px; margin-bottom: 16px; }
-    .profile-fieldset legend { font-weight: 600; padding: 0 8px; }
-    .name-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .optional-section { margin-bottom: 12px; border: 1px solid #ddd; border-radius: 4px; }
-    .optional-section summary { padding: 10px 14px; cursor: pointer; font-weight: 500; user-select: none; }
-    .optional-section summary:hover { background: #f9f9f9; }
-    .optional-section[open] summary { border-bottom: 1px solid #ddd; }
-    .optional-section .section-content { padding: 14px 20px; }
-    .avatar-section { margin-bottom: 20px; padding: 16px 20px; border: 1px solid #ddd; border-radius: 4px; }
-    .avatar-area { display: flex; align-items: center; gap: 20px; }
-    .avatar-img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #ddd; }
-    .avatar-fallback { width: 80px; height: 80px; border-radius: 50%; background: #333; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 600; flex-shrink: 0; }
-    .avatar-upload-form { display: flex; align-items: flex-end; gap: 12px; }
-    .btn-upload { padding: 6px 16px; white-space: nowrap; }
-    .btn-save { margin-top: 16px; padding: 8px 24px; }
-    .flash-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; }
-    .flash-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; }
-</style>
 {% endblock %}

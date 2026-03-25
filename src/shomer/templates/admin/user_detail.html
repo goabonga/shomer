@@ -3,13 +3,19 @@
 {% block content %}
 <div class="page-header">
     <h1>User: {{ user_data.username or user_data.emails[0].email if user_data.emails else user_data.id }}</h1>
-    <p><a href="/ui/admin/users" style="color: #6366f1;">&larr; Back to users</a></p>
+    <p><a href="/ui/admin/users">&larr; Back to users</a></p>
 </div>
 
 <div class="stat-grid">
     <div class="stat-card">
         <div class="label">Status</div>
-        <div class="value" style="font-size: 18px;">{% if user_data.is_active %}Active{% else %}Inactive{% endif %}</div>
+        <div class="value">
+            {% if user_data.is_active %}
+            <span class="badge badge-success">Active</span>
+            {% else %}
+            <span class="badge badge-danger">Inactive</span>
+            {% endif %}
+        </div>
     </div>
     <div class="stat-card">
         <div class="label">Active Sessions</div>
@@ -23,13 +29,13 @@
 
 <div class="card">
     <h3>Emails</h3>
-    <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+    <table class="table mt-1">
         {% for email in user_data.emails %}
-        <tr style="border-bottom: 1px solid #f0f0f0;">
-            <td style="padding: 8px;">{{ email.email }}</td>
-            <td style="padding: 8px;">
-                {% if email.is_primary %}<span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Primary</span>{% endif %}
-                {% if email.is_verified %}<span style="background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Verified</span>{% else %}<span style="background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Unverified</span>{% endif %}
+        <tr>
+            <td>{{ email.email }}</td>
+            <td>
+                {% if email.is_primary %}<span class="badge badge-info">Primary</span>{% endif %}
+                {% if email.is_verified %}<span class="badge badge-success">Verified</span>{% else %}<span class="badge badge-warning">Unverified</span>{% endif %}
             </td>
         </tr>
         {% endfor %}
@@ -39,10 +45,10 @@
 {% if user_data.profile %}
 <div class="card">
     <h3>Profile</h3>
-    <dl style="display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin-top: 8px;">
+    <dl class="two-col mt-1">
         {% for key, val in user_data.profile.items() %}
-        <dt style="font-size: 13px; color: #888;">{{ key }}</dt>
-        <dd style="margin: 0;">{{ val }}</dd>
+        <dt class="text-muted">{{ key }}</dt>
+        <dd>{{ val }}</dd>
         {% endfor %}
     </dl>
 </div>
@@ -51,13 +57,13 @@
 <div class="card">
     <h3>Roles</h3>
     {% if user_data.roles %}
-    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+    <div class="flex-row flex-wrap mt-1">
         {% for role in user_data.roles %}
-        <span style="background: #e0e7ff; color: #3730a3; padding: 4px 12px; border-radius: 12px; font-size: 13px;">{{ role.name }}</span>
+        <span class="badge badge-info">{{ role.name }}</span>
         {% endfor %}
     </div>
     {% else %}
-    <p style="color: #999; margin-top: 8px;">No roles assigned.</p>
+    <p class="text-muted mt-1">No roles assigned.</p>
     {% endif %}
 </div>
 {% endblock %}

@@ -2,13 +2,13 @@
 {% block title %}Register — Shomer{% endblock %}
 {% block content %}
 <h1>Register</h1>
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-{% if success %}<p class="success">{{ success }}</p>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
 <form method="post" action="/ui/register">
     <input type="email" name="email" placeholder="Email" required>
     <input type="text" name="username" placeholder="Username (optional)">
     <input type="password" name="password" placeholder="Password (min 8 chars)" required minlength="8">
     <button type="submit">Register</button>
 </form>
-<p><a href="/ui/login">Already have an account? Login</a></p>
+<p class="footer-links"><a href="/ui/login">Already have an account? Login</a></p>
 {% endblock %}

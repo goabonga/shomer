@@ -7,52 +7,52 @@
 </div>
 
 {% if success %}
-<div style="background: #d4edda; color: #155724; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px;">{{ success }}</div>
+<div class="alert alert-success">{{ success }}</div>
 {% endif %}
 
-<div class="card" style="margin-bottom: 16px;">
-    <form method="post" action="/ui/admin/jwks/rotate" style="display: inline;">
-        <button type="submit" style="padding: 8px 16px; background: #6366f1; color: #fff; border: none; border-radius: 4px; cursor: pointer;" onclick="return confirm('Rotate the active key? The current key will be marked as rotated.')">Rotate Key</button>
+<div class="card mb-2">
+    <form method="post" action="/ui/admin/jwks/rotate" style="display:inline">
+        <button type="submit" class="btn" onclick="return confirm('Rotate the active key? The current key will be marked as rotated.')">Rotate Key</button>
     </form>
 </div>
 
 <div class="card">
-    <table style="width: 100%; border-collapse: collapse;">
+    <table class="table">
         <thead>
-            <tr style="border-bottom: 2px solid #eee; text-align: left;">
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Key ID</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Algorithm</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Status</th>
-                <th style="padding: 10px 8px; font-size: 13px; color: #888;">Created</th>
-                <th style="padding: 10px 8px;"></th>
+            <tr>
+                <th>Key ID</th>
+                <th>Algorithm</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
             {% for k in keys %}
-            <tr style="border-bottom: 1px solid #f0f0f0;">
-                <td style="padding: 10px 8px; font-family: monospace; font-size: 13px;">{{ k.kid }}</td>
-                <td style="padding: 10px 8px;">{{ k.algorithm }}</td>
-                <td style="padding: 10px 8px;">
+            <tr>
+                <td class="mono">{{ k.kid }}</td>
+                <td>{{ k.algorithm }}</td>
+                <td>
                     {% if k.status == 'active' %}
-                    <span style="background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Active</span>
+                    <span class="badge badge-success">Active</span>
                     {% elif k.status == 'rotated' %}
-                    <span style="background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Rotated</span>
+                    <span class="badge badge-warning">Rotated</span>
                     {% else %}
-                    <span style="background: #f8d7da; color: #721c24; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Revoked</span>
+                    <span class="badge badge-danger">Revoked</span>
                     {% endif %}
                 </td>
-                <td style="padding: 10px 8px; font-size: 13px;">{{ k.created_at[:10] if k.created_at else '—' }}</td>
-                <td style="padding: 10px 8px;">
+                <td class="text-muted">{{ k.created_at[:10] if k.created_at else '—' }}</td>
+                <td>
                     {% if k.status != 'revoked' %}
-                    <form method="post" action="/ui/admin/jwks/{{ k.kid }}/revoke" style="display: inline;">
-                        <button type="submit" style="padding: 4px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;" onclick="return confirm('Revoke this key?')">Revoke</button>
+                    <form method="post" action="/ui/admin/jwks/{{ k.kid }}/revoke" style="display:inline">
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Revoke this key?')">Revoke</button>
                     </form>
                     {% endif %}
                 </td>
             </tr>
             {% endfor %}
             {% if not keys %}
-            <tr><td colspan="5" style="padding: 20px; text-align: center; color: #999;">No keys found.</td></tr>
+            <tr><td colspan="5" class="text-muted" style="padding:20px;text-align:center">No keys found.</td></tr>
             {% endif %}
         </tbody>
     </table>
