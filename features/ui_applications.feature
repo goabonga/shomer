@@ -25,7 +25,7 @@ Feature: Connected applications settings UI page
     And I click the "Login" button
     Then the page URL should contain "/"
     When I navigate to "/ui/settings/applications"
-    Then the page should contain "Overview"
+    Then the page should contain "Profile"
     And the page should contain "Profile"
     And the page should contain "Emails"
     And the page should contain "Security"

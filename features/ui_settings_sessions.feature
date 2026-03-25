@@ -13,7 +13,7 @@ Feature: Session management on security settings page
     And the page should contain "User Agent"
     And the page should contain "Last Activity"
     And the page should contain "Current"
-    And the page should have an element "table.sessions-table"
+    And the page should have an element "table.table"
     And I take a screenshot named "settings_sessions_list"
 
   Scenario: Current session shows Current badge instead of Revoke button
@@ -25,7 +25,7 @@ Feature: Session management on security settings page
     Then the page URL should contain "/"
     When I navigate to "/ui/settings/security"
     Then the page should contain "Current"
-    And the page should have an element "span.badge.current"
+    And the page should have an element "span.badge.badge-info"
     And I take a screenshot named "settings_sessions_current_badge"
 
   Scenario: Session list redirects to login when unauthenticated

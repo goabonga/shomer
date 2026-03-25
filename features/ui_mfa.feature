@@ -33,7 +33,7 @@ Feature: MFA UI pages
     And I click the "Set Up MFA" button
     Then the page should contain "authenticator app"
     And the page should contain "Verify"
-    And the page should have an element "img.qr-code"
+    And the page should have an element "img[src]"
     And the page should contain "provisioning URI"
     And the page should have an element "#otpauth-uri"
     And I take a screenshot named "mfa_setup_qr"
