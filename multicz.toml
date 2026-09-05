@@ -49,6 +49,31 @@ root_changelog    = "CHANGELOG.md"
 # in the release notes.
 release_commit_message = "chore(release): bump {summary}\n\n{body}\n\n[skip ci]"
 
+# ─────────────────────────────── lib ───────────────────────────────
+
+# The root of the graph. It owns the contracts every other package types
+# against, so a change here can alter what the services observe even when
+# their own sources did not move — which is exactly what the cascades
+# below are for.
+[components.lib]
+paths      = [
+    "packages/lib/src/**",
+    "packages/lib/pyproject.toml",
+    "packages/lib/README.md",
+]
+bump_files = [
+    { file = "packages/lib/pyproject.toml", key = "project.version" },
+    { file = "packages/lib/src/shomer_lib/__init__.py", key = 'regex:^__version__\s*=\s*"([^"]+)"' },
+    { file = "VERSION", key = 'regex:^lib=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.lib" },
+]
+changelog  = "packages/lib/CHANGELOG.md"
+post_bump  = ["uv lock"]
+
+[[components.lib.artifacts]]
+type = "pypi"
+ref  = "shomer-lib=={version}"
+
 # ─────────────────────────────── docs ───────────────────────────────
 
 # Every component writes its version into zensical.toml's
@@ -64,5 +89,5 @@ bump_files = [
     { file = "VERSION", key = 'regex:^docs=(.+)$' },
     { file = "zensical.toml", key = "project.extra.versions.docs" },
 ]
-depends_on = []
+depends_on = ["lib"]
 bump_rules = { docs = "patch" }

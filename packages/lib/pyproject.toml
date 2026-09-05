@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+[project]
+name = "shomer-lib"
+version = "0.0.0"
+description = "Shomer shared library: contracts, settings, ORM models and the database connector every service is wired from."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Chris", email = "goabonga@pm.me" }]
+keywords = ["shomer", "oauth2", "oidc", "authorization"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database",
+    "Topic :: System :: Systems Administration :: Authentication/Directory",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "sqlalchemy>=2.0",
+    "tripack-container>=0.3",
+    "tripack-contracts>=0.2",
+]
+
+# Database drivers. Install only the one you connect to; SQLite needs
+# nothing, which is why the test suite and a first local run need no extra.
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2"]
+mysql = ["pymysql>=1.1"]
+
+[project.urls]
+Homepage = "https://github.com/goabonga/shomer"
+Documentation = "https://goabonga.github.io/shomer/"
+Source = "https://github.com/goabonga/shomer"
+Issues = "https://github.com/goabonga/shomer/issues"
+
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/shomer_lib"]

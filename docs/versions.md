@@ -11,6 +11,7 @@ component itself reports.
 
 | Component | Version | Tag |
 | --- | --- | --- |
+| `shomer-lib` | {{ config.extra.versions.lib }} | `lib-v{{ config.extra.versions.lib }}` |
 | this site | {{ config.extra.versions.docs }} | `docs-v{{ config.extra.versions.docs }}` |
 
 ## How a version is decided

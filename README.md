@@ -29,6 +29,36 @@ tagged and released on its own.
 
 | Package | Kind | What it is |
 | --- | --- | --- |
+| [`shomer-lib`](packages/lib) | Python | Contracts, settings, ORM models, database connector, DI module. |
+
+`shomer-lib` sits at the root: every service names an interface it
+declares and lets the container supply the implementation, so a service
+never mentions a concrete class and swapping one is a change in a single
+place.
+
+## Dependency injection
+
+Wiring goes through [tripack](https://github.com/goabonga/tripack), the
+typed IoC container. `shomer_lib.module.ShomerModule` is the one place
+that decides which implementation answers which contract; services
+install it and ask for what they need.
+
+```python
+from shomer_lib.contracts import Settings
+from shomer_lib.module import build_container
+
+with build_container() as container:
+    print(container.resolve(Settings).issuer)
+```
+
+In the two FastAPI services the container is owned by `TripackAPI`, so a
+handler declares its dependency in the signature:
+
+```python
+@app.get("/healthz")
+def healthz(clock: Annotated[Clock, Inject]) -> dict[str, object]:
+    return {"status": "ok", "time": clock.now()}
+```
 
 ## Requirements
 
@@ -44,6 +74,9 @@ cd shomer
 uv sync --all-packages
 
 ```
+
+With nothing configured it runs against a local SQLite file. Point it
+elsewhere with `SHOMER_DATABASE_URL` and `SHOMER_ISSUER`.
 
 ## Versioning and releases
 

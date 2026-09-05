@@ -19,6 +19,7 @@ Shomer &middot; Copyright &copy; 2026 Chris &middot;
 nav = [
   { "Home" = "index.md" },
   { "Getting started" = "getting-started.md" },
+  { "Dependency injection" = "injection.md" },
   { "Changelog" = "changelog.md" },
   { "Versions" = "versions.md" },
 ]
@@ -85,6 +86,7 @@ custom_checkbox = true
 # NOTE: keys use underscores — a dash reads as subtraction inside the
 # Jinja `{{ ... }}` macro expression.
 [project.extra.versions]
+lib  = "0.0.0"
 docs = "0.0.0"
 
 [project.theme]

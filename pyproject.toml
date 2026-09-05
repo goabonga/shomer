@@ -14,6 +14,9 @@ requires-python = ">=3.13"
 [tool.uv.workspace]
 members = ["packages/*"]
 
+[tool.uv.sources]
+shomer-lib = { workspace = true }
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -33,12 +36,32 @@ favicon = [
     "pillow>=10.0",
 ]
 
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/lib/tests",
+]
+# importlib import mode, so two packages may both call their suite
+# `test_app.py`. Under the default mode pytest derives a module name from
+# the path relative to the rootdir and the second one collides with the
+# first — which CI never sees, because each job runs one package's tests,
+# and a contributor running the whole suite hits immediately.
+addopts = "-q --import-mode=importlib"
+
 [tool.ruff]
 line-length = 88
 target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+# Without this the workspace's own packages sort as third-party, and a
+# test importing both fastapi and shomer_ssr gets them merged into one
+# block — which then differs depending on whether the package happens to
+# be installed.
+known-first-party = [
+    "shomer_lib",
+]
 
 [tool.coverage.report]
 exclude_also = [
