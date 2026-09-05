@@ -15,6 +15,7 @@ requires-python = ">=3.13"
 members = ["packages/*"]
 
 [tool.uv.sources]
+shomer-bdd = { workspace = true }
 shomer-lib = { workspace = true }
 
 [dependency-groups]
@@ -38,6 +39,7 @@ favicon = [
 
 [tool.pytest.ini_options]
 testpaths = [
+    "packages/bdd/tests",
     "packages/lib/tests",
 ]
 # importlib import mode, so two packages may both call their suite
@@ -60,6 +62,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # block — which then differs depending on whether the package happens to
 # be installed.
 known-first-party = [
+    "shomer_bdd",
     "shomer_lib",
 ]
 

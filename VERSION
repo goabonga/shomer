@@ -4,5 +4,6 @@
 # here is maintained by hand and none of it can drift from the component's
 # own copy (pyproject.toml, package.json, zensical.toml).
 
+bdd=0.0.0
 lib=0.0.0
 docs=0.0.0
