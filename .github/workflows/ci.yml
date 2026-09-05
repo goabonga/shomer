@@ -2633,6 +2633,31 @@ jobs:
           tag: chart-api-v${{ fromJson(needs.release-bump.outputs.bumps)['chart-api'].next_version }}
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
+  release-chart-ssr:
+    needs: [release-bump]
+    if: |
+      !failure() && !cancelled() &&
+      fromJson(needs.release-bump.outputs.bumps)['chart-ssr'].next_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # gh release create
+      packages: write   # helm push to ghcr
+      id-token: write   # keyless cosign
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/publish-chart
+        with:
+          component: ssr
+          owner: ${{ needs.release-bump.outputs.owner }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/publish-release
+        with:
+          tag: chart-ssr-v${{ fromJson(needs.release-bump.outputs.bumps)['chart-ssr'].next_version }}
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
   release-chart-job:
     needs: [release-bump]
     if: |
