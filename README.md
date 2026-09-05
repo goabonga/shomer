@@ -13,6 +13,7 @@ Every package is versioned, changelogged, tagged and released on its own.
 | Package | Kind | What it is |
 | --- | --- | --- |
 | [`shomer-lib`](packages/lib) | Python | Contracts, settings, ORM models, database connector, DI module. |
+| [`shomer-bdd`](packages/bdd) | Python | The Alembic revisions and their runner. |
 
 `shomer-lib` sits at the root: every service names an interface it
 declares and lets the container supply the implementation, so a service

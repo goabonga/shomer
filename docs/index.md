@@ -23,6 +23,7 @@ release tag, and is published independently.
 | Package | Kind | What it is |
 | --- | --- | --- |
 | `shomer-lib` | Python | Contracts, settings, ORM models, database connector, DI module. |
+| `shomer-bdd` | Python | The Alembic revisions and their runner. |
 
 ## How the pieces find each other
 
