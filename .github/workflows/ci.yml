@@ -1625,6 +1625,27 @@ jobs:
       - uses: ./.github/actions/python-check
         with: { path: packages/ssr, module: shomer_ssr, check: test }
 
+  ssr-bandit:
+    # Static analysis on the source that ships. It gates the container
+    # build rather than running beside it: an image is expensive to build
+    # and worthless to scan if the code in it is already known-bad.
+    needs: [ssr-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: ${{ github.job }}
+          python-version: "3.13"
+      - run: uvx --from 'bandit[toml]' bandit -c pyproject.toml -q -r packages/ssr/src
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: ssr-bandit
+          body: '`bandit` static analysis on `packages/ssr/src`.'
+
   docs-build:
     # Build the site on every docs change (PR and main). On main,
     # release-docs reuses this artifact instead of rebuilding —
@@ -1684,7 +1705,7 @@ jobs:
       - job-grype
       - web-build
       - web-audit
-      - ssr-test
+      - ssr-bandit
       - chart-api-package
       - chart-api-verify-policy
       - chart-job-package
@@ -1713,7 +1734,7 @@ jobs:
        (needs.web-build.result == 'success' &&
         needs.web-audit.result == 'success')) &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'ssr') ||
-       needs.ssr-test.result == 'success') &&
+       needs.ssr-bandit.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&
