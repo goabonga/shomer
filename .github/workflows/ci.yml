@@ -1057,7 +1057,50 @@ jobs:
           title: owasp-api
           body: 'OWASP ZAP baseline against the chart-deployed `api` (report artifact `zap-api-baseline`).'
 
-  # ──────────────────── docs ────────────────────
+  # ──────────────────── cli ────────────────────
+
+  cli-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'cli')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/cli, module: shomer_cli, check: lint }
+
+  cli-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'cli')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/cli, module: shomer_cli, check: format }
+
+  cli-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'cli')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/cli, module: shomer_cli, check: typecheck }
+
+  cli-test:
+    needs: [cli-lint, cli-format, cli-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/cli, module: shomer_cli, check: test }
 
   docs-build:
     # Build the site on every docs change (PR and main). On main,
@@ -1114,6 +1157,7 @@ jobs:
       - lib-bandit
       - bdd-grype
       - api-grype
+      - cli-test
       - chart-api-package
       - chart-api-verify-policy
       - chart-bdd-package
@@ -1132,6 +1176,8 @@ jobs:
        needs.bdd-grype.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'api') ||
        needs.api-grype.result == 'success') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'cli') ||
+       needs.cli-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&
