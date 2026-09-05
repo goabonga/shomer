@@ -281,6 +281,40 @@ bump_files = [
     { file = "zensical.toml", key = "project.extra.versions.web" },
 ]
 changelog  = "packages/web/CHANGELOG.md"
+# Regenerates the bundle and templates under packages/ssr at the version
+# being released, so what ships is built from the sources in that same
+# commit.
+post_bump  = ["npm --prefix packages/web run build"]
+
+# ─────────────────────────────── ssr ───────────────────────────────
+
+[components.ssr]
+# `static/**` and `templates/**` are deliberately NOT in paths — they are
+# build outputs of `web`, and listing them would make ssr bump twice for
+# one frontend change. The cascade comes in through depends_on instead.
+paths      = [
+    "packages/ssr/src/shomer_ssr/*.py",
+    "packages/ssr/pyproject.toml",
+    "packages/ssr/README.md",
+]
+bump_files = [
+    { file = "packages/ssr/pyproject.toml", key = "project.version" },
+    { file = "packages/ssr/src/shomer_ssr/__init__.py", key = 'regex:^__version__\s*=\s*"([^"]+)"' },
+    { file = "VERSION", key = 'regex:^ssr=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.ssr" },
+]
+changelog  = "packages/ssr/CHANGELOG.md"
+# A web bump regenerates the assets that ship inside this wheel, and a lib
+# bump can change what the shell hands the browser. Either way the wheel
+# needs a new version to carry it.
+depends_on = ["lib", "web"]
+# Keeps uv.lock's record of this package's version in step with the
+# pyproject it just rewrote.
+post_bump  = ["uv lock"]
+
+[[components.ssr.artifacts]]
+type = "pypi"
+ref  = "shomer-ssr=={version}"
 
 # ─────────────────────────────── docs ───────────────────────────────
 
@@ -299,5 +333,5 @@ bump_files = [
 # The library writes its version into zensical.toml, and the site prints
 # it. Depending on it means the page is regenerated with the fresh number
 # rather than staying a release behind.
-depends_on = ["api", "bdd", "chart-api", "chart-bdd", "chart-job", "cli", "job", "lib", "web"]
+depends_on = ["api", "bdd", "chart-api", "chart-bdd", "chart-job", "cli", "job", "lib", "ssr", "web"]
 bump_rules = { docs = "patch" }
