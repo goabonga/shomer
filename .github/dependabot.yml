@@ -36,6 +36,33 @@ updates:
       - "dependencies"
       - "python"
 
+  # TypeScript dependencies. The npm workspace is hoisted at the root, so
+  # the root lockfile is the only one to watch.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    groups:
+      web-tools:
+        applies-to: version-updates
+        patterns:
+          - "@biomejs/*"
+          - "@testing-library/*"
+          - "@types/*"
+          - "esbuild"
+          - "jsdom"
+          - "typescript"
+          - "vitest"
+    commit-message:
+      prefix: "fix(deps)"
+      prefix-development: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "javascript"
 
   # Pinned versions of GitHub Actions in `.github/workflows/*.yml` and
   # `.github/actions/*/action.yml`.

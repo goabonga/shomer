@@ -1502,6 +1502,35 @@ jobs:
       - uses: ./.github/actions/node-check
         with: { workspace: packages/web, check: test }
 
+  web-audit:
+    # npm's own advisory database over the resolved tree. It is the
+    # JavaScript half of what `audit` does for Python, and it belongs in
+    # the web chain rather than beside it because it can only fail for
+    # reasons a web change caused.
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      # Production tree only. A development-only advisory does not reach
+      # anything the bundle ships, and failing the build on one teaches
+      # people to pass --force.
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: web-audit
+          body: '`npm audit --omit=dev --audit-level=high` on the resolved production tree.'
+
+  # ──────────────────── docs ────────────────────
+
   docs-build:
     # Build the site on every docs change (PR and main). On main,
     # release-docs reuses this artifact instead of rebuilding —
@@ -1559,7 +1588,7 @@ jobs:
       - api-grype
       - cli-bandit
       - job-grype
-      - web-test
+      - web-audit
       - chart-api-package
       - chart-api-verify-policy
       - chart-job-package
@@ -1585,7 +1614,7 @@ jobs:
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'job') ||
        needs.job-grype.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'web') ||
-       needs.web-test.result == 'success') &&
+       needs.web-audit.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&
