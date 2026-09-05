@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: bump preview
+description: |
+  Run `multicz bump` write-only so the workspace reflects the planned next
+  version. Every bump_file (pyproject.toml, package.json, the VERSION
+  line, the dunder `__version__`, zensical.toml) is updated in place. No
+  commit / tag / push / post_bump hook / changelog write fires.
+
+  Use it at the start of any test or build job that should observe the
+  post-bump version, so the artifact a job produces carries the version
+  the release will publish — otherwise a component that asserts its own
+  `__version__` fails on the release run and nowhere else.
+
+  REQUIRES the calling job to have already run `actions/checkout` with
+  `fetch-depth: 0` — multicz needs the full tag history to compute the
+  next version.
+
+runs:
+  using: composite
+  steps:
+    - uses: goabonga/multicz-action@v1
+    - name: Bump (write only — no commit / tag / push / hooks / changelog)
+      shell: bash
+      run: multicz bump --no-post-bump --no-changelog

@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: step summary
+description: |
+  Append a markdown block to `$GITHUB_STEP_SUMMARY`, the per-run panel
+  rendered on the workflow run page. Multiple calls in the same job
+  concatenate.
+
+  Wire it as the final step of every job with `if: always()`, so the
+  summary surfaces whether the job passed or failed — the verdict comes
+  from GitHub's own badge, so the body stays neutral about it.
+
+inputs:
+  title:
+    required: true
+    description: H2 heading — typically the job name.
+  body:
+    required: false
+    default: ""
+    description: |
+      Optional markdown. Supports multiple lines via the `|` block scalar,
+      and inline backticks render as code.
+  format:
+    required: false
+    default: ""
+    description: |
+      Render a tool's actual output instead of describing it. One of the
+      formats `scripts/ci-summary.py` knows — `grype`, `sbom`. Requires
+      `path`. Composes with `body`, which is then printed above it as a
+      lead.
+  path:
+    required: false
+    default: ""
+    description: The report to summarise. A missing file degrades to a note.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        # Through `env:` rather than interpolated into the script: these
+        # values can carry commit-authored text, and a `run:` block that
+        # splices them in directly is a command-injection surface.
+        TITLE: ${{ inputs.title }}
+        BODY: ${{ inputs.body }}
+        FORMAT: ${{ inputs.format }}
+        REPORT: ${{ inputs.path }}
+      run: |
+        {
+          printf '## %s\n' "$TITLE"
+          if [[ -n "$BODY" ]]; then
+            printf '\n%s\n' "$BODY"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        if [[ -n "$FORMAT" ]]; then
+          printf '\n' >> "$GITHUB_STEP_SUMMARY"
+          if [[ -z "$REPORT" ]]; then
+            # Named rather than ignored: silently dropping half of what
+            # the caller asked for is how a summary loses the only part
+            # somebody reads.
+            printf '_`format: %s` was given with no `path`._\n' "$FORMAT" \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            # `|| true` on top of the script's own degradation: a
+            # reporting problem must never redden a green build.
+            python3 "${GITHUB_WORKSPACE}/scripts/ci-summary.py" \
+              "$FORMAT" "$REPORT" >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+        fi
+
+        printf '\n' >> "$GITHUB_STEP_SUMMARY"

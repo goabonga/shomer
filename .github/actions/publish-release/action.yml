@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: publish a component release
+description: |
+  Render a component's release notes with multicz and publish them as a
+  GitHub release on an existing tag.
+
+  `release-notes --tag` reads a tag that already exists, which is why this
+  runs after release-bump has pushed it and never creates one itself.
+
+  REQUIRES the calling job to have run `actions/checkout` with
+  `fetch-depth: 0` — the notes are built from the commits between this tag
+  and the previous one.
+
+inputs:
+  tag:
+    required: true
+    description: 'Tag to publish, e.g. ssr-v0.1.0.'
+  files:
+    required: false
+    default: ""
+    description: 'Optional assets to attach.'
+  token:
+    required: true
+    description: 'Token with `contents: write`.'
+
+runs:
+  using: composite
+  steps:
+    - uses: goabonga/multicz-action@v1
+    - name: gh release create
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        TAG: ${{ inputs.tag }}
+        FILES: ${{ inputs.files }}
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC2086 — FILES is a deliberate word-split list
+        multicz release-notes --tag "$TAG" \
+          | gh release create "$TAG" --title "$TAG" --notes-file - $FILES
+    - name: Summary
+      if: always()
+      uses: ./.github/actions/summary
+      with:
+        title: release ${{ inputs.tag }}
+        body: 'Published `${{ inputs.tag }}` with notes rendered by `multicz release-notes`.'
