@@ -3,6 +3,7 @@
 
 """Shomer shared library: contracts, settings, models and the DI module."""
 
+from shomer_lib.clock import SystemClock
 from shomer_lib.contracts import Clock, Database, Settings
 from shomer_lib.settings import EnvSettings
 
@@ -13,5 +14,6 @@ __all__ = [
     "Database",
     "EnvSettings",
     "Settings",
+    "SystemClock",
     "__version__",
 ]
