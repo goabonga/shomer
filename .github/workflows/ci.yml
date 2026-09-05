@@ -655,6 +655,158 @@ jobs:
           title: api-bandit
           body: '`bandit` static analysis on `packages/api/src`.'
 
+  api-hadolint:
+    # Dockerfile lint, parallel to the Python checks. It gates the build
+    # so a malformed Dockerfile fails in seconds rather than after a
+    # multi-minute image pull.
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'api')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: packages/api/Dockerfile
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: api-hadolint
+          body: '`hadolint` on `packages/api/Dockerfile`.'
+
+  api-container:
+    # The explicit gate replaces GitHub's implicit "every transitive need
+    # succeeded". `audit` is shared by every component, so on a
+    # partial-change run it carries other packages' skipped jobs in its
+    # closure — and that skip would silently mark this job skipped even
+    # though its own dependencies all passed, leaving the release path
+    # for this component quietly dead.
+    needs: [api-bandit, api-hadolint, audit, detect]
+    if: >-
+      !failure() && !cancelled() &&
+      contains(fromJson(needs.detect.outputs.changed).changed, 'api')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: docker/setup-buildx-action@v4
+      # The three annotation values that cannot be static. The rest are
+      # LABELs in the Dockerfile, so a local build carries them too.
+      # bump-preview has already written the version this build will be
+      # released as.
+      - name: Image metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          echo "version=$(sed -n 's/^api=//p' VERSION)" >> "$GITHUB_OUTPUT"
+          echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: Build api
+        uses: docker/build-push-action@v7
+        with:
+          # The context is `packages`, not the component directory: every
+          # service depends on shomer-lib, which is not on PyPI.
+          context: packages
+          file: packages/api/Dockerfile
+          load: true
+          # `provenance` / `sbom` cannot be combined with `load: true` —
+          # a manifest list does not go through the docker exporter.
+          # Both are attached at push time by publish-image instead.
+          tags: api:ci
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ github.sha }}
+            CREATED=${{ steps.meta.outputs.created }}
+          cache-from: type=gha,scope=api
+          # ignore-error: the cache export can fail to reserve its key on
+          # a run whose image built fine. A cache miss must not fail a
+          # green build.
+          cache-to: type=gha,mode=max,scope=api,ignore-error=true
+      - name: Assert the OCI annotations landed
+        run: |
+          set -euo pipefail
+          for k in title version revision created source licenses; do
+            v=$(docker image inspect api:ci \
+                  --format "{{ index .Config.Labels \"org.opencontainers.image.$k\" }}")
+            [ -n "$v" ] || { echo "::error::org.opencontainers.image.$k is empty"; exit 1; }
+            printf '  %-10s %s\n' "$k" "$v"
+          done
+      - name: Assert it does not run as root
+        run: |
+          set -euo pipefail
+          user=$(docker image inspect api:ci --format '{{.Config.User}}')
+          [ "$user" = "65532" ] || { echo "::error::image runs as '$user', want 65532"; exit 1; }
+      - name: Save the image
+        run: docker save api:ci -o /tmp/api.tar
+      - uses: actions/upload-artifact@v7
+        with: { name: api-image, path: /tmp/api.tar, retention-days: 1 }
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: api-container
+          body: 'Built `api:ci` from `packages/api/Dockerfile` (artifact `api-image`).'
+
+  api-sbom:
+    needs: [api-container]
+    if: '!failure() && !cancelled() && needs.api-container.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with: { name: api-image, path: /tmp }
+      - uses: anchore/sbom-action@v0
+        with:
+          image: docker-archive:/tmp/api.tar
+          format: spdx-json
+          output-file: /tmp/api.sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/upload-artifact@v7
+        with: { name: api-sbom, path: /tmp/api.sbom.spdx.json, retention-days: 1 }
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: api-sbom
+          body: 'SPDX SBOM of the `api` image (artifact `api-sbom`).'
+          format: sbom
+          path: /tmp/api.sbom.spdx.json
+
+  api-grype:
+    needs: [api-sbom]
+    if: '!failure() && !cancelled() && needs.api-sbom.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with: { name: api-sbom, path: /tmp }
+      - name: Install grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+      - name: Scan the SBOM
+        # The working directory is what makes grype pick up
+        # `packages/api/.grype.yaml`, so an exception is declared beside
+        # the component it applies to rather than in one global list.
+        working-directory: packages/api
+        run: |
+          set -euo pipefail
+          # The report is written from the same scan the gate then runs,
+          # in this order on purpose: the gate may fail the step, and the
+          # summary still needs its input.
+          grype sbom:/tmp/api.sbom.spdx.json -o json > /tmp/api.grype.json
+          grype sbom:/tmp/api.sbom.spdx.json --fail-on high
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: api-grype
+          body: '`grype --fail-on high` on the `api` SBOM, with `packages/api/.grype.yaml` applied.'
+          format: grype
+          path: /tmp/api.grype.json
+
   docs-build:
     # Build the site on every docs change (PR and main). On main,
     # release-docs reuses this artifact instead of rebuilding —
@@ -709,7 +861,7 @@ jobs:
       - audit
       - lib-bandit
       - bdd-grype
-      - api-bandit
+      - api-grype
       - chart-bdd-package
       - chart-bdd-verify-policy
       - docs-build
@@ -723,7 +875,7 @@ jobs:
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'bdd') ||
        needs.bdd-grype.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'api') ||
-       needs.api-bandit.result == 'success') &&
+       needs.api-grype.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-bdd') ||
        (needs.chart-bdd-package.result == 'success' &&
         needs.chart-bdd-verify-policy.result == 'success')) &&
