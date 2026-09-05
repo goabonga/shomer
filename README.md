@@ -7,7 +7,8 @@ Shomer is an **OpenID Connect / OAuth 2.0** platform.
 
 ## Packages
 
-The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/).
+The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
+alongside an npm workspace.
 Every package is versioned, changelogged, tagged and released on its own.
 
 | Package | Kind | What it is |
@@ -17,6 +18,7 @@ Every package is versioned, changelogged, tagged and released on its own.
 | [`shomer-api`](packages/api) | Python | The OpenID Connect / OAuth 2.0 endpoints. |
 | [`shomer-cli`](packages/cli) | Python | The operator command line. |
 | [`shomer-job`](packages/job) | Python | The maintenance worker. |
+| [`shomer-web`](packages/web) | TypeScript | The React sources the frontend serves. |
 
 `shomer-lib` sits at the root: every service names an interface it
 declares and lets the container supply the implementation, so a service
