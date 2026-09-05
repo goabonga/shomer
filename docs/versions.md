@@ -14,6 +14,7 @@ component itself reports.
 | `shomer-lib` | {{ config.extra.versions.lib }} | `lib-v{{ config.extra.versions.lib }}` |
 | `shomer-bdd` | {{ config.extra.versions.bdd }} | `bdd-v{{ config.extra.versions.bdd }}` |
 | `shomer-bdd` chart | {{ config.extra.versions.chart_bdd }} | `chart-bdd-v{{ config.extra.versions.chart_bdd }}` |
+| `shomer-api` | {{ config.extra.versions.api }} | `api-v{{ config.extra.versions.api }}` |
 | this site | {{ config.extra.versions.docs }} | `docs-v{{ config.extra.versions.docs }}` |
 
 ## How a version is decided
