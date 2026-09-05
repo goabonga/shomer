@@ -5,6 +5,7 @@
 name = "shomer-cli"
 version = "0.0.0"
 description = "Shomer command-line interface: inspect the configuration and the database an instance is wired to."
+readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 authors = [{ name = "Chris", email = "goabonga@pm.me" }]
