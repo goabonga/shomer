@@ -874,6 +874,28 @@ jobs:
           title: chart-api-checkov
           body: '`checkov --framework helm` on `packages/api/chart/`.'
 
+  chart-api-verify-policy:
+    # The chart renders an image-verification policy; this proves the
+    # policy is not inert. Kyverno in a throwaway cluster, Enforce on, and
+    # an image the policy matches but whose signature carries someone
+    # else's identity must be rejected — then admitted once the policy is
+    # removed, so the rejection cannot have come from something else.
+    needs: [chart-api-checkov]
+    if: '!failure() && !cancelled() && needs.chart-api-checkov.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/chart-verify-policy
+        with:
+          chart: packages/api/chart
+          component: api
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-api-verify-policy
+          body: 'kind + Kyverno: the `imageVerification` policy rejects a foreign-signed image, and admits it once removed.'
+
   chart-api-package:
     needs: [chart-api-checkov]
     if: '!failure() && !cancelled() && needs.chart-api-checkov.result == ''success'''
@@ -954,6 +976,7 @@ jobs:
       - bdd-grype
       - api-grype
       - chart-api-package
+      - chart-api-verify-policy
       - chart-bdd-package
       - chart-bdd-verify-policy
       - docs-build
@@ -969,7 +992,8 @@ jobs:
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'api') ||
        needs.api-grype.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
-       needs.chart-api-package.result == 'success') &&
+       (needs.chart-api-package.result == 'success' &&
+        needs.chart-api-verify-policy.result == 'success')) &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-bdd') ||
        (needs.chart-bdd-package.result == 'success' &&
         needs.chart-bdd-verify-policy.result == 'success')) &&
