@@ -5,6 +5,7 @@
 name = "shomer-api"
 version = "0.0.0"
 description = "Shomer authorization API: the OpenID Connect / OAuth 2.0 endpoints."
+readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 authors = [{ name = "Chris", email = "goabonga@pm.me" }]

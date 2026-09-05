@@ -24,6 +24,7 @@ release tag, and is published independently.
 | --- | --- | --- |
 | `shomer-lib` | Python | Contracts, settings, ORM models, database connector, DI module. |
 | `shomer-bdd` | Python | The Alembic revisions and their runner. |
+| `shomer-api` | Python | The OpenID Connect / OAuth 2.0 endpoints. |
 
 ## How the pieces find each other
 
