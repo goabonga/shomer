@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# Per-component grype allowlist. grype auto-discovers it when run with
+# this directory as the working directory — see the `working-directory:
+# packages/ssr` on the ssr-grype step in .github/workflows/ci.yml.
+#
+# Every entry MUST carry a `# expires: YYYY-MM-DD` marker AND pin both
+# `package.name` and `package.version`:
+#
+#   1. The marker is what makes an exception temporary. An allowlist with
+#      no expiry is a permanent decision taken by whoever was in a hurry.
+#   2. The version pin resolves the ignore on its own: the moment a
+#      patched package ships, the version stops matching, the entry stops
+#      applying, and the CVE surfaces again under --fail-on high.
+#
+# An entry with neither is a silenced finding, not an accepted risk.
+
+ignore: []
