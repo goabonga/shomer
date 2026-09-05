@@ -33,12 +33,12 @@
     "@biomejs/biome": "^2.2.4",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.3.0",
-    "@types/node": "^24.5.2",
+    "@types/node": "^26.4.1",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
-    "esbuild": "^0.25.9",
-    "jsdom": "^26.1.0",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.0.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
   }
 }
