@@ -1868,6 +1868,57 @@ jobs:
           tag: cli-v${{ fromJson(needs.release-bump.outputs.bumps)['cli'].next_version }}
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
+  release-job-image:
+    # First of the three, because the other two point at what it pushes.
+    needs: [release-bump]
+    if: |
+      !failure() && !cancelled() &&
+      fromJson(needs.release-bump.outputs.bumps)['job'].next_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # push to ghcr
+      id-token: write   # keyless cosign
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/publish-image
+        with:
+          component: job
+          version: ${{ fromJson(needs.release-bump.outputs.bumps)['job'].next_version }}
+          owner: ${{ needs.release-bump.outputs.owner }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  release-job-pypi:
+    # After the image: this job cuts the GitHub release, and a release
+    # pointing at an image that failed to push is worse than no release.
+    needs: [release-bump, release-job-image]
+    if: |
+      !failure() && !cancelled() &&
+      needs.release-job-image.result == 'success' &&
+      fromJson(needs.release-bump.outputs.bumps)['job'].next_version != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/shomer-job/
+    permissions:
+      contents: write   # gh release create
+      id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The release commit, so the wheel carries the version that was
+          # just tagged rather than the one that preceded it.
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/publish-pypi
+        with:
+          package: shomer-job
+          tag: job-v${{ fromJson(needs.release-bump.outputs.bumps)['job'].next_version }}
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
   release-chart-api:
     needs: [release-bump]
     if: |
