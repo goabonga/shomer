@@ -140,6 +140,7 @@ paths      = [
     "packages/api/src/**",
     "packages/api/pyproject.toml",
     "packages/api/README.md",
+    "packages/api/Dockerfile",
 ]
 bump_files = [
     { file = "packages/api/pyproject.toml", key = "project.version" },
@@ -154,6 +155,10 @@ post_bump  = ["uv lock"]
 [[components.api.artifacts]]
 type = "pypi"
 ref  = "shomer-api=={version}"
+
+[[components.api.artifacts]]
+type = "docker"
+ref  = "ghcr.io/goabonga/shomer-api:{version}"
 
 # ─────────────────────────────── docs ───────────────────────────────
 
