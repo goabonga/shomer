@@ -1,0 +1,15 @@
+# The build context for every image is `packages/`, because each service
+# depends on the shomer-lib workspace package, which is not on PyPI and so
+# has to be copied in beside it. Everything that is not source or
+# packaging is excluded, or the context balloons and every image rebuild
+# waits on it.
+**/tests/
+**/features/
+**/node_modules/
+**/dist/
+**/__pycache__/
+**/.venv/
+**/*.pyc
+**/CHANGELOG.md
+web/
+cli/

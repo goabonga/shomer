@@ -27,6 +27,12 @@ dependencies = [
 ]
 
 
+# Driver extras forward to shomer-lib so a migration run can connect to
+# whatever the target actually is.
+[project.optional-dependencies]
+postgres = ["shomer-lib[postgres]"]
+mysql = ["shomer-lib[mysql]"]
+
 [project.urls]
 Homepage = "https://github.com/goabonga/shomer"
 Documentation = "https://goabonga.github.io/shomer/"

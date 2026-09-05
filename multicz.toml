@@ -82,6 +82,7 @@ paths      = [
     "packages/bdd/pyproject.toml",
     "packages/bdd/alembic.ini",
     "packages/bdd/README.md",
+    "packages/bdd/Dockerfile",
 ]
 bump_files = [
     { file = "packages/bdd/pyproject.toml", key = "project.version" },
@@ -99,6 +100,10 @@ post_bump  = ["uv lock"]
 [[components.bdd.artifacts]]
 type = "pypi"
 ref  = "shomer-bdd=={version}"
+
+[[components.bdd.artifacts]]
+type = "docker"
+ref  = "ghcr.io/goabonga/shomer-bdd:{version}"
 
 # ─────────────────────────────── docs ───────────────────────────────
 

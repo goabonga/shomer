@@ -966,11 +966,22 @@ dependencies = [
     { name = "shomer-lib" },
 ]
 
+[package.optional-dependencies]
+mysql = [
+    { name = "shomer-lib", extra = ["mysql"] },
+]
+postgres = [
+    { name = "shomer-lib", extra = ["postgres"] },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "shomer-lib", editable = "packages/lib" },
+    { name = "shomer-lib", extras = ["mysql"], marker = "extra == 'mysql'", editable = "packages/lib" },
+    { name = "shomer-lib", extras = ["postgres"], marker = "extra == 'postgres'", editable = "packages/lib" },
 ]
+provides-extras = ["postgres", "mysql"]
 
 [[package]]
 name = "shomer-lib"
