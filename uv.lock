@@ -13,6 +13,7 @@ members = [
     "shomer-cli",
     "shomer-job",
     "shomer-lib",
+    "shomer-ssr",
     "shomer-workspace",
 ]
 
@@ -1326,6 +1327,27 @@ requires-dist = [
     { name = "tripack-contracts", specifier = ">=0.2" },
 ]
 provides-extras = ["postgres", "mysql"]
+
+[[package]]
+name = "shomer-ssr"
+version = "0.0.0"
+source = { editable = "packages/ssr" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "jinja2" },
+    { name = "shomer-lib" },
+    { name = "tripack-container", extra = ["fastapi"] },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "jinja2", specifier = ">=3.1" },
+    { name = "shomer-lib", editable = "packages/lib" },
+    { name = "tripack-container", extras = ["fastapi"], specifier = ">=0.3" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
+]
 
 [[package]]
 name = "shomer-workspace"

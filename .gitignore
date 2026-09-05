@@ -1,6 +1,10 @@
 # Node — npm workspaces hoist dependencies into the repo-root node_modules.
 node_modules/
 
+# Source maps emitted by the watch build. The one-shot release build does
+# not generate them, so this only catches stray dev artefacts.
+packages/ssr/src/shomer_ssr/static/*.map
+
 # Python
 __pycache__/
 *.py[cod]

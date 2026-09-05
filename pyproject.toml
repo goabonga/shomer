@@ -23,6 +23,7 @@ shomer-bdd = { workspace = true }
 shomer-cli = { workspace = true }
 shomer-job = { workspace = true }
 shomer-lib = { workspace = true }
+shomer-ssr = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -108,4 +109,5 @@ known-first-party = [
     "shomer_cli",
     "shomer_job",
     "shomer_lib",
+    "shomer_ssr",
 ]

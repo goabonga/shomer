@@ -29,4 +29,17 @@ uv run --group favicon python "$ROOT/scripts/generate_favicon.py" \
   -i "$SRC" \
   -o "$ROOT/docs/favicon.ico"
 
-echo "regen-icons: docs/shomer.svg + docs/favicon.ico from $SRC"
+# The favicon served at /favicon.ico by the ssr.
+#
+# It lives in static/ next to the esbuild output rather than in a
+# directory of its own: that path is already on the /static mount,
+# already inside `packages = ["src/shomer_ssr"]` so the wheel picks it
+# up, and already tracked. The web build writes main.js/main.css there
+# and removes only .html files from templates/, so it will not be swept
+# away.
+mkdir -p "$ROOT/packages/ssr/src/shomer_ssr/static"
+uv run --group favicon python "$ROOT/scripts/generate_favicon.py" \
+  -i "$SRC" \
+  -o "$ROOT/packages/ssr/src/shomer_ssr/static/favicon.ico"
+
+echo "regen-icons: docs/shomer.svg + docs/favicon.ico + ssr favicon.ico from $SRC"
