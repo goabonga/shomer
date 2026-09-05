@@ -10,6 +10,12 @@ default_install_hook_types: [pre-commit, commit-msg]
 default_language_version:
   python: python3
 
+exclude: |
+  (?x)^(
+    packages/ssr/src/shomer_ssr/static/.*|
+    packages/ssr/src/shomer_ssr/templates/.*
+  )$
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

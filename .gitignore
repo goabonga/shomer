@@ -1,10 +1,6 @@
 # Node — npm workspaces hoist dependencies into the repo-root node_modules.
 node_modules/
 
-# Source maps emitted by the watch build. The one-shot release build does
-# not generate them, so this only catches stray dev artefacts.
-packages/ssr/src/shomer_ssr/static/*.map
-
 # Python
 __pycache__/
 *.py[cod]
@@ -15,6 +11,17 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+coverage.xml
+junit.xml
+
+# Docs build output (zensical build -> site/).
+site/
+
+# Source maps emitted by `node scripts/build.mjs --watch` in dev. The
+# one-shot release build (web's multicz post_bump) doesn't generate
+# them, so this only catches stray dev artefacts.
+packages/ssr/src/shomer_ssr/static/*.map
 
 # Editor
 .vscode/
