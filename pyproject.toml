@@ -24,6 +24,7 @@ dev = [
     "mypy>=1.14",
     "pytest>=8.0",
     "pytest-cov>=6.0",
+    "httpx>=0.28.1",
     "ruff>=0.15",
     "pre-commit>=4.0",
 ]
@@ -39,6 +40,7 @@ favicon = [
 
 [tool.pytest.ini_options]
 testpaths = [
+    "packages/api/tests",
     "packages/bdd/tests",
     "packages/lib/tests",
 ]
