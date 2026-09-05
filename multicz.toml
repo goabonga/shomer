@@ -265,6 +265,23 @@ changelog  = "packages/job/chart/CHANGELOG.md"
 type = "helm"
 ref  = "oci://ghcr.io/goabonga/charts/shomer-job:{version}"
 
+# ─────────────────────────────── web ───────────────────────────────
+
+[components.web]
+paths      = [
+    "packages/web/src/**",
+    "packages/web/scripts/**",
+    "packages/web/package.json",
+    "packages/web/tsconfig.json",
+    "packages/web/biome.json",
+]
+bump_files = [
+    { file = "packages/web/package.json", key = "version" },
+    { file = "VERSION", key = 'regex:^web=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.web" },
+]
+changelog  = "packages/web/CHANGELOG.md"
+
 # ─────────────────────────────── docs ───────────────────────────────
 
 # The site is a component so that it is versioned and released like
@@ -282,5 +299,5 @@ bump_files = [
 # The library writes its version into zensical.toml, and the site prints
 # it. Depending on it means the page is regenerated with the fresh number
 # rather than staying a release behind.
-depends_on = ["api", "bdd", "chart-api", "chart-bdd", "chart-job", "cli", "job", "lib"]
+depends_on = ["api", "bdd", "chart-api", "chart-bdd", "chart-job", "cli", "job", "lib", "web"]
 bump_rules = { docs = "patch" }
