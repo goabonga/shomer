@@ -1911,6 +1911,63 @@ jobs:
           title: chart-ssr-package
           body: '`helm package` at the bump-previewed version (artifact `chart-ssr-tgz`).'
 
+  e2e-ssr:
+    # The suite runs against the deployed artifact — this run's image, its
+    # chart, a migrated PostgreSQL — rather than against imported Python.
+    # Everything a unit test can reach is already covered; what is left is
+    # whether the thing that gets shipped actually works.
+    needs:
+      - detect
+      - ssr-grype
+      - bdd-grype
+      - chart-ssr-checkov
+      - chart-bdd-checkov
+    if: >-
+      !failure() && !cancelled() && (
+        contains(fromJson(needs.detect.outputs.changed).changed, 'ssr') ||
+        contains(fromJson(needs.detect.outputs.changed).changed, 'lib') ||
+        contains(fromJson(needs.detect.outputs.changed).changed, 'bdd') ||
+        contains(fromJson(needs.detect.outputs.changed).changed, 'chart-ssr') ||
+        contains(fromJson(needs.detect.outputs.changed).changed, 'chart-bdd')
+        || contains(fromJson(needs.detect.outputs.changed).changed, 'web')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read   # the registry fallback for unchanged components
+      actions: read    # the artifact probe in load-image
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: ./.github/actions/kind-stack
+        with:
+          services: ssr
+          target: ssr
+          port: "8080"
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: ${{ github.job }}
+          python-version: "3.13"
+      - name: Install the e2e group
+        run: uv sync --frozen --only-group e2e
+      # `--with-deps` pulls the system libraries Chromium needs; the
+      # runner image does not ship them.
+      - run: uv run --no-sync playwright install --with-deps chromium
+      - name: behave packages/ssr/features
+        env:
+          SHOMER_SSR_URL: http://localhost:8080
+        run: uv run --no-sync behave packages/ssr/features
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: e2e-ssr
+          body: '`behave packages/ssr/features` against the chart-deployed `ssr` on `localhost:8080`.'
+
   docs-build:
     # Build the site on every docs change (PR and main). On main,
     # release-docs reuses this artifact instead of rebuilding —
@@ -1980,6 +2037,7 @@ jobs:
       - chart-bdd-package
       - chart-bdd-verify-policy
       - e2e-api
+      - e2e-ssr
       - owasp-api
       - docs-build
     if: >-
@@ -2017,6 +2075,8 @@ jobs:
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'api') ||
        (needs.e2e-api.result == 'success' &&
         needs.owasp-api.result == 'success')) &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'ssr') ||
+       needs.e2e-ssr.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest
