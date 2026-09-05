@@ -54,6 +54,7 @@ testpaths = [
     "packages/api/tests",
     "packages/bdd/tests",
     "packages/cli/tests",
+    "packages/job/tests",
     "packages/lib/tests",
 ]
 # importlib import mode, so two packages may both call their suite
