@@ -32,6 +32,7 @@ tagged and released on its own.
 | [`shomer-lib`](packages/lib) | Python | Contracts, settings, ORM models, database connector, DI module. |
 | [`shomer-bdd`](packages/bdd) | Python | The Alembic revisions and their runner. |
 | [`shomer-api`](packages/api) | Python | The OpenID Connect / OAuth 2.0 endpoints. |
+| [`shomer-cli`](packages/cli) | Python | The operator command line. |
 
 `shomer-lib` sits at the root: every service names an interface it
 declares and lets the container supply the implementation, so a service
@@ -77,6 +78,7 @@ uv sync --all-packages
 
 uv run shomer-bdd                        # apply the migrations
 uv run shomer-api                        # http://localhost:8000
+uv run shomer config                     # what this environment resolves to
 ```
 
 With nothing configured it runs against a local SQLite file. Point it

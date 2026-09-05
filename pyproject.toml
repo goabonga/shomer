@@ -16,6 +16,7 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 shomer-api = { workspace = true }
+shomer-cli = { workspace = true }
 shomer-bdd = { workspace = true }
 shomer-lib = { workspace = true }
 
@@ -42,6 +43,7 @@ favicon = [
 testpaths = [
     "packages/api/tests",
     "packages/bdd/tests",
+    "packages/cli/tests",
     "packages/lib/tests",
 ]
 # importlib import mode, so two packages may both call their suite
@@ -66,6 +68,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 known-first-party = [
     "shomer_api",
     "shomer_bdd",
+    "shomer_cli",
     "shomer_lib",
 ]
 

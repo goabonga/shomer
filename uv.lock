@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "shomer-api",
     "shomer-bdd",
+    "shomer-cli",
     "shomer-lib",
     "shomer-workspace",
 ]
@@ -1213,6 +1214,21 @@ requires-dist = [
     { name = "shomer-lib", extras = ["postgres"], marker = "extra == 'postgres'", editable = "packages/lib" },
 ]
 provides-extras = ["postgres", "mysql"]
+
+[[package]]
+name = "shomer-cli"
+version = "0.0.0"
+source = { editable = "packages/cli" }
+dependencies = [
+    { name = "click" },
+    { name = "shomer-lib" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1" },
+    { name = "shomer-lib", editable = "packages/lib" },
+]
 
 [[package]]
 name = "shomer-lib"

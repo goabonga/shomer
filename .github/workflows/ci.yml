@@ -294,6 +294,51 @@ jobs:
       - uses: ./.github/actions/python-check
         with: { path: packages/api, module: shomer_api, check: test }
 
+  # ──────────────────── cli ────────────────────
+
+  cli-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'cli')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/cli, module: shomer_cli, check: lint }
+
+  cli-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'cli')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/cli, module: shomer_cli, check: format }
+
+  cli-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'cli')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/cli, module: shomer_cli, check: typecheck }
+
+  cli-test:
+    needs: [cli-lint, cli-format, cli-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/cli, module: shomer_cli, check: test }
+
   # ──────────────────── docs ────────────────────
 
   docs-build:
@@ -350,6 +395,7 @@ jobs:
       - lib-test
       - bdd-test
       - api-test
+      - cli-test
       - docs-build
     if: >-
       !failure() && !cancelled() &&
@@ -362,6 +408,8 @@ jobs:
        needs.bdd-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'api') ||
        needs.api-test.result == 'success') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'cli') ||
+       needs.cli-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest
@@ -580,6 +628,31 @@ jobs:
         with:
           package: shomer-api
           tag: api-v${{ fromJson(needs.release-bump.outputs.bumps)['api'].next_version }}
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
+  release-cli:
+    needs: [release-bump]
+    if: |
+      !failure() && !cancelled() &&
+      fromJson(needs.release-bump.outputs.bumps)['cli'].next_version != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/shomer-cli/
+    permissions:
+      contents: write   # gh release create
+      id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The release commit, so the wheel carries the version that was
+          # just tagged rather than the one that preceded it.
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/publish-pypi
+        with:
+          package: shomer-cli
+          tag: cli-v${{ fromJson(needs.release-bump.outputs.bumps)['cli'].next_version }}
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
   release-docs:
