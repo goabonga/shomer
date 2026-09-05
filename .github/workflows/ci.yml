@@ -1865,6 +1865,28 @@ jobs:
           title: chart-ssr-checkov
           body: '`checkov --framework helm` on `packages/ssr/chart/`.'
 
+  chart-ssr-verify-policy:
+    # The chart renders an image-verification policy; this proves the
+    # policy is not inert. Kyverno in a throwaway cluster, Enforce on, and
+    # an image the policy matches but whose signature carries someone
+    # else's identity must be rejected — then admitted once the policy is
+    # removed, so the rejection cannot have come from something else.
+    needs: [chart-ssr-checkov]
+    if: '!failure() && !cancelled() && needs.chart-ssr-checkov.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/chart-verify-policy
+        with:
+          chart: packages/ssr/chart
+          component: ssr
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-ssr-verify-policy
+          body: 'kind + Kyverno: the `imageVerification` policy rejects a foreign-signed image, and admits it once removed.'
+
   chart-ssr-package:
     needs: [chart-ssr-checkov]
     if: '!failure() && !cancelled() && needs.chart-ssr-checkov.result == ''success'''
@@ -1952,6 +1974,7 @@ jobs:
       - chart-api-package
       - chart-api-verify-policy
       - chart-ssr-package
+      - chart-ssr-verify-policy
       - chart-job-package
       - chart-job-verify-policy
       - chart-bdd-package
@@ -1983,7 +2006,8 @@ jobs:
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-ssr') ||
-       needs.chart-ssr-package.result == 'success') &&
+       (needs.chart-ssr-package.result == 'success' &&
+        needs.chart-ssr-verify-policy.result == 'success')) &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-job') ||
        (needs.chart-job-package.result == 'success' &&
         needs.chart-job-verify-policy.result == 'success')) &&
