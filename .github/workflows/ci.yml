@@ -73,7 +73,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: goabonga/multicz-action@v1
@@ -104,7 +104,7 @@ jobs:
       # wins on release commits, the multicz-action output otherwise.
       changed: ${{ steps.release-bypass.outputs.changed || steps.changed.outputs.json }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -143,7 +143,7 @@ jobs:
     if: toJSON(fromJson(needs.detect.outputs.changed).changed) != '[]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -169,7 +169,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'lib')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -180,7 +180,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'lib')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -191,7 +191,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'lib')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -201,7 +201,7 @@ jobs:
     needs: [lib-lint, lib-format, lib-typecheck]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -214,7 +214,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'bdd')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -225,7 +225,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'bdd')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -236,7 +236,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'bdd')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -246,7 +246,7 @@ jobs:
     needs: [bdd-lint, bdd-format, bdd-typecheck]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -259,7 +259,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'api')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -270,7 +270,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'api')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -281,7 +281,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'api')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -291,7 +291,7 @@ jobs:
     needs: [api-lint, api-format, api-typecheck]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -304,7 +304,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'cli')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -315,7 +315,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'cli')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -326,7 +326,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'cli')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -336,7 +336,7 @@ jobs:
     needs: [cli-lint, cli-format, cli-typecheck]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -349,7 +349,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'job')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -360,7 +360,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'job')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -371,7 +371,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'job')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -381,7 +381,7 @@ jobs:
     needs: [job-lint, job-format, job-typecheck]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -394,7 +394,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/node-check
@@ -405,7 +405,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/node-check
@@ -416,7 +416,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/node-check
@@ -426,7 +426,7 @@ jobs:
     needs: [web-lint, web-format, web-typecheck]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/node-check
@@ -440,11 +440,11 @@ jobs:
     needs: [web-test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/bump-preview
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -452,7 +452,7 @@ jobs:
       - run: npm ci
       - name: Build → packages/ssr/src/shomer_ssr/{static,templates}/
         run: npm run build --workspace packages/web
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-dist
           path: |
@@ -473,7 +473,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'ssr')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -484,7 +484,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'ssr')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -495,7 +495,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'ssr')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/python-check
@@ -515,12 +515,12 @@ jobs:
       )
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # The freshly built assets, not the committed copy: the wheel this
       # release publishes is built from these bytes.
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: web-dist
           path: packages/ssr/src/shomer_ssr/
@@ -539,7 +539,7 @@ jobs:
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'docs')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/bump-preview
@@ -552,7 +552,7 @@ jobs:
         run: uv sync --frozen --only-group doc
       - name: Zensical build
         run: uv run --no-sync zensical build --clean
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: docs-site
           path: site/
@@ -628,7 +628,7 @@ jobs:
       # wall of failed publish jobs.
       bumps: ${{ steps.bump.outputs.bumps || '{}' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
@@ -646,7 +646,7 @@ jobs:
 
       # web's post_bump rebuilds the bundle during the bump, so Node has
       # to be present before multicz runs — not after.
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -766,7 +766,7 @@ jobs:
       contents: write   # gh release create
       id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # The release commit, so the wheel carries the version that was
           # just tagged rather than the one that preceded it.
@@ -791,7 +791,7 @@ jobs:
       contents: write   # gh release create
       id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # The release commit, so the wheel carries the version that was
           # just tagged rather than the one that preceded it.
@@ -816,7 +816,7 @@ jobs:
       contents: write   # gh release create
       id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # The release commit, so the wheel carries the version that was
           # just tagged rather than the one that preceded it.
@@ -841,7 +841,7 @@ jobs:
       contents: write   # gh release create
       id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # The release commit, so the wheel carries the version that was
           # just tagged rather than the one that preceded it.
@@ -866,7 +866,7 @@ jobs:
       contents: write   # gh release create
       id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # The release commit, so the wheel carries the version that was
           # just tagged rather than the one that preceded it.
@@ -891,7 +891,7 @@ jobs:
       contents: write   # gh release create
       id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # The release commit, so the wheel carries the version that was
           # just tagged rather than the one that preceded it.
@@ -912,7 +912,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
@@ -944,23 +944,23 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         with:
           enablement: true
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: docs-site
           path: site
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - name: Deploy to GitHub Pages
         id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
       - uses: ./.github/actions/publish-release
         with:
           tag: docs-v${{ fromJson(needs.release-bump.outputs.bumps)['docs'].next_version }}
