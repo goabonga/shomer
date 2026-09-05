@@ -634,6 +634,27 @@ jobs:
       - uses: ./.github/actions/python-check
         with: { path: packages/api, module: shomer_api, check: test }
 
+  api-bandit:
+    # Static analysis on the source that ships. It gates the container
+    # build rather than running beside it: an image is expensive to build
+    # and worthless to scan if the code in it is already known-bad.
+    needs: [api-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: ${{ github.job }}
+          python-version: "3.13"
+      - run: uvx --from 'bandit[toml]' bandit -c pyproject.toml -q -r packages/api/src
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: api-bandit
+          body: '`bandit` static analysis on `packages/api/src`.'
+
   docs-build:
     # Build the site on every docs change (PR and main). On main,
     # release-docs reuses this artifact instead of rebuilding —
@@ -688,7 +709,7 @@ jobs:
       - audit
       - lib-bandit
       - bdd-grype
-      - api-test
+      - api-bandit
       - chart-bdd-package
       - chart-bdd-verify-policy
       - docs-build
@@ -702,7 +723,7 @@ jobs:
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'bdd') ||
        needs.bdd-grype.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'api') ||
-       needs.api-test.result == 'success') &&
+       needs.api-bandit.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-bdd') ||
        (needs.chart-bdd-package.result == 'success' &&
         needs.chart-bdd-verify-policy.result == 'success')) &&
