@@ -257,7 +257,50 @@ jobs:
           title: lib-bandit
           body: '`bandit` static analysis on `packages/lib/src`.'
 
-  # ──────────────────── docs ────────────────────
+  # ──────────────────── bdd ────────────────────
+
+  bdd-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'bdd')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/bdd, module: shomer_bdd, check: lint }
+
+  bdd-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'bdd')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/bdd, module: shomer_bdd, check: format }
+
+  bdd-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'bdd')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/bdd, module: shomer_bdd, check: typecheck }
+
+  bdd-test:
+    needs: [bdd-lint, bdd-format, bdd-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/bdd, module: shomer_bdd, check: test }
 
   docs-build:
     # Build the site on every docs change (PR and main). On main,
@@ -312,6 +355,7 @@ jobs:
       - headers
       - audit
       - lib-bandit
+      - bdd-test
       - docs-build
     if: >-
       !failure() && !cancelled() &&
@@ -320,6 +364,8 @@ jobs:
       !startsWith(github.event.head_commit.message, 'chore(release):') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'lib') ||
        needs.lib-bandit.result == 'success') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'bdd') ||
+       needs.bdd-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest
