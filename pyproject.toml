@@ -19,6 +19,7 @@ shomer-lib = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "pytest>=8.0",
     "ruff>=0.15",
     "pre-commit>=4.0",
 ]
@@ -31,6 +32,15 @@ favicon = [
     "cairosvg>=2.7",
     "pillow>=10.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/lib/tests",
+]
+# importlib import mode, so two packages may both call their suite
+# `test_app.py`. Under the default mode pytest derives a module name from
+# the path relative to the rootdir and the second one collides.
+addopts = "-q --import-mode=importlib"
 
 [tool.ruff]
 line-length = 88
