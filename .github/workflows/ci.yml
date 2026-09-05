@@ -1997,6 +1997,27 @@ jobs:
           tag: job-v${{ fromJson(needs.release-bump.outputs.bumps)['job'].next_version }}
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
+  release-web:
+    needs: [release-bump]
+    if: |
+      !failure() && !cancelled() &&
+      fromJson(needs.release-bump.outputs.bumps)['web'].next_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      # No npm publish: the package is private and ships inside the
+      # shomer-ssr wheel. The tag and its notes are what a reader needs to
+      # see which frontend a given wheel contains.
+      - uses: ./.github/actions/publish-release
+        with:
+          tag: web-v${{ fromJson(needs.release-bump.outputs.bumps)['web'].next_version }}
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
   release-chart-api:
     needs: [release-bump]
     if: |
