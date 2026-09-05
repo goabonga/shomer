@@ -8,5 +8,6 @@ api=0.0.0
 bdd=0.0.0
 chart-api=0.0.0
 chart-bdd=0.0.0
+cli=0.0.0
 lib=0.0.0
 docs=0.0.0

@@ -16,6 +16,7 @@ component itself reports.
 | `shomer-bdd` chart | {{ config.extra.versions.chart_bdd }} | `chart-bdd-v{{ config.extra.versions.chart_bdd }}` |
 | `shomer-api` | {{ config.extra.versions.api }} | `api-v{{ config.extra.versions.api }}` |
 | `shomer-api` chart | {{ config.extra.versions.chart_api }} | `chart-api-v{{ config.extra.versions.chart_api }}` |
+| `shomer-cli` | {{ config.extra.versions.cli }} | `cli-v{{ config.extra.versions.cli }}` |
 | this site | {{ config.extra.versions.docs }} | `docs-v{{ config.extra.versions.docs }}` |
 
 ## How a version is decided

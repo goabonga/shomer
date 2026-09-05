@@ -188,6 +188,28 @@ changelog  = "packages/api/chart/CHANGELOG.md"
 type = "helm"
 ref  = "oci://ghcr.io/goabonga/charts/shomer-api:{version}"
 
+# ─────────────────────────────── cli ───────────────────────────────
+
+[components.cli]
+paths      = [
+    "packages/cli/src/**",
+    "packages/cli/pyproject.toml",
+    "packages/cli/README.md",
+]
+bump_files = [
+    { file = "packages/cli/pyproject.toml", key = "project.version" },
+    { file = "packages/cli/src/shomer_cli/__init__.py", key = 'regex:^__version__\s*=\s*"([^"]+)"' },
+    { file = "VERSION", key = 'regex:^cli=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.cli" },
+]
+changelog  = "packages/cli/CHANGELOG.md"
+depends_on = ["lib"]
+post_bump  = ["uv lock"]
+
+[[components.cli.artifacts]]
+type = "pypi"
+ref  = "shomer-cli=={version}"
+
 # ─────────────────────────────── docs ───────────────────────────────
 
 # The site is a component so that it is versioned and released like
@@ -205,5 +227,5 @@ bump_files = [
 # The library writes its version into zensical.toml, and the site prints
 # it. Depending on it means the page is regenerated with the fresh number
 # rather than staying a release behind.
-depends_on = ["api", "bdd", "chart-api", "chart-bdd", "lib"]
+depends_on = ["api", "bdd", "chart-api", "chart-bdd", "cli", "lib"]
 bump_rules = { docs = "patch" }
