@@ -91,6 +91,7 @@ custom_checkbox = true
 # NOTE: keys use underscores — a dash reads as subtraction inside the
 # Jinja `{{ ... }}` macro expression.
 [project.extra.versions]
+bdd  = "0.0.0"
 lib  = "0.0.0"
 docs = "0.0.0"
 

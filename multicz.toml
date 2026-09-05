@@ -74,6 +74,32 @@ post_bump  = ["uv lock"]
 type = "pypi"
 ref  = "shomer-lib=={version}"
 
+# ─────────────────────────────── bdd ───────────────────────────────
+
+[components.bdd]
+paths      = [
+    "packages/bdd/src/**",
+    "packages/bdd/pyproject.toml",
+    "packages/bdd/alembic.ini",
+    "packages/bdd/README.md",
+]
+bump_files = [
+    { file = "packages/bdd/pyproject.toml", key = "project.version" },
+    { file = "packages/bdd/src/shomer_bdd/__init__.py", key = 'regex:^__version__\s*=\s*"([^"]+)"' },
+    { file = "VERSION", key = 'regex:^bdd=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.bdd" },
+]
+changelog  = "packages/bdd/CHANGELOG.md"
+# A model change in lib is a schema change waiting to be written, and the
+# revision tree autogenerates against lib's metadata. Cascading here means
+# the two are always released as a pair.
+depends_on = ["lib"]
+post_bump  = ["uv lock"]
+
+[[components.bdd.artifacts]]
+type = "pypi"
+ref  = "shomer-bdd=={version}"
+
 # ─────────────────────────────── docs ───────────────────────────────
 
 # The site is a component so that it is versioned and released like
@@ -91,5 +117,5 @@ bump_files = [
 # The library writes its version into zensical.toml, and the site prints
 # it. Depending on it means the page is regenerated with the fresh number
 # rather than staying a release behind.
-depends_on = ["lib"]
+depends_on = ["bdd", "lib"]
 bump_rules = { docs = "patch" }
