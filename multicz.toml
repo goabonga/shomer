@@ -210,6 +210,28 @@ post_bump  = ["uv lock"]
 type = "pypi"
 ref  = "shomer-cli=={version}"
 
+# ─────────────────────────────── job ───────────────────────────────
+
+[components.job]
+paths      = [
+    "packages/job/src/**",
+    "packages/job/pyproject.toml",
+    "packages/job/README.md",
+]
+bump_files = [
+    { file = "packages/job/pyproject.toml", key = "project.version" },
+    { file = "packages/job/src/shomer_job/__init__.py", key = 'regex:^__version__\s*=\s*"([^"]+)"' },
+    { file = "VERSION", key = 'regex:^job=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.job" },
+]
+changelog  = "packages/job/CHANGELOG.md"
+depends_on = ["lib"]
+post_bump  = ["uv lock"]
+
+[[components.job.artifacts]]
+type = "pypi"
+ref  = "shomer-job=={version}"
+
 # ─────────────────────────────── docs ───────────────────────────────
 
 # The site is a component so that it is versioned and released like
@@ -227,5 +249,5 @@ bump_files = [
 # The library writes its version into zensical.toml, and the site prints
 # it. Depending on it means the page is regenerated with the fresh number
 # rather than staying a release behind.
-depends_on = ["api", "bdd", "chart-api", "chart-bdd", "cli", "lib"]
+depends_on = ["api", "bdd", "chart-api", "chart-bdd", "cli", "job", "lib"]
 bump_rules = { docs = "patch" }
