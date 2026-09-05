@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: publish helm chart
+description: |
+  Push the packaged chart this run produced to `oci://ghcr.io/<owner>/charts`,
+  then sign and verify it.
+
+  The `.tgz` comes from the `chart-<component>-tgz` artifact, already built
+  with the released version baked in — repackaging here would publish
+  something the chart jobs never linted.
+
+  A chart decides what a cluster runs, so it is worth exactly as much
+  signing as the image it deploys.
+
+  REQUIRES `id-token: write` and `packages: write` on the calling job.
+
+inputs:
+  component:
+    required: true
+    description: Component name — api / ssr / job / bdd.
+  owner:
+    required: true
+    description: Lowercase ghcr namespace.
+  token:
+    required: true
+    description: "Token with `packages: write` scope."
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v8
+      with:
+        name: chart-${{ inputs.component }}-tgz
+        path: /tmp/chart
+
+    - uses: azure/setup-helm@v5
+
+    - name: Log in to the registry, twice
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        echo "$TOKEN" | helm registry login ghcr.io -u '${{ github.actor }}' --password-stdin
+        # cosign reads the docker keychain, which `helm registry login`
+        # does not populate — it keeps its own credential store. Without
+        # this the chart pushes and the signature upload then dies with an
+        # UNAUTHORIZED on the blob endpoint, which reads like a permissions
+        # problem with the token rather than a missing login.
+        echo "$TOKEN" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+    - name: helm push
+      id: push
+      shell: bash
+      env:
+        OWNER: ${{ inputs.owner }}
+      run: |
+        set -euo pipefail
+        TGZ=$(ls /tmp/chart/*.tgz | head -1)
+        # helm prints the digest on stderr; capturing it is more reliable
+        # than re-deriving it, and cosign needs the digest rather than the
+        # version tag.
+        helm push "$TGZ" "oci://ghcr.io/${OWNER}/charts" 2>&1 | tee /tmp/helm-push.log
+        DIGEST=$(grep -oE 'sha256:[0-9a-f]{64}' /tmp/helm-push.log | head -1)
+        NAME=$(basename "$TGZ" .tgz)
+        # <name>-<semver>.tgz — strip the trailing version.
+        echo "ref=ghcr.io/${OWNER}/charts/${NAME%-*}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+    - uses: sigstore/cosign-installer@v3
+
+    - name: Sign and verify
+      shell: bash
+      env:
+        COSIGN_YES: "true"
+        REF: ${{ steps.push.outputs.ref }}
+      run: |
+        set -euo pipefail
+        cosign sign --yes "$REF"
+        cosign verify \
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+          --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+          "$REF" > /dev/null
+        echo "signature verified for $REF"
