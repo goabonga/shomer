@@ -31,4 +31,30 @@ patch, `feat!` or a `BREAKING CHANGE:` footer a major. Everything else
 documents the change without releasing it.
 
 Which component a commit bumps is decided by the paths it touches, not by
-the scope written in the subject
+the scope written in the subject — and rarely only one. A commit under
+`packages/web/src/` bumps `web`; because `ssr` declares a dependency on
+it, `ssr` is released in the same pass so the published wheel actually
+contains the new bundle.
+
+A chart is its own component, and that is not bureaucracy: a chart
+changes for reasons its image does not — a probe, a resource limit, a
+network rule — and versioning the two together would either republish an
+unchanged image or ship a chart change under a version claiming nothing
+changed. The link runs the other way instead: releasing a component
+writes its version into the chart's `appVersion`, and that write is what
+releases the chart.
+
+`shomer-lib` sits at the root of that graph. It owns the contracts every
+other package types against, so a change there can alter what a service
+observes even when the service's own sources did not move. Everything
+downstream is therefore released with it:
+
+```
+lib ──┬── bdd ── chart-bdd ──┐
+      ├── api ── chart-api ──┤
+      ├── cli ───────────────┼── docs
+      ├── job ── chart-job ──┤
+      └── ssr ── chart-ssr ──┘
+             │
+web ─────────┘
+```
