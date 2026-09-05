@@ -13,6 +13,10 @@ requires-python = ">=3.13"
 
 [tool.uv.workspace]
 members = ["packages/*"]
+# `web` is a Node/TS project (the React bundle source for the ssr
+# frontend). It carries no pyproject.toml, so uv must be told to look
+# past it rather than fail resolving a member that isn't one.
+exclude = ["packages/web"]
 
 [tool.uv.sources]
 shomer-api = { workspace = true }

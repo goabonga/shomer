@@ -22,7 +22,10 @@
 #   web:  web-lint ─┬─ web-test ─ web-build ──> `web-dist` artifact
 #         web-format┤
 #         web-typecheck
-##
+#
+#   ssr-test additionally consumes `web-dist`, so the wheel under test
+#   carries the bundle CI just built rather than a committed copy.
+#
 # Change-gating is `if: contains(fromJson(needs.detect.outputs.changed).changed,
 # '<name>')` on each chain's entry points. The skip then cascades through
 # `needs:`, so an unchanged component produces no work. `detect` must sit
@@ -384,6 +387,85 @@ jobs:
       - uses: ./.github/actions/python-check
         with: { path: packages/job, module: shomer_job, check: test }
 
+  # ──────────────────── web ────────────────────
+
+  web-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/node-check
+        with: { workspace: packages/web, check: lint }
+
+  web-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/node-check
+        with: { workspace: packages/web, check: format }
+
+  web-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/node-check
+        with: { workspace: packages/web, check: typecheck }
+
+  web-test:
+    needs: [web-lint, web-format, web-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/node-check
+        with: { workspace: packages/web, check: test }
+
+  web-build:
+    # Build the bundle + templates and publish them as `web-dist`. The
+    # downstream Python package consumes the artifact rather than the
+    # committed copy, so a stale dist on a contributor's branch can never
+    # be what CI tested — CI always rebuilds.
+    needs: [web-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Build → packages/ssr/src/shomer_ssr/{static,templates}/
+        run: npm run build --workspace packages/web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: |
+            packages/ssr/src/shomer_ssr/static/
+            packages/ssr/src/shomer_ssr/templates/
+          retention-days: 1
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: web-build
+          body: '`npm run build` → `static/{main.js,main.css}` + `templates/*.html`, uploaded as `web-dist`.'
+
   # ──────────────────── docs ────────────────────
 
   docs-build:
@@ -442,6 +524,7 @@ jobs:
       - api-test
       - cli-test
       - job-test
+      - web-build
       - docs-build
     if: >-
       !failure() && !cancelled() &&
@@ -458,6 +541,8 @@ jobs:
        needs.cli-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'job') ||
        needs.job-test.result == 'success') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'web') ||
+       needs.web-build.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest
@@ -726,6 +811,27 @@ jobs:
         with:
           package: shomer-job
           tag: job-v${{ fromJson(needs.release-bump.outputs.bumps)['job'].next_version }}
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
+  release-web:
+    needs: [release-bump]
+    if: |
+      !failure() && !cancelled() &&
+      fromJson(needs.release-bump.outputs.bumps)['web'].next_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      # No npm publish: the package is private and ships inside the
+      # shomer-ssr wheel. The tag and its notes are what a reader needs to
+      # see which frontend a given wheel contains.
+      - uses: ./.github/actions/publish-release
+        with:
+          tag: web-v${{ fromJson(needs.release-bump.outputs.bumps)['web'].next_version }}
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
   release-docs:

@@ -166,6 +166,27 @@ post_bump  = ["uv lock"]
 type = "pypi"
 ref  = "shomer-job=={version}"
 
+# ─────────────────────────────── web ───────────────────────────────
+
+[components.web]
+paths      = [
+    "packages/web/src/**",
+    "packages/web/scripts/**",
+    "packages/web/package.json",
+    "packages/web/tsconfig.json",
+    "packages/web/biome.json",
+]
+bump_files = [
+    { file = "packages/web/package.json", key = "version" },
+    { file = "VERSION", key = 'regex:^web=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.web" },
+]
+changelog  = "packages/web/CHANGELOG.md"
+# Regenerates static/main.{js,css} and templates/*.html under packages/ssr
+# at the version being released, so the bundle in the release commit is
+# the one built from the sources in that same commit.
+post_bump  = ["npm --prefix packages/web run build"]
+
 # ─────────────────────────────── docs ───────────────────────────────
 
 # Every component writes its version into zensical.toml's
@@ -181,5 +202,5 @@ bump_files = [
     { file = "VERSION", key = 'regex:^docs=(.+)$' },
     { file = "zensical.toml", key = "project.extra.versions.docs" },
 ]
-depends_on = ["api", "bdd", "cli", "job", "lib"]
+depends_on = ["api", "bdd", "cli", "job", "lib", "web"]
 bump_rules = { docs = "patch" }

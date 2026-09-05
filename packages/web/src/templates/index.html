@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shomer</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/static/main.css" />
+</head>
+<body>
+  <!-- App mount point — React Router renders every route here. -->
+  <div id="root"></div>
+  <footer>shomer-ssr {{ version }}</footer>
+  <!--
+    Not `application/json`: Jinja's `tojson` escapes the payload for HTML
+    embedding, and a custom type keeps any tooling that auto-parses
+    application/json blocks from choking on it. config.ts reads the raw
+    textContent, so the media type is ours to pick.
+  -->
+  <script id="app-config" type="text/x-shomer-config">{{ config | tojson }}</script>
+  <script src="/static/main.js" defer></script>
+</body>
+</html>

@@ -16,6 +16,7 @@ component itself reports.
 | `shomer-api` | {{ config.extra.versions.api }} | `api-v{{ config.extra.versions.api }}` |
 | `shomer-cli` | {{ config.extra.versions.cli }} | `cli-v{{ config.extra.versions.cli }}` |
 | `shomer-job` | {{ config.extra.versions.job }} | `job-v{{ config.extra.versions.job }}` |
+| `shomer-web` | {{ config.extra.versions.web }} | `web-v{{ config.extra.versions.web }}` |
 | this site | {{ config.extra.versions.docs }} | `docs-v{{ config.extra.versions.docs }}` |
 
 ## How a version is decided

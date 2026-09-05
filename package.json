@@ -1,0 +1,19 @@
+{
+  "name": "shomer-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "npm workspace root for the shomer monorepo: the React sources that shomer-ssr serves.",
+  "license": "MIT",
+  "author": "Chris <goabonga@pm.me>",
+  "type": "module",
+  "workspaces": [
+    "packages/web"
+  ],
+  "scripts": {
+    "lint": "npm run lint --workspaces --if-present",
+    "format:check": "npm run format:check --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspace packages/web"
+  }
+}

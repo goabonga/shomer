@@ -1,0 +1,44 @@
+{
+  "name": "shomer-web",
+  "version": "0.0.0",
+  "description": "Source for shomer-ssr's React app, CSS and Jinja templates. Built outputs land in packages/ssr/src/shomer_ssr/{static,templates}/.",
+  "license": "MIT",
+  "author": "Chris <goabonga@pm.me>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goabonga/shomer.git",
+    "directory": "packages/web"
+  },
+  "bugs": {
+    "url": "https://github.com/goabonga/shomer/issues"
+  },
+  "homepage": "https://github.com/goabonga/shomer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "biome lint src tests",
+    "format": "biome format --write src tests",
+    "format:check": "biome format src tests",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "esbuild": "^0.25.9",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

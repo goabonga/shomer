@@ -24,7 +24,8 @@ The full documentation is published at
 
 ## Packages
 
-The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/). Every package is versioned, changelogged,
+The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
+alongside an npm workspace. Every package is versioned, changelogged,
 tagged and released on its own.
 
 | Package | Kind | What it is |
@@ -34,6 +35,7 @@ tagged and released on its own.
 | [`shomer-api`](packages/api) | Python | The OpenID Connect / OAuth 2.0 endpoints. |
 | [`shomer-cli`](packages/cli) | Python | The operator command line. |
 | [`shomer-job`](packages/job) | Python | The maintenance worker. |
+| [`shomer-web`](packages/web) | TypeScript | The React sources `shomer-ssr` serves. |
 
 `shomer-lib` sits at the root: every service names an interface it
 declares and lets the container supply the implementation, so a service
@@ -68,6 +70,7 @@ def healthz(clock: Annotated[Clock, Inject]) -> dict[str, object]:
 
 - Python **3.13+**
 - [uv](https://docs.astral.sh/uv/)
+- Node **22+** (for the TypeScript packages)
 
 ## Getting started
 
@@ -76,6 +79,9 @@ git clone https://github.com/goabonga/shomer.git
 cd shomer
 
 uv sync --all-packages
+npm ci
+
+npm run build --workspace packages/web   # bundle the frontend into the ssr package
 
 uv run shomer-bdd                        # apply the migrations
 uv run shomer-api                        # http://localhost:8000

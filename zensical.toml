@@ -91,6 +91,7 @@ bdd  = "0.0.0"
 cli  = "0.0.0"
 job  = "0.0.0"
 lib  = "0.0.0"
+web  = "0.0.0"
 docs = "0.0.0"
 
 [project.theme]
