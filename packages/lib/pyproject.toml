@@ -4,7 +4,7 @@
 [project]
 name = "shomer-lib"
 version = "0.0.0"
-description = "Shomer shared library: contracts, settings, ORM models and the database connector."
+description = "Shomer shared library: contracts, settings, ORM models and the database connector every service is wired from."
 requires-python = ">=3.13"
 license = "MIT"
 authors = [{ name = "Chris", email = "goabonga@pm.me" }]
@@ -23,6 +23,8 @@ classifiers = [
 
 dependencies = [
     "sqlalchemy>=2.0",
+    "tripack-container>=0.3",
+    "tripack-contracts>=0.2",
 ]
 
 

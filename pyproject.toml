@@ -19,6 +19,7 @@ shomer-lib = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "mypy>=1.14",
     "pytest>=8.0",
     "ruff>=0.15",
     "pre-commit>=4.0",
@@ -41,6 +42,19 @@ testpaths = [
 # `test_app.py`. Under the default mode pytest derives a module name from
 # the path relative to the rootdir and the second one collides.
 addopts = "-q --import-mode=importlib"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+# Every service names an interface and lets the container supply the
+# implementation, so Protocol classes are passed as tokens constantly —
+# to `bind` when wiring and to `resolve` when reading. mypy reports
+# `type-abstract` for each one ("only concrete class can be given where
+# type[T] is expected"), a rule about not instantiating an abstract type
+# that simply does not apply when the class is a key rather than a
+# constructor. It is a separate code from `abstract`, which still catches
+# an actual `SomeProtocol()` call, so nothing real is lost.
+disable_error_code = ["type-abstract"]
 
 [tool.ruff]
 line-length = 88
