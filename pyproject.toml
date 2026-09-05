@@ -15,6 +15,7 @@ requires-python = ">=3.13"
 members = ["packages/*"]
 
 [tool.uv.sources]
+shomer-api = { workspace = true }
 shomer-bdd = { workspace = true }
 shomer-lib = { workspace = true }
 
@@ -39,6 +40,7 @@ favicon = [
 
 [tool.pytest.ini_options]
 testpaths = [
+    "packages/api/tests",
     "packages/bdd/tests",
     "packages/lib/tests",
 ]
@@ -62,6 +64,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # block — which then differs depending on whether the package happens to
 # be installed.
 known-first-party = [
+    "shomer_api",
     "shomer_bdd",
     "shomer_lib",
 ]
