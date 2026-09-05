@@ -17,6 +17,7 @@ members = ["packages/*"]
 [tool.uv.sources]
 shomer-api = { workspace = true }
 shomer-bdd = { workspace = true }
+shomer-cli = { workspace = true }
 shomer-lib = { workspace = true }
 
 [dependency-groups]
@@ -98,5 +99,6 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 known-first-party = [
     "shomer_api",
     "shomer_bdd",
+    "shomer_cli",
     "shomer_lib",
 ]
