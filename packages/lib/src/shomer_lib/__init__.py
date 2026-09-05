@@ -10,7 +10,7 @@ from shomer_lib.models import Base, Client, User
 from shomer_lib.module import ShomerModule, build_container
 from shomer_lib.settings import EnvSettings
 
-__version__ = "0.0.0"
+__version__ = "0.1.0"
 
 __all__ = [
     "Base",

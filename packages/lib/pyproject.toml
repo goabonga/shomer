@@ -3,7 +3,7 @@
 
 [project]
 name = "shomer-lib"
-version = "0.0.0"
+version = "0.1.0"
 description = "Shomer shared library: contracts, settings, ORM models and the database connector every service is wired from."
 readme = "README.md"
 requires-python = ">=3.13"

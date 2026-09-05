@@ -1272,7 +1272,7 @@ wheels = [
 
 [[package]]
 name = "shomer-api"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "packages/api" }
 dependencies = [
     { name = "fastapi" },
@@ -1291,7 +1291,7 @@ requires-dist = [
 
 [[package]]
 name = "shomer-bdd"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "packages/bdd" }
 dependencies = [
     { name = "alembic" },
@@ -1317,7 +1317,7 @@ provides-extras = ["postgres", "mysql"]
 
 [[package]]
 name = "shomer-cli"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "packages/cli" }
 dependencies = [
     { name = "click" },
@@ -1332,7 +1332,7 @@ requires-dist = [
 
 [[package]]
 name = "shomer-job"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "packages/job" }
 dependencies = [
     { name = "shomer-lib" },
@@ -1343,7 +1343,7 @@ requires-dist = [{ name = "shomer-lib", editable = "packages/lib" }]
 
 [[package]]
 name = "shomer-lib"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "packages/lib" }
 dependencies = [
     { name = "sqlalchemy" },
@@ -1371,7 +1371,7 @@ provides-extras = ["postgres", "mysql"]
 
 [[package]]
 name = "shomer-ssr"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "packages/ssr" }
 dependencies = [
     { name = "fastapi" },

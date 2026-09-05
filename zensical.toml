@@ -92,18 +92,18 @@ custom_checkbox = true
 # NOTE: keys use underscores — a dash reads as subtraction inside the
 # Jinja `{{ ... }}` macro expression.
 [project.extra.versions]
-api       = "0.0.0"
-bdd       = "0.0.0"
-chart_api = "0.0.0"
-chart_bdd = "0.0.0"
-chart_job = "0.0.0"
-chart_ssr = "0.0.0"
-cli       = "0.0.0"
-job       = "0.0.0"
-lib       = "0.0.0"
-ssr       = "0.0.0"
-web       = "0.0.0"
-docs      = "0.0.0"
+api       = "0.1.0"
+bdd       = "0.1.0"
+chart_api = "0.1.0"
+chart_bdd = "0.1.0"
+chart_job = "0.1.0"
+chart_ssr = "0.1.0"
+cli       = "0.1.0"
+job       = "0.1.0"
+lib       = "0.1.0"
+ssr       = "0.1.0"
+web       = "0.1.0"
+docs      = "0.0.1"
 
 [project.theme]
 logo     = "shomer.svg"

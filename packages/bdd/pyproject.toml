@@ -3,7 +3,7 @@
 
 [project]
 name = "shomer-bdd"
-version = "0.0.0"
+version = "0.1.0"
 description = "Shomer database migrations: the Alembic revision tree and its runner."
 readme = "README.md"
 requires-python = ">=3.13"

@@ -3,7 +3,7 @@
 
 [project]
 name = "shomer-job"
-version = "0.0.0"
+version = "0.1.0"
 description = "Shomer background worker: the periodic maintenance an authorization server needs between requests."
 readme = "README.md"
 requires-python = ">=3.13"

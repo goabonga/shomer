@@ -1,6 +1,6 @@
 {
   "name": "shomer-web",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Source for shomer-ssr's React app, CSS and Jinja templates. Built outputs land in packages/ssr/src/shomer_ssr/{static,templates}/.",
   "license": "MIT",
   "author": "Chris <goabonga@pm.me>",

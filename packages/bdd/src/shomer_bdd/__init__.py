@@ -3,4 +3,4 @@
 
 """Shomer database migrations: the Alembic revision tree and its runner."""
 
-__version__ = "0.0.0"
+__version__ = "0.1.0"

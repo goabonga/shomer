@@ -3,7 +3,7 @@
 
 [project]
 name = "shomer-cli"
-version = "0.0.0"
+version = "0.1.0"
 description = "Shomer command-line interface: inspect the configuration and the database an instance is wired to."
 readme = "README.md"
 requires-python = ">=3.13"
