@@ -93,6 +93,7 @@ custom_checkbox = true
 [project.extra.versions]
 api       = "0.0.0"
 bdd       = "0.0.0"
+chart_api = "0.0.0"
 chart_bdd = "0.0.0"
 lib       = "0.0.0"
 docs      = "0.0.0"
