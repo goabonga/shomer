@@ -1,0 +1,406 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# CI + release pipeline. Per-component named jobs — no matrix, so every
+# job is its own graph node, dependencies are explicit, and the Actions UI
+# says at a glance which component broke.
+#
+# ─── Graph entry:
+#
+#   validate ── detect ── headers ──┬── one chain per python component
+#                                   ├── web chain
+#                                   └── docs-build
+#
+# ─── Per-component chains:
+#
+#   python (lib / bdd / api / cli / job / ssr):
+#
+#         X-lint ─────┐
+#         X-format ───┼── X-test
+#         X-typecheck ┘
+#
+#   web:  web-lint ─┬─ web-test ─ web-build ──> `web-dist` artifact
+#         web-format┤
+#         web-typecheck
+##
+# Change-gating is `if: contains(fromJson(needs.detect.outputs.changed).changed,
+# '<name>')` on each chain's entry points. The skip then cascades through
+# `needs:`, so an unchanged component produces no work. `detect` must sit
+# in `needs:` directly — GitHub only exposes outputs for DIRECT needs, not
+# transitive ones.
+#
+# ─── Release fan-out (main only, !chore(release), everything upstream green):
+#
+#   web-build  ─┐                  ┌─> release-web        (GitHub release)
+#   *-test     ─┼─> release-bump ──┼─> release-<python>   (PyPI + release)
+#   docs-build ─┘                  └─> release-docs       (Pages + release)
+#
+# release-bump runs `multicz bump --commit --tag --push` for every
+# component that bumped — one atomic commit, N per-component tags. Each
+# downstream job is gated on its own version being non-empty, so a
+# component that did not bump publishes nothing.
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel superseded PR runs; QUEUE the ones on main, never kill them.
+#
+# The asymmetry is deliberate. A PR run only reports, so the newest is the
+# only one worth having. A run on main publishes: release-bump tags and
+# pushes, then the release jobs upload to PyPI, deploy Pages and cut
+# GitHub releases. Cancelling between those leaves a tag with no artifact.
+# Queuing costs wall-clock; cancelling costs correctness.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Read-only by default. Anything that writes (push commits and tags, cut
+# releases, publish to PyPI, deploy Pages) declares its own override.
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────── graph entry ────────────────────
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: goabonga/multicz-action@v1
+      - name: multicz validate
+        run: multicz validate --strict
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: validate
+          body: '`multicz validate --strict` on the workspace config.'
+
+  detect:
+    # Gate on validate so a broken multicz.toml fails loudly upfront
+    # rather than cryptically inside the `changed` action below.
+    #
+    # Two paths:
+    #
+    # 1. A `chore(release):` head commit is multicz's own release commit
+    #    looping back through CI. Everything it would build was already
+    #    published by the run that created it, so emit `changed=[]` and
+    #    let the empty array cascade the skip across the whole graph.
+    # 2. Anything else — compute the real per-component diff.
+    needs: [validate]
+    runs-on: ubuntu-latest
+    outputs:
+      # `||` returns the first non-empty branch: the release-bypass output
+      # wins on release commits, the multicz-action output otherwise.
+      changed: ${{ steps.release-bypass.outputs.changed || steps.changed.outputs.json }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: release-bypass
+        if: startsWith(github.event.head_commit.message, 'chore(release):')
+        run: |
+          set -euo pipefail
+          {
+            printf '## chore(release) — pipeline short-circuited\n\n'
+            printf 'This run targets multicz'"'"'s own release commit '
+            printf '(`%s`). Everything it would build was already ' "${GITHUB_SHA:0:7}"
+            printf 'published by the `release-bump → release-<component>` '
+            printf 'chain that created it.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf 'changed={"changed":[],"unchanged":[]}\n' >> "$GITHUB_OUTPUT"
+
+      - id: changed
+        if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+        uses: goabonga/multicz-action/changed@v1
+        with:
+          output: json
+
+      - name: Summary
+        if: always() && !startsWith(github.event.head_commit.message, 'chore(release):')
+        uses: ./.github/actions/summary
+        with:
+          title: detect
+          body: 'Changed components: `${{ steps.changed.outputs.json }}`'
+
+  headers:
+    # Two gates: `needs: [detect]` so a broken config kills the run
+    # upstream, and a non-empty `changed` so a commit that moved no
+    # tracked component leaves nothing to re-validate. Actions expressions
+    # have no `length()`, hence the round-trip through `toJSON()`.
+    needs: [detect]
+    if: toJSON(fromJson(needs.detect.outputs.changed).changed) != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: ${{ github.job }}
+          python-version: "3.13"
+      - name: SPDX license headers
+        run: |
+          uv run --no-project python scripts/add_license_header.py --path packages --types py --check
+          uv run --no-project python scripts/add_license_header.py --path scripts --types py,sh --check
+          uv run --no-project python scripts/add_license_header.py --path .github --types yml --check
+          uv run --no-project python scripts/add_license_header.py --path . --types toml --check
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: headers
+          body: SPDX header check on `packages/`, `scripts/`, `.github/` and the root TOML.
+
+  # ──────────────────── docs ────────────────────
+
+  docs-build:
+    # Build the site on every docs change (PR and main). On main,
+    # release-docs reuses this artifact instead of rebuilding —
+    # bump-preview already wrote the next version into the working tree,
+    # so the bytes are identical to what a rebuild would produce.
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'docs')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: ${{ github.job }}
+          python-version: "3.13"
+      - name: Install the doc group
+        run: uv sync --frozen --only-group doc
+      - name: Zensical build
+        run: uv run --no-sync zensical build --clean
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: site/
+          retention-days: 1
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: docs-build
+          body: '`zensical build` → uploaded as `docs-site` for `release-docs` to consume.'
+
+  # ──────────────────── release ────────────────────
+
+  release-bump:
+    # The single stage the whole graph funnels into. multicz discovers
+    # which components changed since their last tag, then commits, tags
+    # and pushes ALL of them in one atomic commit. Downstream publish jobs
+    # read the resulting versions to decide whether to run.
+    #
+    # Triple gate:
+    #   1. `main` only — PRs and other branches skip.
+    #   2. The head commit must not itself be a release bump, or the
+    #      release commit re-triggers CI and we loop.
+    #   3. Every upstream check passed or was skipped. Any failure aborts.
+    needs:
+      - validate
+      - detect
+      - headers
+      - docs-build
+    if: >-
+      !failure() && !cancelled() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      !startsWith(github.event.head_commit.message, 'chore(release):') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
+       needs.docs-build.result == 'success')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: push-to-main
+      cancel-in-progress: false
+    permissions:
+      contents: write   # push the release commit + tags
+    outputs:
+      # The whole bump map, as JSON. A release job reads its own entry
+      # out of it, so adding a component is one new job rather than an
+      # edit here, in the extraction step and in the job — three places,
+      # where forgetting the first two ships a component that bumped,
+      # tagged and was never published.
+      # `|| '{}'` matters: the extraction step is skipped when nothing is
+      # pending, and every downstream `if` calls fromJson on this. Left
+      # empty, fromJson('') raises and turns a quiet no-release run into a
+      # wall of failed publish jobs.
+      bumps: ${{ steps.bump.outputs.bumps || '{}' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
+      # No python-version pin: multicz needs a recent Python of its own,
+      # and pinning the project floor here makes its install fail.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: ${{ github.job }}
+
+      - name: Install the workspace (ssr's post_bump runs `uv lock`)
+        run: uv sync --all-packages
+
+      # web's post_bump rebuilds the bundle during the bump, so Node has
+      # to be present before multicz runs — not after.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+
+      - uses: goabonga/multicz-action@v1
+
+      - name: Configure git
+        # Author name and email come from the head commit's metadata,
+        # which anyone who can land a commit controls. Passing them
+        # through `env:` makes them plain shell variables under quoted
+        # expansion instead of text spliced into the script.
+        env:
+          AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
+          AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
+        run: |
+          git config user.name  "${AUTHOR_NAME:-github-actions[bot]}"
+          git config user.email "${AUTHOR_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+
+      - name: Detect GPG availability
+        id: gpg
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -n "$GPG_PRIVATE_KEY" ] && [ -n "$GPG_PASSPHRASE" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import and unlock the GPG key
+        if: steps.gpg.outputs.available == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo test | gpg --batch --yes --passphrase "$GPG_PASSPHRASE" \
+            --pinentry-mode loopback --sign > /dev/null
+          KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
+          git config user.signingkey "$KEY_ID"
+
+      - name: multicz plan
+        id: plan
+        run: |
+          set -euo pipefail
+          multicz plan --summary "$GITHUB_STEP_SUMMARY" --output json | tee /tmp/plan.json
+          # multicz emits more than one JSON document here (the plan, then
+          # a trailing advice object), so slurp and merge before asking
+          # whether anything is pending.
+          COUNT=$(jq -s '[.[] | .bumps // {}] | add | length' /tmp/plan.json)
+          if [ "$COUNT" = "0" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "no release pending"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump, commit, tag, push (signed)
+        if: steps.plan.outputs.release == 'true' && steps.gpg.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          multicz bump --commit --tag --push --sign \
+            --summary "$GITHUB_STEP_SUMMARY" --output json | tee /tmp/release.raw
+          # post_bump hooks print progress on stdout BEFORE the final JSON
+          # object, so the raw output is not parseable. Strip everything
+          # up to the document's opening brace, then validate — silently
+          # empty versions would skip every publish job below.
+          sed -n '/^{$/,$p' /tmp/release.raw > /tmp/release.json
+          jq . /tmp/release.json > /dev/null
+
+      - name: Bump, commit, tag, push
+        if: steps.plan.outputs.release == 'true' && steps.gpg.outputs.available != 'true'
+        run: |
+          set -euo pipefail
+          multicz bump --commit --tag --push \
+            --summary "$GITHUB_STEP_SUMMARY" --output json | tee /tmp/release.raw
+          sed -n '/^{$/,$p' /tmp/release.raw > /tmp/release.json
+          jq . /tmp/release.json > /dev/null
+
+      - name: Extract the bumped versions
+        id: bump
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          # Logged so the downstream skip/run decision is auditable from
+          # the run page alone.
+          jq -r '.bumps | to_entries[] | "[release-bump] \(.key)=\(.value.next_version)"' \
+            /tmp/release.json
+          # Compact so it survives GITHUB_OUTPUT's one-line-per-value rule.
+          echo "bumps=$(jq -c '.bumps // {}' /tmp/release.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: release-bump
+          body: |
+            `multicz bump --commit --tag --push` (signed when
+            `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` are set). The
+            `release-<component>` jobs read this job's outputs to know
+            what to publish.
+
+  release-docs:
+    # Consume the `docs-site` artifact built earlier in this run with the
+    # same bump-previewed version release-bump then committed — no
+    # rebuild. Deploy to Pages, then cut the docs tag's release.
+    needs: [release-bump]
+    if: |
+      !failure() && !cancelled() &&
+      fromJson(needs.release-bump.outputs.bumps)['docs'].next_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # gh release create
+      pages: write      # actions/deploy-pages
+      id-token: write   # OIDC for upload-pages-artifact + deploy-pages
+    concurrency:
+      group: pages      # one in-flight Pages deploy per repository
+      cancel-in-progress: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/download-artifact@v5
+        with:
+          name: docs-site
+          path: site
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+      - uses: ./.github/actions/publish-release
+        with:
+          tag: docs-v${{ fromJson(needs.release-bump.outputs.bumps)['docs'].next_version }}
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
