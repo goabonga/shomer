@@ -1341,6 +1341,99 @@ jobs:
           format: grype
           path: /tmp/job.grype.json
 
+  chart-job-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'chart-job')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: azure/setup-helm@v5
+      - run: helm lint packages/job/chart
+      # Render every branch, not just the default one. A template only the
+      # non-default path reaches is a template nothing checks until the
+      # day somebody switches CNI or turns verification on.
+      - name: Render each network provider and the verification policy
+        run: |
+          set -euo pipefail
+          for provider in kubernetes calico cilium; do
+            helm template ci packages/job/chart \
+              --set networkPolicy.provider="$provider" \
+              > "/tmp/chart-job-$provider.yaml"
+          done
+          helm template ci packages/job/chart \
+            --set imageVerification.enabled=true \
+            > /tmp/chart-job-verify.yaml
+          # An unknown provider must fail loudly rather than render an
+          # empty policy and leave the pod wide open.
+          if helm template ci packages/job/chart \
+               --set networkPolicy.provider=bogus > /dev/null 2>&1; then
+            echo "::error::an unknown networkPolicy.provider rendered without failing"
+            exit 1
+          fi
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-job-lint
+          body: '`helm lint` + `helm template` on `packages/job/chart/`.'
+
+  chart-job-checkov:
+    needs: [chart-job-lint]
+    if: '!failure() && !cancelled() && needs.chart-job-lint.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: packages/job/chart
+          framework: helm
+          quiet: true
+          output_format: cli
+          soft_fail: false
+          # CKV_K8S_21: the namespace is a deploy-time flag, not a chart
+          # decision. CKV_K8S_43: digest pinning is incompatible with the
+          # version-tag scheme, and provenance is established by the
+          # cosign signature and SBOM attestation instead.
+          skip_check: CKV_K8S_21,CKV_K8S_43
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-job-checkov
+          body: '`checkov --framework helm` on `packages/job/chart/`.'
+
+  chart-job-package:
+    needs: [chart-job-checkov]
+    if: '!failure() && !cancelled() && needs.chart-job-checkov.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: azure/setup-helm@v5
+      # Packaged here with the bumped version already written in, so the
+      # release job only has to push what this run linted.
+      - run: |
+          mkdir -p /tmp/chart-job
+          helm package packages/job/chart --destination /tmp/chart-job
+      - uses: actions/upload-artifact@v7
+        with: { name: chart-job-tgz, path: /tmp/chart-job/, retention-days: 1 }
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-job-package
+          body: '`helm package` at the bump-previewed version (artifact `chart-job-tgz`).'
+
+  # ──────────────────── docs ────────────────────
+
   docs-build:
     # Build the site on every docs change (PR and main). On main,
     # release-docs reuses this artifact instead of rebuilding —
@@ -1400,6 +1493,7 @@ jobs:
       - job-grype
       - chart-api-package
       - chart-api-verify-policy
+      - chart-job-package
       - chart-bdd-package
       - chart-bdd-verify-policy
       - e2e-api
@@ -1423,6 +1517,8 @@ jobs:
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-job') ||
+       needs.chart-job-package.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-bdd') ||
        (needs.chart-bdd-package.result == 'success' &&
         needs.chart-bdd-verify-policy.result == 'success')) &&
