@@ -217,6 +217,7 @@ paths      = [
     "packages/job/src/**",
     "packages/job/pyproject.toml",
     "packages/job/README.md",
+    "packages/job/Dockerfile",
 ]
 bump_files = [
     { file = "packages/job/pyproject.toml", key = "project.version" },
@@ -231,6 +232,10 @@ post_bump  = ["uv lock"]
 [[components.job.artifacts]]
 type = "pypi"
 ref  = "shomer-job=={version}"
+
+[[components.job.artifacts]]
+type = "docker"
+ref  = "ghcr.io/goabonga/shomer-job:{version}"
 
 # ─────────────────────────────── docs ───────────────────────────────
 
