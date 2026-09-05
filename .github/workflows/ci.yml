@@ -236,6 +236,29 @@ jobs:
       - uses: ./.github/actions/python-check
         with: { path: packages/lib, module: shomer_lib, check: test }
 
+  lib-bandit:
+    # Static analysis on the source that ships. It gates the container
+    # build rather than running beside it: an image is expensive to build
+    # and worthless to scan if the code in it is already known-bad.
+    needs: [lib-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: ${{ github.job }}
+          python-version: "3.13"
+      - run: uvx --from 'bandit[toml]' bandit -c pyproject.toml -q -r packages/lib/src
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: lib-bandit
+          body: '`bandit` static analysis on `packages/lib/src`.'
+
+  # ──────────────────── docs ────────────────────
+
   docs-build:
     # Build the site on every docs change (PR and main). On main,
     # release-docs reuses this artifact instead of rebuilding —
@@ -288,7 +311,7 @@ jobs:
       - detect
       - headers
       - audit
-      - lib-test
+      - lib-bandit
       - docs-build
     if: >-
       !failure() && !cancelled() &&
@@ -296,7 +319,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       !startsWith(github.event.head_commit.message, 'chore(release):') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'lib') ||
-       needs.lib-test.result == 'success') &&
+       needs.lib-bandit.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest

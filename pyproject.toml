@@ -44,6 +44,19 @@ testpaths = [
 # the path relative to the rootdir and the second one collides.
 addopts = "-q --import-mode=importlib"
 
+[tool.bandit]
+# The static analyser runs over `packages/*/src` only. Tests and feature
+# suites are full of the patterns it flags — asserts, hardcoded fixture
+# credentials — and a scanner that cries about test fixtures is a scanner
+# people learn to skip.
+exclude_dirs = ["tests", "features"]
+# B104 (binding 0.0.0.0) is asserted deliberately in the service
+# entrypoints: a container or service manager reaches the process from
+# outside its own namespace, and binding to localhost makes it
+# unreachable everywhere except a developer's laptop. Each site carries
+# its own `# noqa: S104` and the reasoning beside it.
+skips = ["B104"]
+
 [tool.mypy]
 python_version = "3.13"
 strict = true
