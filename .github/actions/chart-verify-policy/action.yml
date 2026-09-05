@@ -1,0 +1,202 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: chart image-verification policy check
+description: |
+  Prove that a chart's `imageVerification` policy is not inert.
+
+  `helm template` shows that the object renders. It says nothing about
+  whether a cluster accepts it, or whether it blocks anything — and a
+  policy that renders beautifully and admits everything is the failure
+  mode worth catching, because it looks exactly like a policy that works.
+
+  So: Kyverno in a throwaway cluster, the policy on in Enforce, and both
+  directions asserted.
+
+    1. An image the policy matches, carrying no signature from this
+       repository's workflow, is REJECTED at admission.
+    2. The same image is ADMITTED once the policy is gone.
+
+  Step 2 is what gives step 1 meaning. Without it the rejection could come
+  from anything — a missing image, a quota, a typo in the pod spec — and
+  the check would pass while proving nothing.
+
+  The probe image is deliberately a well-known public one rather than one
+  of this repository's. The images built in CI are unsigned by
+  construction (signing happens at publish time), and the published ones
+  are signed by this very workflow — so neither can play the "matched, but
+  signed by someone else" role this test needs.
+
+  `registry.k8s.io/pause` is itself signed, by k8s-infra. That makes it a
+  sharper probe than an unsigned image: the rejection comes from a subject
+  mismatch, so what is exercised is the identity pinning rather than the
+  mere presence of a signature.
+
+inputs:
+  chart:
+    required: true
+    description: Path to the chart directory.
+  component:
+    required: true
+    description: Component name, used for the cluster and release names.
+  extra-set:
+    required: false
+    default: ""
+    description: Extra `--set` arguments a chart needs in order to install.
+  kyverno-version:
+    required: false
+    default: "3.3.7"
+    description: Kyverno chart version.
+
+runs:
+  using: composite
+  steps:
+    - uses: helm/kind-action@v1
+      with:
+        cluster_name: policy-${{ inputs.component }}
+        wait: 60s
+
+    - uses: azure/setup-helm@v5
+
+    - name: Install Kyverno
+      shell: bash
+      run: |
+        set -euo pipefail
+        helm repo add kyverno https://kyverno.github.io/kyverno/
+        helm repo update kyverno
+        helm install kyverno kyverno/kyverno \
+          --version "${{ inputs.kyverno-version }}" \
+          --namespace kyverno --create-namespace \
+          --wait --timeout 5m
+
+    - name: Wait until the admission webhook actually serves
+      shell: bash
+      run: |
+        set -euo pipefail
+        # `helm --wait` returns when the pods report Ready, which is
+        # earlier than when the API server can reach the policy webhook.
+        # Installing a chart inside that window dies with
+        #   failed calling webhook "mutate-policy.kyverno.svc": connection refused
+        #
+        # Poll the thing that actually fails rather than a proxy for it: a
+        # server-side dry-run goes through the very webhook the next step
+        # depends on.
+        for i in $(seq 1 60); do
+          if kubectl apply --dry-run=server -f - >/dev/null 2>&1 <<'EOP'; then
+        apiVersion: kyverno.io/v1
+        kind: Policy
+        metadata:
+          name: webhook-readiness-probe
+          namespace: default
+        spec:
+          rules:
+            - name: noop
+              match:
+                any:
+                  - resources:
+                      kinds: [Pod]
+              validate:
+                message: noop
+                pattern: {}
+        EOP
+            echo "kyverno webhook serving after $i attempt(s)"
+            exit 0
+          fi
+          sleep 5
+        done
+        echo "::error::kyverno webhook never became reachable"
+        kubectl -n kyverno get pods,svc,endpoints
+        exit 1
+
+    - name: Install the chart with verification enforced
+      shell: bash
+      env:
+        CHART: ${{ inputs.chart }}
+        EXTRA: ${{ inputs.extra-set }}
+      run: |
+        set -euo pipefail
+        # No --wait: in Enforce the chart's own workloads are blocked at
+        # admission too. That is the expected outcome here, not a failure.
+        # shellcheck disable=SC2086 — EXTRA is a deliberate argument list
+        helm install probe "$CHART" \
+          --set imageVerification.enabled=true \
+          --set imageVerification.validationFailureAction=Enforce \
+          --set image.repository=registry.k8s.io/pause \
+          --set image.tag=3.9 \
+          $EXTRA
+        kubectl get policy -o name
+
+    - name: Wait until Kyverno actually intercepts pods
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Kyverno rebuilds its webhook configuration from the installed
+        # policies. Until Pods appear in its rules nothing is intercepted,
+        # so a probe inside that window is admitted and this job passes
+        # having verified nothing — which is the exact failure it exists
+        # to catch. Measured here: about a minute after `helm install`.
+        #
+        # The MUTATING webhook is the one that matters. A verifyImages
+        # rule mutates the digest, so the refusal comes from
+        # mutate.kyverno.svc, not from the validating webhook.
+        for i in $(seq 1 60); do
+          if kubectl get mutatingwebhookconfiguration \
+               kyverno-resource-mutating-webhook-cfg -o json 2>/dev/null \
+             | jq -e '[.webhooks[]?.rules[]?.resources[]?] | index("pods")' >/dev/null; then
+            echo "kyverno intercepts pods after $i attempt(s)"
+            exit 0
+          fi
+          sleep 5
+        done
+        echo "::error::kyverno never registered a webhook covering pods"
+        kubectl get mutatingwebhookconfiguration -o yaml | head -60
+        exit 1
+
+    - name: An image signed by someone else must be rejected
+      shell: bash
+      run: |
+        set -euo pipefail
+        if kubectl run denied --image=registry.k8s.io/pause:3.9 --restart=Never 2>/tmp/deny.log; then
+          echo "::error::the policy admitted an image carrying no signature from this repository"
+          kubectl delete pod denied --ignore-not-found
+          exit 1
+        fi
+        # Confirm the refusal came from this rule rather than from
+        # something incidental — a missing image, a quota, a typo in the
+        # pod spec. A rejection for the wrong reason is a false pass, and
+        # it is the most likely way this check rots. Kyverno names the
+        # rule and the reason:
+        #   verify-cosign-signature: failed to verify image ...
+        #   subject mismatch: expected ^https://github.com/goabonga/shomer/,
+        #   received k8s-infra-gcr-promoter@...
+        # which is the identity pinning doing the work, not the mere
+        # presence of a signature.
+        if ! grep -qi "verify-cosign-signature" /tmp/deny.log; then
+          echo "::error::the pod was rejected, but not by the image-verification policy:"
+          cat /tmp/deny.log
+          exit 1
+        fi
+        echo "rejected by the policy, as expected:"
+        sed -n '1,5p' /tmp/deny.log
+
+    - name: The same image must be admitted once the policy is gone
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Delete the Policy rather than `helm upgrade --set
+        # imageVerification.enabled=false`: Kyverno autogenerates a
+        # companion rule for pod controllers, so the still-active policy
+        # blocks helm from updating the very Deployment that would disable
+        # it. Removing the object also isolates the variable better — the
+        # only difference between the two probes is whether it exists.
+        kubectl delete policy --all -n default --wait
+        kubectl run admitted --image=registry.k8s.io/pause:3.9 --restart=Never
+        kubectl delete pod admitted --ignore-not-found
+        echo "admitted with the policy gone — so the rejection above came from the policy"
+
+    - name: Cluster state on failure
+      if: failure()
+      shell: bash
+      run: |
+        kubectl get policy,clusterpolicy -A || true
+        kubectl -n kyverno logs -l app.kubernetes.io/component=admission-controller --tail=100 || true

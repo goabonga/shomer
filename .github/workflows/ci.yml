@@ -542,6 +542,29 @@ jobs:
           title: chart-bdd-checkov
           body: '`checkov --framework helm` on `packages/bdd/chart/`.'
 
+  chart-bdd-verify-policy:
+    # The chart renders an image-verification policy; this proves the
+    # policy is not inert. Kyverno in a throwaway cluster, Enforce on, and
+    # an image the policy matches but whose signature carries someone
+    # else's identity must be rejected — then admitted once the policy is
+    # removed, so the rejection cannot have come from something else.
+    needs: [chart-bdd-checkov]
+    if: '!failure() && !cancelled() && needs.chart-bdd-checkov.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/chart-verify-policy
+        with:
+          chart: packages/bdd/chart
+          component: bdd
+          extra-set: --set settings.existingSecret=shomer-db
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-bdd-verify-policy
+          body: 'kind + Kyverno: the `imageVerification` policy rejects a foreign-signed image, and admits it once removed.'
+
   chart-bdd-package:
     needs: [chart-bdd-checkov]
     if: '!failure() && !cancelled() && needs.chart-bdd-checkov.result == ''success'''
@@ -623,6 +646,7 @@ jobs:
       - lib-bandit
       - bdd-grype
       - chart-bdd-package
+      - chart-bdd-verify-policy
       - docs-build
     if: >-
       !failure() && !cancelled() &&
@@ -634,7 +658,8 @@ jobs:
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'bdd') ||
        needs.bdd-grype.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-bdd') ||
-       needs.chart-bdd-package.result == 'success') &&
+       (needs.chart-bdd-package.result == 'success' &&
+        needs.chart-bdd-verify-policy.result == 'success')) &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest
