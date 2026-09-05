@@ -14,6 +14,15 @@ Shomer is an **OpenID Connect / OAuth 2.0** platform.
 
 ---
 
+## Where to go
+
+| | |
+|---|---|
+| [**Getting started**](getting-started.md) | Clone the workspace, build the frontend, run the services. |
+| [**Dependency injection**](injection.md) | How a service names what it needs and where the answer is decided. |
+| [**Changelog**](changelog.md) | What changed, per release. |
+| [**Versions**](versions.md) | The current version of every component. |
+
 ## The shape of it
 
 The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
@@ -33,13 +42,20 @@ release tag, and is published independently.
 `shomer-web` builds into the frontend's `static/` and `templates/`
 directories, so a frontend change ships in the next release of it — the
 dependency is declared to the release tooling rather than left to whoever
-remembers it.
+remembers it. `shomer-bdd` autogenerates against `shomer-lib`'s models
+for the same reason.
 | `shomer-ssr` | Python | The server-side rendered frontend. |
 
 ## How the pieces find each other
 
 Nothing here constructs its own collaborators. Every service installs
 [`ShomerModule`](injection.md) and names the interface it needs — the
-container supplies the implementation. That is what makes a fake clock
-possible in a test, and a database swap a single edit rather than a
-search.
+container supplies the implementation. That is what makes the settings a
+process resolved inspectable (`shomer config`), a fake clock possible in
+a test, and a database swap a single edit rather than a search.
+
+## Honestly, today
+
+The OAuth 2.0 / OIDC grants are **not implemented yet**. What exists is
+the workspace, the wiring, the schema, the discovery document, and the
+release machinery that publishes all of it.
