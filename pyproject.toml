@@ -15,6 +15,7 @@ requires-python = ">=3.13"
 members = ["packages/*"]
 
 [tool.uv.sources]
+shomer-bdd = { workspace = true }
 shomer-lib = { workspace = true }
 
 [dependency-groups]
@@ -82,5 +83,6 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # import block ends up ordered differently depending on whether the
 # package happens to be installed.
 known-first-party = [
+    "shomer_bdd",
     "shomer_lib",
 ]
