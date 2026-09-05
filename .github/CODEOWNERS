@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# Code owners for review requirements.
+#
+# The catch-all is deliberate: every path has an owner, so no file can be
+# merged without one. The specific rules below add nothing to the
+# permission model today (same owner) — they are there so that adding a
+# second maintainer later is an edit to those lines rather than a decision
+# nobody remembers having to make.
+
+*                   @goabonga
+
+# The pipeline itself: anything able to publish, sign, tag or deploy.
+/.github/           @goabonga
+/multicz.toml       @goabonga
+/scripts/           @goabonga
