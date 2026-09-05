@@ -296,6 +296,7 @@ paths      = [
     "packages/ssr/src/shomer_ssr/*.py",
     "packages/ssr/pyproject.toml",
     "packages/ssr/README.md",
+    "packages/ssr/Dockerfile",
 ]
 bump_files = [
     { file = "packages/ssr/pyproject.toml", key = "project.version" },
@@ -315,6 +316,10 @@ post_bump  = ["uv lock"]
 [[components.ssr.artifacts]]
 type = "pypi"
 ref  = "shomer-ssr=={version}"
+
+[[components.ssr.artifacts]]
+type = "docker"
+ref  = "ghcr.io/goabonga/shomer-ssr:{version}"
 
 # ─────────────────────────────── docs ───────────────────────────────
 
