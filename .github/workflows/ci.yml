@@ -973,6 +973,92 @@ jobs:
           title: e2e-api
           body: '`behave packages/api/features` against the chart-deployed `api` on `localhost:8000`.'
 
+  owasp-api:
+    # The same deployed stack, scanned rather than driven. It gates on
+    # e2e-api because a ZAP baseline against a functionally broken build
+    # reports noise, expensively — and `!failure()` still lets it run when
+    # e2e-api was skipped rather than failed.
+    needs:
+      - detect
+      - api-grype
+      - bdd-grype
+      - chart-api-checkov
+      - chart-bdd-checkov
+      - e2e-api
+    if: >-
+      !failure() && !cancelled() && (
+        contains(fromJson(needs.detect.outputs.changed).changed, 'api') ||
+        contains(fromJson(needs.detect.outputs.changed).changed, 'lib') ||
+        contains(fromJson(needs.detect.outputs.changed).changed, 'bdd') ||
+        contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
+        contains(fromJson(needs.detect.outputs.changed).changed, 'chart-bdd')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: ./.github/actions/kind-stack
+        with:
+          services: api
+          target: api
+          port: "8000"
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+      # continue-on-error, with the verdict read from the report below,
+      # because this step decided the job for the wrong reasons in both
+      # directions: `fail_action` defaults to false, so the scan asserted
+      # nothing; and its artifact upload failing reddened runs whose scan
+      # was clean. Letting it end however it likes and judging the report
+      # separates the two.
+      - name: OWASP ZAP baseline
+        id: zap
+        continue-on-error: true
+        uses: zaproxy/action-baseline@v0.15.0
+        with:
+          target: http://localhost:8000
+          cmd_options: "-I -a"
+          allow_issue_writing: false
+          artifact_name: zap-api-baseline
+      - name: Read the verdict from the report
+        run: |
+          set -euo pipefail
+          REPORT=report_json.json
+          if [ ! -f "$REPORT" ]; then
+            # No report means the scan never ran — a dead port-forward, a
+            # container that never started. That is a failure, and it must
+            # not read as a clean result.
+            echo "::error::ZAP produced no $REPORT for api — the scan did not complete"
+            exit 1
+          fi
+          # riskcode 3 = High, 2 = Medium. Keying on severity keeps the
+          # threshold in this file, where it can be read, rather than in
+          # ZAP's rule defaults.
+          HIGH=$(jq '[.site[]?.alerts[]? | select((.riskcode|tonumber) >= 3)] | length' "$REPORT")
+          MED=$(jq '[.site[]?.alerts[]? | select((.riskcode|tonumber) == 2)] | length' "$REPORT")
+          echo "api: $HIGH high, $MED medium"
+          jq -r '.site[]?.alerts[]? | select((.riskcode|tonumber) >= 2)
+                 | "  [\(.riskdesc)] \(.name) x\(.count)"' "$REPORT"
+          if [ "$HIGH" -gt 0 ]; then
+            echo "::error::$HIGH high-risk ZAP alert(s) on api"
+            exit 1
+          fi
+          if [ "${{ steps.zap.outcome }}" != "success" ]; then
+            echo "::warning::the ZAP step ended as '${{ steps.zap.outcome }}' (usually the artifact upload); the scan itself produced a clean report"
+          fi
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: owasp-api
+          body: 'OWASP ZAP baseline against the chart-deployed `api` (report artifact `zap-api-baseline`).'
+
+  # ──────────────────── docs ────────────────────
+
   docs-build:
     # Build the site on every docs change (PR and main). On main,
     # release-docs reuses this artifact instead of rebuilding —
@@ -1033,6 +1119,7 @@ jobs:
       - chart-bdd-package
       - chart-bdd-verify-policy
       - e2e-api
+      - owasp-api
       - docs-build
     if: >-
       !failure() && !cancelled() &&
@@ -1052,7 +1139,8 @@ jobs:
        (needs.chart-bdd-package.result == 'success' &&
         needs.chart-bdd-verify-policy.result == 'success')) &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'api') ||
-       needs.e2e-api.result == 'success') &&
+       (needs.e2e-api.result == 'success' &&
+        needs.owasp-api.result == 'success')) &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest
