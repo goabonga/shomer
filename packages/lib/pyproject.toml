@@ -4,7 +4,7 @@
 [project]
 name = "shomer-lib"
 version = "0.0.0"
-description = "Shomer shared library: the contracts every service types against."
+description = "Shomer shared library: contracts, settings, ORM models and the database connector."
 requires-python = ">=3.13"
 license = "MIT"
 authors = [{ name = "Chris", email = "goabonga@pm.me" }]
@@ -16,6 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Topic :: Database",
     "Topic :: System :: Systems Administration :: Authentication/Directory",
     "Typing :: Typed",
 ]
@@ -24,6 +25,12 @@ dependencies = [
     "sqlalchemy>=2.0",
 ]
 
+
+# Database drivers. Install only the one you connect to; SQLite needs
+# nothing, which is why the test suite and a first local run need no extra.
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2"]
+mysql = ["pymysql>=1.1"]
 
 [project.urls]
 Homepage = "https://github.com/goabonga/shomer"
