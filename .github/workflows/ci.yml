@@ -159,7 +159,40 @@ jobs:
           title: headers
           body: SPDX header check on `packages/`, `scripts/`, `.github/` and the root TOML.
 
+  audit:
+    # One workspace-level audit of the locked, non-dev closure — the
+    # dependencies that actually ship. It fans into every container build,
+    # so a known-vulnerable dependency stops an image from being built
+    # rather than being found in it afterwards.
+    #
+    # Gated on something having changed at all: a `ci:` or docs-only
+    # commit leaves the lockfile untouched, and re-auditing an identical
+    # closure produces an identical answer.
+    needs: [detect, headers]
+    if: toJSON(fromJson(needs.detect.outputs.changed).changed) != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: ${{ github.job }}
+          python-version: "3.13"
+      - name: Audit the resolved runtime closure
+        run: |
+          set -euo pipefail
+          uv export --no-dev --no-emit-project --frozen \
+            --format requirements-txt -o /tmp/requirements.txt
+          uvx pip-audit -r /tmp/requirements.txt --no-deps
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: audit
+          body: '`pip-audit` on the resolved non-dev closure (`uv export --no-dev`).'
+
   # ──────────────────── lib ────────────────────
+
   lib-lint:
     needs: [detect, headers]
     if: contains(fromJson(needs.detect.outputs.changed).changed, 'lib')
@@ -254,6 +287,7 @@ jobs:
       - validate
       - detect
       - headers
+      - audit
       - lib-test
       - docs-build
     if: >-
