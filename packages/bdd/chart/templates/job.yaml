@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Named after the chart version so a re-install at the same version is
+  # rejected rather than silently replacing a Job whose pods are still
+  # being read. A new version gets a new Job.
+  #
+  # The dots are replaced because this name becomes a pod name and a
+  # hostname, and Kubernetes wants a DNS label there — `0.1.0` is accepted
+  # with a warning and then produces hostnames nothing can resolve.
+  name: {{ .Release.Name }}-{{ .Chart.Version | replace "." "-" }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  backoffLimit: {{ .Values.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      # Chainguard images ship UID 65532 ("nonroot"). Declaring it at pod
+      # level covers every process born from the pod, init containers
+      # included, rather than only the one container below.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bdd
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+          env:
+            {{- if .Values.settings.existingSecret }}
+            - name: SHOMER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.settings.existingSecret }}
+                  key: SHOMER_DATABASE_URL
+            {{- else }}
+            {{- fail "settings.existingSecret is required: migrating the SQLite fallback would migrate a file inside the pod and report success" }}
+            {{- end }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

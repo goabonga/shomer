@@ -1,0 +1,30 @@
+{{/*
+  Calico NetworkPolicy (projectcalico.org/v3), namespaced.
+
+  Worth reaching for over the upstream API when a rule needs something
+  Kubernetes cannot express: an explicit Deny, ordering between policies,
+  ServiceAccount or global-network-set selectors, ICMP.
+
+  `order` is the one that surprises people: Calico evaluates policies from
+  the lowest order upwards and the first matching rule wins, so a policy
+  with no order is evaluated last. The default here is deliberately high,
+  which leaves room for a cluster-wide policy to be placed in front of it.
+*/}}
+{{- if and .Values.networkPolicy.enabled (eq .Values.networkPolicy.provider "calico") }}
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+spec:
+  order: {{ .Values.networkPolicy.calico.order }}
+  selector: app.kubernetes.io/name == '{{ .Chart.Name }}'
+  types:
+    - Ingress
+    - Egress
+  ingress:
+    {{- toYaml .Values.networkPolicy.calico.ingress | nindent 4 }}
+  egress:
+    {{- toYaml .Values.networkPolicy.calico.egress | nindent 4 }}
+{{- end }}
