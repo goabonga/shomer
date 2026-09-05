@@ -1,0 +1,7 @@
+# Every component's current version, in one place.
+#
+# multicz owns this file — each entry is a `bump_files` target, so nothing
+# here is maintained by hand and none of it can drift from the component's
+# own copy (pyproject.toml, package.json, zensical.toml).
+
+docs=0.0.0

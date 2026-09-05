@@ -27,6 +27,7 @@ generator = false
 nav = [
   { "Home" = "index.md" },
   { "Changelog" = "changelog.md" },
+  { "Versions" = "versions.md" },
 ]
 
 # Zensical falls back to its default extension set only when this table is
@@ -81,6 +82,15 @@ combine_header_slug = true
 
 [project.markdown_extensions."pymdownx.tasklist"]
 custom_checkbox = true
+
+# Component versions surfaced on docs/versions.md through the `macros`
+# extension ({{ config.extra.versions.* }}). multicz rewrites each value
+# on bump: every component lists the matching key in its `bump_files`.
+#
+# NOTE: keys use underscores — a dash reads as subtraction inside the
+# Jinja `{{ ... }}` macro expression.
+[project.extra.versions]
+docs = "0.0.0"
 
 [project.theme]
 logo     = "shomer.svg"
