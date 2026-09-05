@@ -18,6 +18,7 @@ members = ["packages/*"]
 shomer-api = { workspace = true }
 shomer-cli = { workspace = true }
 shomer-bdd = { workspace = true }
+shomer-job = { workspace = true }
 shomer-lib = { workspace = true }
 
 [dependency-groups]
@@ -44,6 +45,7 @@ testpaths = [
     "packages/api/tests",
     "packages/bdd/tests",
     "packages/cli/tests",
+    "packages/job/tests",
     "packages/lib/tests",
 ]
 # importlib import mode, so two packages may both call their suite
@@ -69,6 +71,7 @@ known-first-party = [
     "shomer_api",
     "shomer_bdd",
     "shomer_cli",
+    "shomer_job",
     "shomer_lib",
 ]
 

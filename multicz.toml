@@ -144,6 +144,28 @@ post_bump  = ["uv lock"]
 type = "pypi"
 ref  = "shomer-cli=={version}"
 
+# ─────────────────────────────── job ───────────────────────────────
+
+[components.job]
+paths      = [
+    "packages/job/src/**",
+    "packages/job/pyproject.toml",
+    "packages/job/README.md",
+]
+bump_files = [
+    { file = "packages/job/pyproject.toml", key = "project.version" },
+    { file = "packages/job/src/shomer_job/__init__.py", key = 'regex:^__version__\s*=\s*"([^"]+)"' },
+    { file = "VERSION", key = 'regex:^job=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.job" },
+]
+changelog  = "packages/job/CHANGELOG.md"
+depends_on = ["lib"]
+post_bump  = ["uv lock"]
+
+[[components.job.artifacts]]
+type = "pypi"
+ref  = "shomer-job=={version}"
+
 # ─────────────────────────────── docs ───────────────────────────────
 
 # Every component writes its version into zensical.toml's
@@ -159,5 +181,5 @@ bump_files = [
     { file = "VERSION", key = 'regex:^docs=(.+)$' },
     { file = "zensical.toml", key = "project.extra.versions.docs" },
 ]
-depends_on = ["api", "bdd", "cli", "lib"]
+depends_on = ["api", "bdd", "cli", "job", "lib"]
 bump_rules = { docs = "patch" }

@@ -339,6 +339,51 @@ jobs:
       - uses: ./.github/actions/python-check
         with: { path: packages/cli, module: shomer_cli, check: test }
 
+  # ──────────────────── job ────────────────────
+
+  job-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'job')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/job, module: shomer_job, check: lint }
+
+  job-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'job')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/job, module: shomer_job, check: format }
+
+  job-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'job')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/job, module: shomer_job, check: typecheck }
+
+  job-test:
+    needs: [job-lint, job-format, job-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/job, module: shomer_job, check: test }
+
   # ──────────────────── docs ────────────────────
 
   docs-build:
@@ -396,6 +441,7 @@ jobs:
       - bdd-test
       - api-test
       - cli-test
+      - job-test
       - docs-build
     if: >-
       !failure() && !cancelled() &&
@@ -410,6 +456,8 @@ jobs:
        needs.api-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'cli') ||
        needs.cli-test.result == 'success') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'job') ||
+       needs.job-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest
@@ -653,6 +701,31 @@ jobs:
         with:
           package: shomer-cli
           tag: cli-v${{ fromJson(needs.release-bump.outputs.bumps)['cli'].next_version }}
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
+  release-job:
+    needs: [release-bump]
+    if: |
+      !failure() && !cancelled() &&
+      fromJson(needs.release-bump.outputs.bumps)['job'].next_version != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/shomer-job/
+    permissions:
+      contents: write   # gh release create
+      id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The release commit, so the wheel carries the version that was
+          # just tagged rather than the one that preceded it.
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/publish-pypi
+        with:
+          package: shomer-job
+          tag: job-v${{ fromJson(needs.release-bump.outputs.bumps)['job'].next_version }}
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
   release-docs:

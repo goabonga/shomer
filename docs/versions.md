@@ -15,6 +15,7 @@ component itself reports.
 | `shomer-bdd` | {{ config.extra.versions.bdd }} | `bdd-v{{ config.extra.versions.bdd }}` |
 | `shomer-api` | {{ config.extra.versions.api }} | `api-v{{ config.extra.versions.api }}` |
 | `shomer-cli` | {{ config.extra.versions.cli }} | `cli-v{{ config.extra.versions.cli }}` |
+| `shomer-job` | {{ config.extra.versions.job }} | `job-v{{ config.extra.versions.job }}` |
 | this site | {{ config.extra.versions.docs }} | `docs-v{{ config.extra.versions.docs }}` |
 
 ## How a version is decided
