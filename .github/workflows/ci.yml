@@ -1502,6 +1502,40 @@ jobs:
       - uses: ./.github/actions/node-check
         with: { workspace: packages/web, check: test }
 
+  web-build:
+    # Build the bundle + templates and publish them as `web-dist`. The
+    # downstream Python package consumes the artifact rather than the
+    # committed copy, so a stale dist on a contributor's branch can never
+    # be what CI tested — CI always rebuilds.
+    needs: [web-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Build → packages/ssr/src/shomer_ssr/{static,templates}/
+        run: npm run build --workspace packages/web
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-dist
+          path: |
+            packages/ssr/src/shomer_ssr/static/
+            packages/ssr/src/shomer_ssr/templates/
+          retention-days: 1
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: web-build
+          body: '`npm run build` → `static/{main.js,main.css}` + `templates/*.html`, uploaded as `web-dist`.'
+
   web-audit:
     # npm's own advisory database over the resolved tree. It is the
     # JavaScript half of what `audit` does for Python, and it belongs in
@@ -1529,7 +1563,67 @@ jobs:
           title: web-audit
           body: '`npm audit --omit=dev --audit-level=high` on the resolved production tree.'
 
-  # ──────────────────── docs ────────────────────
+  # ──────────────────── ssr ────────────────────
+
+  ssr-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'ssr')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/ssr, module: shomer_ssr, check: lint }
+
+  ssr-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'ssr')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/ssr, module: shomer_ssr, check: format }
+
+  ssr-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'ssr')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/ssr, module: shomer_ssr, check: typecheck }
+
+  ssr-test:
+    needs: [ssr-lint, ssr-format, ssr-typecheck, web-build]
+    # Run if ssr changed (its own gates succeeded) OR web changed (the
+    # build succeeded). When only one side moves, the other's needs entry
+    # is `skipped`, and the OR keeps us going. `!failure() && !cancelled()`
+    # replaces the implicit `success()` gate, which would refuse to start
+    # on any skipped dependency.
+    if: >-
+      !failure() && !cancelled() && (
+        needs.ssr-lint.result == 'success' ||
+        needs.web-build.result == 'success'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      # The freshly built assets, not the committed copy: the wheel this
+      # release publishes is built from these bytes.
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: packages/ssr/src/shomer_ssr/
+        continue-on-error: true
+      - uses: ./.github/actions/python-check
+        with: { path: packages/ssr, module: shomer_ssr, check: test }
 
   docs-build:
     # Build the site on every docs change (PR and main). On main,
@@ -1588,7 +1682,9 @@ jobs:
       - api-grype
       - cli-bandit
       - job-grype
+      - web-build
       - web-audit
+      - ssr-test
       - chart-api-package
       - chart-api-verify-policy
       - chart-job-package
@@ -1614,7 +1710,10 @@ jobs:
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'job') ||
        needs.job-grype.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'web') ||
-       needs.web-audit.result == 'success') &&
+       (needs.web-build.result == 'success' &&
+        needs.web-audit.result == 'success')) &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'ssr') ||
+       needs.ssr-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&
