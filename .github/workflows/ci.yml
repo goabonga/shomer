@@ -22,7 +22,10 @@
 #   web:  web-lint ─┬─ web-test ─ web-build ──> `web-dist` artifact
 #         web-format┤
 #         web-typecheck
-##
+#
+#   ssr-test additionally consumes `web-dist`, so the wheel under test
+#   carries the bundle CI just built rather than a committed copy.
+#
 # Change-gating is `if: contains(fromJson(needs.detect.outputs.changed).changed,
 # '<name>')` on each chain's entry points. The skip then cascades through
 # `needs:`, so an unchanged component produces no work. `detect` must sit
@@ -1454,7 +1457,50 @@ jobs:
           title: chart-job-package
           body: '`helm package` at the bump-previewed version (artifact `chart-job-tgz`).'
 
-  # ──────────────────── docs ────────────────────
+  # ──────────────────── web ────────────────────
+
+  web-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/node-check
+        with: { workspace: packages/web, check: lint }
+
+  web-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/node-check
+        with: { workspace: packages/web, check: format }
+
+  web-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'web')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/node-check
+        with: { workspace: packages/web, check: typecheck }
+
+  web-test:
+    needs: [web-lint, web-format, web-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/node-check
+        with: { workspace: packages/web, check: test }
 
   docs-build:
     # Build the site on every docs change (PR and main). On main,
@@ -1513,6 +1559,7 @@ jobs:
       - api-grype
       - cli-bandit
       - job-grype
+      - web-test
       - chart-api-package
       - chart-api-verify-policy
       - chart-job-package
@@ -1537,6 +1584,8 @@ jobs:
        needs.cli-bandit.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'job') ||
        needs.job-grype.result == 'success') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'web') ||
+       needs.web-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&

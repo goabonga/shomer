@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: node component check
+description: |
+  Run one gate against one Node component.
+
+  The npm workspace is hoisted at the repo root, so `npm ci` always runs
+  there and the script runs through `-w <workspace>`.
+
+  REQUIRES the calling job to have run `actions/checkout` first.
+
+inputs:
+  workspace:
+    required: true
+    description: 'npm workspace to run the script in, e.g. packages/web.'
+  check:
+    required: true
+    description: lint | format | typecheck | test
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/bump-preview
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: "22"
+        cache: npm
+        cache-dependency-path: package-lock.json
+
+    - name: Install
+      shell: bash
+      run: npm ci
+
+    - name: Run ${{ inputs.check }}
+      shell: bash
+      env:
+        # `format` is `format:check` in package.json — the script is named
+        # for what it does, the gate for what it checks.
+        SCRIPT: ${{ inputs.check == 'format' && 'format:check' || inputs.check }}
+        WS: ${{ inputs.workspace }}
+      run: npm run "$SCRIPT" -w "$WS"
+
+    - name: Summary
+      if: always()
+      uses: ./.github/actions/summary
+      with:
+        title: node ${{ inputs.workspace }} — ${{ inputs.check }}
+        body: '`npm run ${{ inputs.check }}` in `${{ inputs.workspace }}`.'
