@@ -1798,6 +1798,97 @@ jobs:
           format: grype
           path: /tmp/ssr.grype.json
 
+  chart-ssr-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'chart-ssr')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: azure/setup-helm@v5
+      - run: helm lint packages/ssr/chart
+      # Render every branch, not just the default one. A template only the
+      # non-default path reaches is a template nothing checks until the
+      # day somebody switches CNI or turns verification on.
+      - name: Render each network provider and the verification policy
+        run: |
+          set -euo pipefail
+          for provider in kubernetes calico cilium; do
+            helm template ci packages/ssr/chart \
+              --set networkPolicy.provider="$provider" \
+              > "/tmp/chart-ssr-$provider.yaml"
+          done
+          helm template ci packages/ssr/chart \
+            --set imageVerification.enabled=true \
+            > /tmp/chart-ssr-verify.yaml
+          # An unknown provider must fail loudly rather than render an
+          # empty policy and leave the pod wide open.
+          if helm template ci packages/ssr/chart \
+               --set networkPolicy.provider=bogus > /dev/null 2>&1; then
+            echo "::error::an unknown networkPolicy.provider rendered without failing"
+            exit 1
+          fi
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-ssr-lint
+          body: '`helm lint` + `helm template` on `packages/ssr/chart/`.'
+
+  chart-ssr-checkov:
+    needs: [chart-ssr-lint]
+    if: '!failure() && !cancelled() && needs.chart-ssr-lint.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: packages/ssr/chart
+          framework: helm
+          quiet: true
+          output_format: cli
+          soft_fail: false
+          # CKV_K8S_21: the namespace is a deploy-time flag, not a chart
+          # decision. CKV_K8S_43: digest pinning is incompatible with the
+          # version-tag scheme, and provenance is established by the
+          # cosign signature and SBOM attestation instead.
+          skip_check: CKV_K8S_21,CKV_K8S_43
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-ssr-checkov
+          body: '`checkov --framework helm` on `packages/ssr/chart/`.'
+
+  chart-ssr-package:
+    needs: [chart-ssr-checkov]
+    if: '!failure() && !cancelled() && needs.chart-ssr-checkov.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bump-preview
+      - uses: azure/setup-helm@v5
+      # Packaged here with the bumped version already written in, so the
+      # release job only has to push what this run linted.
+      - run: |
+          mkdir -p /tmp/chart-ssr
+          helm package packages/ssr/chart --destination /tmp/chart-ssr
+      - uses: actions/upload-artifact@v7
+        with: { name: chart-ssr-tgz, path: /tmp/chart-ssr/, retention-days: 1 }
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-ssr-package
+          body: '`helm package` at the bump-previewed version (artifact `chart-ssr-tgz`).'
+
   docs-build:
     # Build the site on every docs change (PR and main). On main,
     # release-docs reuses this artifact instead of rebuilding —
@@ -1860,6 +1951,7 @@ jobs:
       - ssr-grype
       - chart-api-package
       - chart-api-verify-policy
+      - chart-ssr-package
       - chart-job-package
       - chart-job-verify-policy
       - chart-bdd-package
@@ -1890,6 +1982,8 @@ jobs:
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-ssr') ||
+       needs.chart-ssr-package.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-job') ||
        (needs.chart-job-package.result == 'success' &&
         needs.chart-job-verify-policy.result == 'success')) &&
