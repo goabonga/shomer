@@ -26,6 +26,7 @@ release tag, and is published independently.
 | `shomer-bdd` | Python | The Alembic revisions and their runner. |
 | `shomer-api` | Python | The OpenID Connect / OAuth 2.0 endpoints. |
 | `shomer-cli` | Python | The operator command line. |
+| `shomer-job` | Python | The maintenance worker. |
 
 ## How the pieces find each other
 

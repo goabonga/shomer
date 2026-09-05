@@ -16,6 +16,7 @@ Every package is versioned, changelogged, tagged and released on its own.
 | [`shomer-bdd`](packages/bdd) | Python | The Alembic revisions and their runner. |
 | [`shomer-api`](packages/api) | Python | The OpenID Connect / OAuth 2.0 endpoints. |
 | [`shomer-cli`](packages/cli) | Python | The operator command line. |
+| [`shomer-job`](packages/job) | Python | The maintenance worker. |
 
 `shomer-lib` sits at the root: every service names an interface it
 declares and lets the container supply the implementation, so a service
