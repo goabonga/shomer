@@ -97,6 +97,15 @@ changelog  = "packages/bdd/CHANGELOG.md"
 depends_on = ["lib"]
 post_bump  = ["uv lock"]
 
+# The chart deploys the image this component publishes, so its
+# appVersion is not an independent value — it is this version, written
+# here on every release. The write lands inside chart-bdd's own paths,
+# which is what makes a new image release a new chart without either
+# component naming the other.
+mirrors    = [
+    { file = "packages/bdd/chart/Chart.yaml", key = "appVersion" },
+]
+
 [[components.bdd.artifacts]]
 type = "pypi"
 ref  = "shomer-bdd=={version}"
@@ -104,6 +113,25 @@ ref  = "shomer-bdd=={version}"
 [[components.bdd.artifacts]]
 type = "docker"
 ref  = "ghcr.io/goabonga/shomer-bdd:{version}"
+
+# ─────────────────────────── chart-bdd ───────────────────────────
+
+# Its own component because a chart changes for reasons the image does
+# not: a probe, a resource limit, a network rule. Versioning them together
+# would either republish an unchanged image or ship a chart change under a
+# version that says nothing changed.
+[components.chart-bdd]
+paths      = ["packages/bdd/chart/**"]
+bump_files = [
+    { file = "packages/bdd/chart/Chart.yaml", key = "version" },
+    { file = "VERSION", key = 'regex:^chart-bdd=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.chart_bdd" },
+]
+changelog  = "packages/bdd/chart/CHANGELOG.md"
+
+[[components.chart-bdd.artifacts]]
+type = "helm"
+ref  = "oci://ghcr.io/goabonga/charts/shomer-bdd:{version}"
 
 # ─────────────────────────────── docs ───────────────────────────────
 
@@ -122,5 +150,5 @@ bump_files = [
 # The library writes its version into zensical.toml, and the site prints
 # it. Depending on it means the page is regenerated with the fresh number
 # rather than staying a release behind.
-depends_on = ["bdd", "lib"]
+depends_on = ["bdd", "chart-bdd", "lib"]
 bump_rules = { docs = "patch" }
