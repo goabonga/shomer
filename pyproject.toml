@@ -19,6 +19,9 @@ dev = [
     "ruff>=0.15",
     "pre-commit>=4.0",
 ]
+doc = [
+    "zensical>=0.0.45",
+]
 favicon = [
     # scripts/generate_favicon.py — one-off branding asset tooling, kept
     # out of `dev` so a plain `uv sync` doesn't drag cairo in.

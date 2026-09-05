@@ -1,0 +1,109 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+[project]
+site_name        = "Shomer"
+site_description = "OpenID Connect / OAuth 2.0 platform."
+site_author      = "Chris <goabonga@pm.me>"
+site_url         = "https://goabonga.github.io/shomer/"
+
+repo_url  = "https://github.com/goabonga/shomer"
+repo_name = "goabonga/shomer"
+edit_uri  = "edit/main/docs/"
+
+# Footer. `copyright` renders in the highlighted slot of the copyright
+# partial, above the theme's own attribution line, and `extra.generator`
+# is the switch that partial reads to drop that line — leaving this as
+# the only footer text. Raw HTML rather than Markdown: the value is
+# interpolated into the template as-is.
+copyright = """
+Made with <span style="color: #e25555;">&#10084;</span> by
+<a href="https://github.com/goabonga" target="_blank" rel="noopener">goabonga</a>
+"""
+
+[project.extra]
+generator = false
+
+nav = [
+  { "Home" = "index.md" },
+  { "Changelog" = "changelog.md" },
+]
+
+# Zensical falls back to its default extension set only when this table is
+# absent — `config.get("markdown_extensions", DEFAULT_...)` is a fallback,
+# not a merge. Declaring one extension therefore silently drops every
+# default, superfences among them, and fenced code blocks come out as
+# inline code. The defaults are restated here so `macros` can be added to
+# them; keep them in step with Zensical's own DEFAULT_MARKDOWN_EXTENSIONS.
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+"pymdownx.betterem" = {}
+"pymdownx.caret" = {}
+"pymdownx.details" = {}
+"pymdownx.inlinehilite" = {}
+"pymdownx.keys" = {}
+"pymdownx.magiclink" = {}
+"pymdownx.mark" = {}
+"pymdownx.smartsymbols" = {}
+"pymdownx.tilde" = {}
+"zensical.extensions.macros" = {}
+
+[project.markdown_extensions.toc]
+permalink = true
+
+[project.markdown_extensions."pymdownx.emoji"]
+emoji_generator = "zensical.extensions.emoji.to_svg"
+emoji_index = "zensical.extensions.emoji.twemoji"
+
+[project.markdown_extensions."pymdownx.highlight"]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+
+# `docs/changelog.md` is a one-line include of the repository's root
+# CHANGELOG.md — the file multicz appends to on every release. Rendering
+# the real file means the published page cannot fall behind it.
+[project.markdown_extensions."pymdownx.snippets"]
+base_path = ["."]
+check_paths = true
+
+[project.markdown_extensions."pymdownx.superfences"]
+custom_fences = [{ name = "mermaid", class = "mermaid" }]
+
+[project.markdown_extensions."pymdownx.tabbed"]
+alternate_style = true
+combine_header_slug = true
+
+[project.markdown_extensions."pymdownx.tasklist"]
+custom_checkbox = true
+
+[project.theme]
+logo     = "shomer.svg"
+favicon  = "favicon.ico"
+language = "en"
+
+# Dark first. Neither entry declares `media`, so the OS
+# `prefers-color-scheme` is ignored and every visitor lands on the first
+# one — slate — whatever their system is set to. The toggle in the header
+# switches to the other and the choice is remembered, so the order here
+# decides only the first visit.
+#
+# Indigo matches the mark, which is a blue shield. Amber is the accent
+# because a link has to be findable against the primary, and indigo on
+# indigo is not.
+[[project.theme.palette]]
+scheme  = "slate"
+primary = "indigo"
+accent  = "amber"
+toggle  = { icon = "material/brightness-4", name = "Switch to light mode" }
+
+[[project.theme.palette]]
+scheme  = "default"
+primary = "indigo"
+accent  = "amber"
+toggle  = { icon = "material/brightness-7", name = "Switch to dark mode" }
