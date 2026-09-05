@@ -5,13 +5,24 @@
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from shomer_job.worker import DEFAULT_INTERVAL_SECONDS, main, run_once, tick
+from shomer_job.worker import (
+    DEFAULT_INTERVAL_SECONDS,
+    HEARTBEAT_ENV,
+    heartbeat_path,
+    is_healthy,
+    main,
+    record_heartbeat,
+    run_once,
+    tick,
+)
 
 
 class FakeClock:
@@ -43,8 +54,11 @@ class FakeDatabase:
 
 
 @pytest.fixture(autouse=True)
-def _isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHOMER_DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    # Never the real path: a test must not decide whether the machine's
+    # own worker looks alive.
+    monkeypatch.setenv(HEARTBEAT_ENV, str(tmp_path / "heartbeat"))
 
 
 def test_tick_runs_inside_a_unit_of_work() -> None:
@@ -104,3 +118,69 @@ def test_main_reads_argv_when_given_nothing(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr("shomer_job.worker.run_once", lambda: calls.append("once"))
     main()
     assert calls == ["once"]
+
+
+def test_the_heartbeat_defaults_to_the_temporary_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The one place the container may write: the image runs with a
+    # read-only root filesystem and an emptyDir mounted at /tmp.
+    monkeypatch.delenv(HEARTBEAT_ENV, raising=False)
+    assert heartbeat_path().name == "shomer-job.heartbeat"
+    assert heartbeat_path().parent == Path(tempfile.gettempdir())
+
+
+def test_a_worker_that_never_ticked_is_not_healthy() -> None:
+    assert not is_healthy(0.0)
+
+
+def test_an_unreadable_heartbeat_is_not_healthy() -> None:
+    # Whatever is in the file, a value that cannot be read is not
+    # evidence that a tick completed.
+    heartbeat_path().write_text("not a timestamp")
+    assert not is_healthy(0.0)
+
+
+def test_a_recent_tick_is_healthy() -> None:
+    record_heartbeat(1_000.0)
+    assert is_healthy(1_000.0, max_age=60.0)
+    assert is_healthy(1_059.0, max_age=60.0)
+
+
+def test_a_stale_tick_is_not_healthy() -> None:
+    record_heartbeat(1_000.0)
+    assert not is_healthy(1_061.0, max_age=60.0)
+
+
+def test_a_tick_records_its_completion() -> None:
+    result = tick(FakeClock([10.0, 10.25]), FakeDatabase())  # type: ignore[arg-type]
+    assert float(heartbeat_path().read_text()) == 10.25
+    assert result.duration == pytest.approx(0.25)
+
+
+def test_healthy_exits_zero_when_a_tick_is_recent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record_heartbeat(500.0)
+    monkeypatch.setattr("time.time", lambda: 500.0)
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--healthy"])
+    assert exit_info.value.code == 0
+
+
+def test_healthy_exits_one_when_the_worker_is_wedged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record_heartbeat(0.0)
+    monkeypatch.setattr("time.time", lambda: 10_000.0)
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--healthy"])
+    assert exit_info.value.code == 1
+
+
+def test_healthy_honours_a_custom_max_age(monkeypatch: pytest.MonkeyPatch) -> None:
+    record_heartbeat(0.0)
+    monkeypatch.setattr("time.time", lambda: 100.0)
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--healthy", "--max-age", "200"])
+    assert exit_info.value.code == 0
