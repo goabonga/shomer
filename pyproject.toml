@@ -18,6 +18,7 @@ members = ["packages/*"]
 shomer-api = { workspace = true }
 shomer-bdd = { workspace = true }
 shomer-cli = { workspace = true }
+shomer-job = { workspace = true }
 shomer-lib = { workspace = true }
 
 [dependency-groups]
@@ -101,5 +102,6 @@ known-first-party = [
     "shomer_api",
     "shomer_bdd",
     "shomer_cli",
+    "shomer_job",
     "shomer_lib",
 ]
