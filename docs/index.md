@@ -30,6 +30,12 @@ release tag, and is published independently.
 | `shomer-job` | Python | The maintenance worker. |
 | `shomer-web` | TypeScript | The React sources the frontend serves. |
 
+`shomer-web` builds into the frontend's `static/` and `templates/`
+directories, so a frontend change ships in the next release of it — the
+dependency is declared to the release tooling rather than left to whoever
+remembers it.
+| `shomer-ssr` | Python | The server-side rendered frontend. |
+
 ## How the pieces find each other
 
 Nothing here constructs its own collaborators. Every service installs

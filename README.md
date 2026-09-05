@@ -20,6 +20,12 @@ Every package is versioned, changelogged, tagged and released on its own.
 | [`shomer-job`](packages/job) | Python | The maintenance worker. |
 | [`shomer-web`](packages/web) | TypeScript | The React sources the frontend serves. |
 
+`shomer-web` builds into the frontend's `static/` and `templates/`
+directories, so a frontend change ships in the next release of it — the
+dependency is declared to the release tooling rather than left to whoever
+remembers it.
+| [`shomer-ssr`](packages/ssr) | Python | The server-side rendered frontend. |
+
 `shomer-lib` sits at the root: every service names an interface it
 declares and lets the container supply the implementation, so a service
 never mentions a concrete class and swapping one is a change in a single

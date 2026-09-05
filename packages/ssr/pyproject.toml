@@ -5,6 +5,7 @@
 name = "shomer-ssr"
 version = "0.0.0"
 description = "Shomer server-side rendered frontend."
+readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 authors = [{ name = "Chris", email = "goabonga@pm.me" }]
