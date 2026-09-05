@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: publish a python component
+description: |
+  Build one workspace package, publish it to PyPI through Trusted
+  Publishing, and cut its GitHub release with the artifacts attached.
+
+  The calling job still owns the two things that cannot live in a
+  composite action — the `pypi` environment and `id-token: write` — so
+  this only carries the steps, which are identical for every package.
+
+  REQUIRES the calling job to have run `actions/checkout` with
+  `ref: main` and `fetch-depth: 0`: the wheel must be built from the
+  release commit, and the notes from the commits behind the new tag.
+
+inputs:
+  package:
+    required: true
+    description: 'Distribution name, e.g. shomer-lib.'
+  tag:
+    required: true
+    description: 'Tag multicz just pushed, e.g. lib-v0.1.0.'
+  token:
+    required: true
+    description: 'Token with `contents: write`.'
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+        cache-suffix: publish-${{ inputs.package }}
+        python-version: "3.13"
+    - name: Build the wheel and sdist
+      shell: bash
+      run: uv build --package ${{ inputs.package }} --out-dir dist && ls -l dist
+    - name: Publish to PyPI
+      # Trusted Publishing: the `pypi` environment must be configured on
+      # the repository and on PyPI. A password here would disable OIDC
+      # and the PEP 740 attestations that come with it.
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages-dir: dist
+        skip-existing: true
+    - uses: ./.github/actions/publish-release
+      with:
+        tag: ${{ inputs.tag }}
+        files: dist/*
+        token: ${{ inputs.token }}
