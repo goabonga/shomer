@@ -148,6 +148,7 @@ jobs:
           python-version: "3.13"
       - name: SPDX license headers
         run: |
+          uv run --no-project python scripts/add_license_header.py --path packages --types py --check
           uv run --no-project python scripts/add_license_header.py --path scripts --types py,sh --check
           uv run --no-project python scripts/add_license_header.py --path .github --types yml --check
           uv run --no-project python scripts/add_license_header.py --path . --types toml --check
@@ -156,9 +157,51 @@ jobs:
         uses: ./.github/actions/summary
         with:
           title: headers
-          body: SPDX header check on `scripts/`, `.github/` and the root TOML.
+          body: SPDX header check on `packages/`, `scripts/`, `.github/` and the root TOML.
 
-  # ──────────────────── docs ────────────────────
+  # ──────────────────── lib ────────────────────
+  lib-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'lib')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/lib, module: shomer_lib, check: lint }
+
+  lib-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'lib')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/lib, module: shomer_lib, check: format }
+
+  lib-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'lib')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/lib, module: shomer_lib, check: typecheck }
+
+  lib-test:
+    needs: [lib-lint, lib-format, lib-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/lib, module: shomer_lib, check: test }
 
   docs-build:
     # Build the site on every docs change (PR and main). On main,
@@ -211,12 +254,15 @@ jobs:
       - validate
       - detect
       - headers
+      - lib-test
       - docs-build
     if: >-
       !failure() && !cancelled() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       !startsWith(github.event.head_commit.message, 'chore(release):') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'lib') ||
+       needs.lib-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest

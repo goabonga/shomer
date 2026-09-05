@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: python component check
+description: |
+  Run one gate against one Python component of the workspace.
+
+  The setup — uv, a frozen sync of the whole workspace, the bump preview —
+  is identical for every component and every gate, so it lives here once
+  rather than being repeated per job and drifting.
+
+  The job shell stays per-component on purpose: it carries the
+  `contains(changed, ...)` gate, so an unchanged component runs nothing,
+  and it keeps a failure named in the checks list.
+
+  REQUIRES the calling job to have run `actions/checkout` first — local
+  actions are resolved before any step runs.
+
+inputs:
+  path:
+    required: true
+    description: 'Package directory, e.g. packages/ssr.'
+  module:
+    required: true
+    description: 'Importable module name, e.g. shomer_ssr. The coverage target.'
+  check:
+    required: true
+    description: lint | format | typecheck | test
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/bump-preview
+
+    - uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+        # Per-job suffix: a shared key makes concurrent jobs race to
+        # reserve the same cache and one of them fails the reservation.
+        cache-suffix: ${{ github.job }}-${{ inputs.check }}
+        python-version: "3.13"
+
+    # --all-packages: components resolve against each other, so a
+    # per-package sync would check something that is not what runs.
+    - name: Install the workspace
+      shell: bash
+      run: uv sync --frozen --all-packages
+
+    - name: Ruff lint
+      if: inputs.check == 'lint'
+      shell: bash
+      run: uv run --no-sync ruff check --output-format=github ${{ inputs.path }}
+
+    - name: Ruff format check
+      if: inputs.check == 'format'
+      shell: bash
+      run: uv run --no-sync ruff format --check ${{ inputs.path }}
+
+    - name: Mypy --strict
+      if: inputs.check == 'typecheck'
+      shell: bash
+      run: uv run --no-sync mypy --strict ${{ inputs.path }}/src
+
+    # --cov-fail-under=100 is deliberate: coverage that can slip is
+    # coverage nobody defends.
+    - name: Pytest with coverage
+      if: inputs.check == 'test'
+      shell: bash
+      run: >-
+        uv run --no-sync pytest ${{ inputs.path }}/tests
+        --cov=${{ inputs.module }} --cov-report=term-missing
+        --cov-fail-under=100 -q
+
+    - name: Summary
+      if: always()
+      uses: ./.github/actions/summary
+      with:
+        title: ${{ inputs.module }} — ${{ inputs.check }}
+        body: '`${{ inputs.check }}` on `${{ inputs.path }}`.'

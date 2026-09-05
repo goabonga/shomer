@@ -24,7 +24,12 @@ uv sync
 ```bash
 uv run ruff check packages scripts
 uv run ruff format --check packages scripts
+uv run mypy --strict packages/lib/src
+uv run pytest
 ```
+
+The test job asserts full coverage. Coverage that can slip is coverage
+nobody defends.
 
 ## Commit messages
 
