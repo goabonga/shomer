@@ -1,0 +1,31 @@
+{{/*
+  CiliumNetworkPolicy (cilium.io/v2), namespaced.
+
+  Worth reaching for when a rule is about identity rather than address:
+  `toFQDNs` for egress to a name whose IPs move, `toEntities` for cluster
+  or world, and L7 rules that read HTTP methods and paths — none of which
+  the upstream API can express.
+
+  Note the semantics differ from the upstream API in a way that matters:
+  Cilium's default is allow-all until a rule selects an endpoint, and the
+  first policy selecting it flips that endpoint to default-deny for that
+  direction. So an empty ingress list here does not mean "allow"; it means
+  "deny everything", which is why the shipped default states allow-all
+  explicitly rather than leaving it out.
+*/}}
+{{- if and .Values.networkPolicy.enabled (eq .Values.networkPolicy.provider "cilium") }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+  ingress:
+    {{- toYaml .Values.networkPolicy.cilium.ingress | nindent 4 }}
+  egress:
+    {{- toYaml .Values.networkPolicy.cilium.egress | nindent 4 }}
+{{- end }}

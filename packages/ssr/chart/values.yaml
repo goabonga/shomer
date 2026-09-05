@@ -1,0 +1,132 @@
+image:
+  repository: ghcr.io/goabonga/shomer-ssr
+  tag: ""
+  pullPolicy: Always
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8080
+
+settings:
+  issuer: http://localhost:8000
+  existingSecret: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Cluster-side verification that the image this chart deploys carries a
+# valid signature from this repository's release pipeline.
+#
+# Off by default, and that is not timidity: the object it emits means
+# nothing unless the matching admission controller is already installed,
+# and a chart that silently assumes one is a chart that fails in ways
+# nobody can read.
+#
+# The release pipeline already signs every image keylessly and verifies
+# the signature before cutting the release. That protects the artifact in
+# transit and in the registry — it proves nothing about what a cluster
+# actually admits. This is the half that closes it.
+imageVerification:
+  enabled: false
+  # kyverno           -> a NAMESPACED Policy, scoped to this release's
+  #                      namespace. Preferred: an application chart has no
+  #                      business installing cluster-wide rules that
+  #                      outlive it.
+  # policy-controller -> a sigstore ClusterImagePolicy, CLUSTER-SCOPED by
+  #                      design. Two releases of this chart in different
+  #                      namespaces will fight over the same object name,
+  #                      so set `policyName` per release or install it
+  #                      once, outside the chart.
+  provider: kyverno
+  policyName: ""       # defaults to the release name
+  # Both halves of the identity are pinned. Anchoring the issuer alone
+  # would accept a signature from any GitHub workflow, in any repository —
+  # which is most of the attack this is meant to stop.
+  issuer: https://token.actions.githubusercontent.com
+  subjectRegExp: ""    # defaults to ^https://github.com/goabonga/shomer/
+  # Public Sigstore instances, which is what the release pipeline signs
+  # against. Override both when running a private one: a self-hosted
+  # Fulcio issues its own certificates and logs to its own Rekor, so a
+  # public-instance lookup finds nothing.
+  fulcioUrl: https://fulcio.sigstore.dev
+  rekorUrl: https://rekor.sigstore.dev
+  # Audit reports violations and admits; Enforce rejects. Start on Audit —
+  # flipping straight to Enforce on a running namespace blocks every pod
+  # whose image predates signing.
+  validationFailureAction: Audit
+
+# Pod-level network rules.
+#
+# The default is permissive — allow all ingress and all egress — and that
+# is deliberate: a chart that guesses a cluster's topology locks out the
+# peers it guessed wrong. But permissive by default has to be visible,
+# because an allow-all policy satisfies "this pod has a NetworkPolicy"
+# while permitting everything.
+#
+# `provider` selects which object is rendered. `kubernetes` is the default
+# because Calico and Cilium both implement the upstream API; reach for
+# their own kinds only when a rule needs something upstream cannot say —
+# an explicit Deny and ordering for Calico, DNS names and L7 for Cilium.
+# Exactly one is rendered, so switching providers is not additive.
+#
+# `enabled: false` removes the object entirely. Do that only when
+# something else in the cluster owns the policy.
+networkPolicy:
+  enabled: true
+  # kubernetes | calico | cilium
+  provider: kubernetes
+
+  # networking.k8s.io/v1 rule lists. A deployment narrows them here rather
+  # than by forking the template:
+  #
+  #   ingress:
+  #     - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: shomer-ssr}}}]
+  #       ports: [{protocol: TCP, port: 8000}]
+  #   egress:
+  #     - to: [{podSelector: {matchLabels: {app: postgres}}}]
+  #       ports: [{protocol: TCP, port: 5432}]
+  #     - to: [{namespaceSelector: {}}]        # DNS
+  #       ports: [{protocol: UDP, port: 53}]
+  ingress:
+    - {}
+  egress:
+    - {}
+
+  # projectcalico.org/v3 rules. Calico evaluates from the lowest order
+  # upwards and the first match wins, so a policy with no order runs last;
+  # this default leaves room for a cluster-wide policy in front of it.
+  #
+  #   egress:
+  #     - action: Allow
+  #       protocol: TCP
+  #       destination: {selector: "app == 'postgres'", ports: [5432]}
+  #     - action: Deny
+  calico:
+    order: 1000
+    ingress:
+      - action: Allow
+    egress:
+      - action: Allow
+
+  # cilium.io/v2 rules. The semantics differ from upstream in a way that
+  # bites: an endpoint is allow-all until some policy selects it, and the
+  # first one that does flips it to default-deny for that direction — so
+  # an empty list here means "deny everything", not "allow". Hence the
+  # explicit allow-all below.
+  #
+  #   egress:
+  #     - toEndpoints: [{matchLabels: {app: postgres}}]
+  #       toPorts: [{ports: [{port: "5432", protocol: TCP}]}]
+  #     - toFQDNs: [{matchPattern: "*.sigstore.dev"}]
+  cilium:
+    ingress:
+      - fromEntities: [all]
+    egress:
+      - toEntities: [all]

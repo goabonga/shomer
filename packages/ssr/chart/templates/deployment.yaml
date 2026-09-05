@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    spec:
+      automountServiceAccountToken: false
+      # Chainguard images ship UID 65532 ("nonroot"). Declaring it at pod
+      # level covers every process born from the pod, init containers
+      # included, rather than only the one container below.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ssr
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # On top of the pod's: drops every capability, forbids
+          # escalation, and mounts the root filesystem read-only — the
+          # process writes nothing outside /tmp.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+          ports:
+            - containerPort: {{ .Values.service.port }}
+              name: http
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          env:
+            - name: SHOMER_ISSUER
+              value: {{ .Values.settings.issuer | quote }}
+            {{- if .Values.settings.existingSecret }}
+            # Read from a Secret rather than set inline: a database URL
+            # carries a password, and a value in values.yaml ends up in
+            # `helm get values`, in the release history, and in whatever
+            # git repository holds the deployment.
+            - name: SHOMER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.settings.existingSecret }}
+                  key: SHOMER_DATABASE_URL
+            {{- end }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # readOnlyRootFilesystem leaves the process nowhere to write; this
+        # is the one place it may.
+        - name: tmp
+          emptyDir: {}
