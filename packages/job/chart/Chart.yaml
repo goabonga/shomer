@@ -1,0 +1,16 @@
+apiVersion: v2
+name: shomer-job
+description: Shomer maintenance worker.
+type: application
+# The chart's own version. It moves when the templates change AND when the
+# image it deploys is released — multicz mirrors the component version into
+# appVersion below, which cascades a bump here.
+version: 0.0.0
+appVersion: "0.0.0"
+icon: https://raw.githubusercontent.com/goabonga/shomer/main/assets/shomer.svg
+home: https://github.com/goabonga/shomer
+sources:
+  - https://github.com/goabonga/shomer
+maintainers:
+  - name: Chris
+    email: goabonga@pm.me

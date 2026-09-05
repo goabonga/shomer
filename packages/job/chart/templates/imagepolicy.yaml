@@ -1,0 +1,62 @@
+{{/*
+  Cluster-side proof that the image this chart deploys was signed by this
+  repository's release pipeline.
+
+  Rendered only when .Values.imageVerification.enabled is true — the
+  object is inert, and its CRD absent, unless the matching controller is
+  already installed.
+*/}}
+{{- if .Values.imageVerification.enabled }}
+{{- $iv := .Values.imageVerification }}
+{{- $name := default .Release.Name $iv.policyName }}
+{{- $image := printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag) }}
+{{- $subject := $iv.subjectRegExp | default "^https://github.com/goabonga/shomer/" }}
+{{- if eq $iv.provider "kyverno" }}
+apiVersion: kyverno.io/v1
+kind: Policy
+metadata:
+  name: {{ $name }}-verify-image
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+spec:
+  validationFailureAction: {{ $iv.validationFailureAction }}
+  background: false
+  rules:
+    - name: verify-cosign-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - {{ $image | quote }}
+          attestors:
+            - entries:
+                - keyless:
+                    subject: {{ $subject | quote }}
+                    issuer: {{ $iv.issuer | quote }}
+                    rekor:
+                      url: {{ $iv.rekorUrl | quote }}
+{{- else if eq $iv.provider "policy-controller" }}
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: {{ $name }}-verify-image
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+spec:
+  images:
+    - glob: {{ printf "%s*" .Values.image.repository | quote }}
+  authorities:
+    - keyless:
+        url: {{ $iv.fulcioUrl | quote }}
+        identities:
+          - issuer: {{ $iv.issuer | quote }}
+            subjectRegExp: {{ $subject | quote }}
+      ctlog:
+        url: {{ $iv.rekorUrl | quote }}
+{{- else }}
+{{- fail (printf "imageVerification.provider must be kyverno or policy-controller, got %q" $iv.provider) }}
+{{- end }}
+{{- end }}

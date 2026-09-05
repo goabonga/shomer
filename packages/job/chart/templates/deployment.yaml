@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    spec:
+      automountServiceAccountToken: false
+      # Chainguard images ship UID 65532 ("nonroot"). Declaring it at pod
+      # level covers every process born from the pod, init containers
+      # included, rather than only the one container below.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: job
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+          # --loop, not a CronJob: a tick that overruns its interval then
+          # delays the next one instead of overlapping with it, and two
+          # overlapping sweeps of the same expired rows is the one thing
+          # this worker must not do.
+          args:
+            - --loop
+            - --interval
+            - {{ .Values.intervalSeconds | quote }}
+          # The worker serves nothing, so there is no port to ask. Each
+          # completed tick touches a heartbeat file and `--healthy` reads
+          # it — which makes a wedged loop visible, where an HTTP probe
+          # would have nothing to talk to and a missing probe would let it
+          # hang unnoticed.
+          #
+          # The absolute path rather than the bare name: an exec probe
+          # resolves through the image's PATH, and being explicit costs
+          # nothing and removes a way for this to fail silently.
+          livenessProbe:
+            exec:
+              command:
+                - /app/venv/bin/shomer-job
+                - --healthy
+                - --max-age
+                - {{ mul .Values.intervalSeconds 3 | quote }}
+            # Long enough that the first tick has landed. A liveness probe
+            # that fires before the process has had a chance to do its job
+            # restarts it forever.
+            initialDelaySeconds: {{ add .Values.intervalSeconds 30 }}
+            periodSeconds: {{ .Values.intervalSeconds }}
+            failureThreshold: 3
+          # No Service selects this pod, so readiness gates nothing at the
+          # network level. It still gates a rollout: `helm --wait` and a
+          # rolling update both hold until the new pod has ticked once.
+          readinessProbe:
+            exec:
+              command:
+                - /app/venv/bin/shomer-job
+                - --healthy
+                - --max-age
+                - {{ mul .Values.intervalSeconds 3 | quote }}
+            initialDelaySeconds: {{ add .Values.intervalSeconds 5 }}
+            periodSeconds: {{ .Values.intervalSeconds }}
+          env:
+            - name: SHOMER_ISSUER
+              value: {{ .Values.settings.issuer | quote }}
+            {{- if .Values.settings.existingSecret }}
+            # Read from a Secret rather than set inline: a database URL
+            # carries a password, and a value in values.yaml ends up in
+            # `helm get values`, in the release history, and in whatever
+            # git repository holds the deployment.
+            - name: SHOMER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.settings.existingSecret }}
+                  key: SHOMER_DATABASE_URL
+            {{- end }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

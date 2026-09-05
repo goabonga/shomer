@@ -1,0 +1,39 @@
+{{/*
+  Upstream NetworkPolicy, and the guard for the provider switch.
+
+  The guard lives here rather than beside each variant because a typo in
+  `provider` otherwise matches no template at all: helm renders nothing,
+  reports success, and the pod ships with no policy — the one outcome
+  that must never be reachable by a misspelling.
+
+  Rendered when the provider is `kubernetes`, which is the default:
+  every CNI worth deploying implements this API, Calico and Cilium
+  included. The provider-specific templates beside this one exist for
+  what the upstream API cannot say, not to replace it.
+*/}}
+{{- $known := list "kubernetes" "calico" "cilium" }}
+{{- if not (has .Values.networkPolicy.provider $known) }}
+{{- fail (printf "networkPolicy.provider must be one of %v, got %q" $known .Values.networkPolicy.provider) }}
+{{- end }}
+{{- if and .Values.networkPolicy.enabled (eq .Values.networkPolicy.provider "kubernetes") }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+  policyTypes:
+    - Ingress
+    - Egress
+  # The rules come from values, so a deployment narrows them without
+  # overriding this template. The shipped default is allow-all — see
+  # values.yaml for why, and for a realistic production shape.
+  ingress:
+    {{- toYaml .Values.networkPolicy.ingress | nindent 4 }}
+  egress:
+    {{- toYaml .Values.networkPolicy.egress | nindent 4 }}
+{{- end }}
