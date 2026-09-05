@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# Dependabot v2 configuration.
+
+version: 2
+
+updates:
+  # Python dependencies across the uv workspace.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    ignore:
+      # `hatchling` lives in [build-system].requires; Dependabot's uv
+      # FileUpdater cannot write that table. Bump it by hand.
+      - dependency-name: "hatchling"
+    groups:
+      # Bundle routine dev tooling bumps into a single weekly PR.
+      dev-tools:
+        applies-to: version-updates
+        patterns:
+          - "ruff"
+          - "mypy"
+          - "pytest*"
+          - "pre-commit"
+    # Runtime deps ship in the package -> fixes; dev tooling stays chore.
+    commit-message:
+      prefix: "fix(deps)"
+      prefix-development: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "python"
+
+  # TypeScript dependencies. The npm workspace is hoisted at the root, so
+  # the root lockfile is the only one to watch.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    groups:
+      web-tools:
+        applies-to: version-updates
+        patterns:
+          - "@biomejs/*"
+          - "@testing-library/*"
+          - "@types/*"
+          - "esbuild"
+          - "jsdom"
+          - "typescript"
+          - "vitest"
+    commit-message:
+      prefix: "fix(deps)"
+      prefix-development: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  # Pinned versions of GitHub Actions in `.github/workflows/*.yml` and
+  # `.github/actions/*/action.yml`.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    groups:
+      ci-actions:
+        applies-to: version-updates
+        patterns:
+          - "actions/*"
+          - "astral-sh/*"
+          - "goabonga/*"
+          - "pypa/*"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
