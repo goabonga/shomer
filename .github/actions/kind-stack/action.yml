@@ -1,0 +1,175 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: kind stack
+description: |
+  Bring up an ephemeral cluster running the real deployment: PostgreSQL,
+  the migrations Job, then the requested charts — and port-forward one of
+  them to localhost so a test runner or a scanner can reach it.
+
+  It is one action rather than one per consumer because the end-to-end
+  suites and the OWASP scan want the same thing: the artifact as deployed,
+  with its neighbours, against a migrated database. Only what they do to
+  it afterwards differs, and duplicating the plumbing is how the two
+  drift until a scan and a test disagree about what they measured.
+
+  Each image comes from this run's artifact when its component changed,
+  and from the registry otherwise, so a partial-change run still stands up
+  a complete system.
+
+  REQUIRES the calling job to have run `actions/checkout` and
+  `bump-preview`, and to grant `actions: read` and `packages: read`.
+
+inputs:
+  services:
+    required: true
+    description: Space-separated charts to install, e.g. "api ssr".
+  target:
+    required: true
+    description: Which of them to port-forward.
+  port:
+    required: true
+    description: Service port, also used as the local port. 8000 api, 8080 ssr.
+  token:
+    required: true
+    description: "Token with `actions: read` and `packages: read` scopes."
+
+runs:
+  using: composite
+  steps:
+    - uses: helm/kind-action@v1
+      with:
+        cluster_name: shomer-${{ inputs.target }}
+        wait: 60s
+
+    - uses: azure/setup-helm@v5
+
+    # The migration image is resolved exactly like the service images, so
+    # the schema the tests run against is the one the released migration
+    # produces — not one applied by a differently-built runner.
+    - uses: ./.github/actions/load-image
+      with:
+        component: bdd
+        token: ${{ inputs.token }}
+
+    # One block per component rather than a loop: a composite action
+    # cannot iterate over `uses:`, and calling out to a shell that
+    # re-implements load-image would be a second copy of the artifact /
+    # registry fallback to keep in step with the first.
+    - if: contains(inputs.services, 'api')
+      uses: ./.github/actions/load-image
+      with:
+        component: api
+        token: ${{ inputs.token }}
+    - if: contains(inputs.services, 'ssr')
+      uses: ./.github/actions/load-image
+      with:
+        component: ssr
+        token: ${{ inputs.token }}
+    - if: contains(inputs.services, 'job')
+      uses: ./.github/actions/load-image
+      with:
+        component: job
+        token: ${{ inputs.token }}
+
+    - name: Resolve and load every image into kind
+      shell: bash
+      env:
+        SERVICES: ${{ inputs.services }}
+        CLUSTER: shomer-${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        for c in bdd $SERVICES; do
+          kind load image-archive "/tmp/${c}.tar" --name "$CLUSTER"
+        done
+
+    - name: PostgreSQL, and the credentials everything reads it through
+      shell: bash
+      env:
+        CLUSTER: shomer-${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        docker pull postgres:17-alpine
+        kind load docker-image postgres:17-alpine --name "$CLUSTER"
+        # A throwaway password for a throwaway cluster. It is generated
+        # rather than written down so that copying this file into a real
+        # deployment cannot accidentally ship a known credential.
+        PASSWORD=$(head -c 24 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 24)
+        kubectl create secret generic shomer-db \
+          --from-literal=POSTGRES_PASSWORD="$PASSWORD" \
+          --from-literal=SHOMER_DATABASE_URL="postgresql+psycopg://shomer:${PASSWORD}@postgres:5432/shomer"
+        kubectl apply -f "${{ github.action_path }}/postgres.yaml"
+        kubectl rollout status deploy/postgres --timeout=120s
+
+    - name: Migrate the database before anything reads it
+      shell: bash
+      run: |
+        set -euo pipefail
+        helm install bdd packages/bdd/chart \
+          --set image.repository=bdd \
+          --set image.tag=ci \
+          --set image.pullPolicy=IfNotPresent \
+          --set settings.existingSecret=shomer-db \
+          --wait --timeout 3m
+        # helm's --wait returns once it considers the release ready, which
+        # for a Job is not the same as the migration having finished. Wait
+        # on the condition itself before anything reads the schema.
+        kubectl wait --for=condition=complete job \
+          -l app.kubernetes.io/name=shomer-bdd --timeout=3m
+        # Tolerant: the logs are diagnostics, and a Job whose pod has
+        # already been reaped must not fail a migration that succeeded.
+        kubectl logs -l app.kubernetes.io/name=shomer-bdd --tail=50 || true
+
+    - name: Install the service charts
+      shell: bash
+      env:
+        SERVICES: ${{ inputs.services }}
+      run: |
+        set -euo pipefail
+        for c in $SERVICES; do
+          helm install "$c" "packages/$c/chart" \
+            --set image.repository="$c" \
+            --set image.tag=ci \
+            --set image.pullPolicy=IfNotPresent \
+            --set settings.existingSecret=shomer-db \
+            --wait --timeout 3m
+        done
+
+    - name: Port-forward ${{ inputs.target }} to localhost:${{ inputs.port }}
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        PORT: ${{ inputs.port }}
+      run: |
+        set -euo pipefail
+        kubectl port-forward "svc/${TARGET}" "${PORT}:${PORT}" \
+          > "/tmp/pf-${TARGET}.log" 2>&1 &
+        for _ in $(seq 1 15); do
+          if curl -fsS --max-time 2 "http://localhost:${PORT}/healthz"; then
+            echo
+            echo "[kind-stack] ${TARGET} reachable on localhost:${PORT}"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "::error::${TARGET} never became reachable on localhost:${PORT}"
+        cat "/tmp/pf-${TARGET}.log" >&2
+        exit 1
+
+    - name: Cluster state
+      if: always()
+      shell: bash
+      run: kubectl get all -A
+
+    - name: Diagnostics
+      if: failure()
+      shell: bash
+      env:
+        SERVICES: ${{ inputs.services }}
+      run: |
+        for c in bdd $SERVICES; do
+          echo "=== describe $c ==="
+          kubectl describe deployment "$c" 2>/dev/null || kubectl describe job -l app.kubernetes.io/name="shomer-$c" || true
+          echo "=== logs $c ==="
+          kubectl logs -l app.kubernetes.io/name="shomer-$c" --tail=200 || true
+        done

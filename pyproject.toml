@@ -38,6 +38,15 @@ favicon = [
     "pillow>=10.0",
 ]
 
+# End-to-end suites, which run against a deployed instance rather than an
+# imported module. Its own group so the lint and unit jobs never install
+# Playwright's browser binaries — they are ~300 MB and no unit test needs
+# them.
+e2e = [
+    "behave>=1.2.6",
+    "httpx>=0.28",
+]
+
 [tool.pytest.ini_options]
 testpaths = [
     "packages/api/tests",

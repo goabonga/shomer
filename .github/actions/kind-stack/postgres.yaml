@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+#
+# PostgreSQL for the ephemeral CI cluster. Deliberately not a chart and
+# deliberately not persistent: it exists for the length of one workflow
+# run, and anything it stores past the last assertion is waste.
+#
+# The credentials come from the `shomer-db` Secret the calling action
+# creates, so the same values reach the database, the migration Job and
+# every service without being written down anywhere.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_USER
+              value: shomer
+            - name: POSTGRES_DB
+              value: shomer
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shomer-db
+                  key: POSTGRES_PASSWORD
+            # The data directory lives under the emptyDir below rather
+            # than at the image's default, which sits on a path the
+            # container cannot own here.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+              name: postgres
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, shomer, -d, shomer]
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: postgres
+      name: postgres

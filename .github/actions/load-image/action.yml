@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: load image
+description: |
+  Ensure `/tmp/<component>.tar` exists and holds the `<component>:ci`
+  image, from whichever source has it.
+
+  1. **Artifact** — this run's `<component>-container` job uploaded
+     `<component>-image`. Download it.
+  2. **Registry** — the component did not change this run, so no artifact
+     exists. Pull `ghcr.io/<owner>/shomer-<component>:latest`, retag and
+     save it to the same path.
+
+  Downstream `kind load image-archive` is identical either way, so a
+  partial-change run still gets a complete system in its cluster — with
+  the unchanged halves served from what was last released, which is what
+  is actually running in production.
+
+  REQUIRES the calling job to have run `actions/checkout`, and to grant
+  `actions: read` (artifact probe) and `packages: read` (registry pull).
+
+inputs:
+  component:
+    required: true
+    description: Component name — api / ssr / job / bdd.
+  token:
+    required: true
+    description: "Token with `actions: read` and `packages: read` scopes."
+
+runs:
+  using: composite
+  steps:
+    # Ask before downloading. `actions/download-artifact` on a missing
+    # artifact emits a workflow-level error annotation that survives
+    # `continue-on-error`, so a run that is behaving exactly as designed
+    # ends up decorated with a red herring.
+    - id: probe
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        COMPONENT: ${{ inputs.component }}
+      run: |
+        set -euo pipefail
+        if gh api \
+             "/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?per_page=100" \
+             --jq '.artifacts[].name' 2>/dev/null \
+             | grep -qx "${COMPONENT}-image"; then
+          echo "[load-image] ${COMPONENT}-image artifact present"
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "[load-image] ${COMPONENT}-image absent; falling back to the registry"
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - if: steps.probe.outputs.exists == 'true'
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.component }}-image
+        path: /tmp
+
+    - if: steps.probe.outputs.exists != 'true'
+      uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+
+    - name: Resolve ${{ inputs.component }} into /tmp/${{ inputs.component }}.tar
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+        TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        if [ -f "/tmp/${COMPONENT}.tar" ]; then
+          echo "[load-image] using this run's artifact for ${COMPONENT}"
+          exit 0
+        fi
+        OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+        IMAGE="ghcr.io/${OWNER}/shomer-${COMPONENT}:latest"
+        echo "[load-image] pulling ${IMAGE}"
+        docker pull "$IMAGE"
+        docker tag "$IMAGE" "${COMPONENT}:ci"
+        docker save "${COMPONENT}:ci" -o "/tmp/${COMPONENT}.tar"
