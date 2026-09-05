@@ -1123,7 +1123,50 @@ jobs:
           title: cli-bandit
           body: '`bandit` static analysis on `packages/cli/src`.'
 
-  # ──────────────────── docs ────────────────────
+  # ──────────────────── job ────────────────────
+
+  job-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'job')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/job, module: shomer_job, check: lint }
+
+  job-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'job')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/job, module: shomer_job, check: format }
+
+  job-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'job')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/job, module: shomer_job, check: typecheck }
+
+  job-test:
+    needs: [job-lint, job-format, job-typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/job, module: shomer_job, check: test }
 
   docs-build:
     # Build the site on every docs change (PR and main). On main,
@@ -1181,6 +1224,7 @@ jobs:
       - bdd-grype
       - api-grype
       - cli-bandit
+      - job-test
       - chart-api-package
       - chart-api-verify-policy
       - chart-bdd-package
@@ -1201,6 +1245,8 @@ jobs:
        needs.api-grype.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'cli') ||
        needs.cli-bandit.result == 'success') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'job') ||
+       needs.job-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-api') ||
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&
