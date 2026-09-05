@@ -18,6 +18,7 @@ component itself reports.
 | `shomer-api` chart | {{ config.extra.versions.chart_api }} | `chart-api-v{{ config.extra.versions.chart_api }}` |
 | `shomer-cli` | {{ config.extra.versions.cli }} | `cli-v{{ config.extra.versions.cli }}` |
 | `shomer-job` | {{ config.extra.versions.job }} | `job-v{{ config.extra.versions.job }}` |
+| `shomer-job` chart | {{ config.extra.versions.chart_job }} | `chart-job-v{{ config.extra.versions.chart_job }}` |
 | this site | {{ config.extra.versions.docs }} | `docs-v{{ config.extra.versions.docs }}` |
 
 ## How a version is decided

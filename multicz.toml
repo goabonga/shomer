@@ -229,6 +229,15 @@ changelog  = "packages/job/CHANGELOG.md"
 depends_on = ["lib"]
 post_bump  = ["uv lock"]
 
+# The chart deploys the image this component publishes, so its
+# appVersion is not an independent value — it is this version, written
+# here on every release. The write lands inside chart-job's own paths,
+# which is what makes a new image release a new chart without either
+# component naming the other.
+mirrors    = [
+    { file = "packages/job/chart/Chart.yaml", key = "appVersion" },
+]
+
 [[components.job.artifacts]]
 type = "pypi"
 ref  = "shomer-job=={version}"
@@ -236,6 +245,25 @@ ref  = "shomer-job=={version}"
 [[components.job.artifacts]]
 type = "docker"
 ref  = "ghcr.io/goabonga/shomer-job:{version}"
+
+# ─────────────────────────── chart-job ───────────────────────────
+
+# Its own component because a chart changes for reasons the image does
+# not: a probe, a resource limit, a network rule. Versioning them together
+# would either republish an unchanged image or ship a chart change under a
+# version that says nothing changed.
+[components.chart-job]
+paths      = ["packages/job/chart/**"]
+bump_files = [
+    { file = "packages/job/chart/Chart.yaml", key = "version" },
+    { file = "VERSION", key = 'regex:^chart-job=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.chart_job" },
+]
+changelog  = "packages/job/chart/CHANGELOG.md"
+
+[[components.chart-job.artifacts]]
+type = "helm"
+ref  = "oci://ghcr.io/goabonga/charts/shomer-job:{version}"
 
 # ─────────────────────────────── docs ───────────────────────────────
 
@@ -254,5 +282,5 @@ bump_files = [
 # The library writes its version into zensical.toml, and the site prints
 # it. Depending on it means the page is regenerated with the fresh number
 # rather than staying a release behind.
-depends_on = ["api", "bdd", "chart-api", "chart-bdd", "cli", "job", "lib"]
+depends_on = ["api", "bdd", "chart-api", "chart-bdd", "chart-job", "cli", "job", "lib"]
 bump_rules = { docs = "patch" }
