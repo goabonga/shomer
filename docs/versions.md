@@ -21,6 +21,7 @@ component itself reports.
 | `shomer-job` chart | {{ config.extra.versions.chart_job }} | `chart-job-v{{ config.extra.versions.chart_job }}` |
 | `shomer-web` | {{ config.extra.versions.web }} | `web-v{{ config.extra.versions.web }}` |
 | `shomer-ssr` | {{ config.extra.versions.ssr }} | `ssr-v{{ config.extra.versions.ssr }}` |
+| `shomer-ssr` chart | {{ config.extra.versions.chart_ssr }} | `chart-ssr-v{{ config.extra.versions.chart_ssr }}` |
 | this site | {{ config.extra.versions.docs }} | `docs-v{{ config.extra.versions.docs }}` |
 
 ## How a version is decided

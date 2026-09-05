@@ -313,6 +313,15 @@ depends_on = ["lib", "web"]
 # pyproject it just rewrote.
 post_bump  = ["uv lock"]
 
+# The chart deploys the image this component publishes, so its
+# appVersion is not an independent value — it is this version, written
+# here on every release. The write lands inside chart-ssr's own paths,
+# which is what makes a new image release a new chart without either
+# component naming the other.
+mirrors    = [
+    { file = "packages/ssr/chart/Chart.yaml", key = "appVersion" },
+]
+
 [[components.ssr.artifacts]]
 type = "pypi"
 ref  = "shomer-ssr=={version}"
@@ -320,6 +329,25 @@ ref  = "shomer-ssr=={version}"
 [[components.ssr.artifacts]]
 type = "docker"
 ref  = "ghcr.io/goabonga/shomer-ssr:{version}"
+
+# ─────────────────────────── chart-ssr ───────────────────────────
+
+# Its own component because a chart changes for reasons the image does
+# not: a probe, a resource limit, a network rule. Versioning them together
+# would either republish an unchanged image or ship a chart change under a
+# version that says nothing changed.
+[components.chart-ssr]
+paths      = ["packages/ssr/chart/**"]
+bump_files = [
+    { file = "packages/ssr/chart/Chart.yaml", key = "version" },
+    { file = "VERSION", key = 'regex:^chart-ssr=(.+)$' },
+    { file = "zensical.toml", key = "project.extra.versions.chart_ssr" },
+]
+changelog  = "packages/ssr/chart/CHANGELOG.md"
+
+[[components.chart-ssr.artifacts]]
+type = "helm"
+ref  = "oci://ghcr.io/goabonga/charts/shomer-ssr:{version}"
 
 # ─────────────────────────────── docs ───────────────────────────────
 
@@ -338,5 +366,5 @@ bump_files = [
 # The library writes its version into zensical.toml, and the site prints
 # it. Depending on it means the page is regenerated with the fresh number
 # rather than staying a release behind.
-depends_on = ["api", "bdd", "chart-api", "chart-bdd", "chart-job", "cli", "job", "lib", "ssr", "web"]
+depends_on = ["api", "bdd", "chart-api", "chart-bdd", "chart-job", "chart-ssr", "cli", "job", "lib", "ssr", "web"]
 bump_rules = { docs = "patch" }
