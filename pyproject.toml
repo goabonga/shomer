@@ -19,6 +19,12 @@ dev = [
     "ruff>=0.15",
     "pre-commit>=4.0",
 ]
+favicon = [
+    # scripts/generate_favicon.py — one-off branding asset tooling, kept
+    # out of `dev` so a plain `uv sync` doesn't drag cairo in.
+    "cairosvg>=2.7",
+    "pillow>=10.0",
+]
 
 [tool.ruff]
 line-length = 88

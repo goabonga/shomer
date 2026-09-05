@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Outer shield (watchman = shomer in Hebrew) -->
+  <path d="M128 16 L32 56 V144 C32 192 72 232 128 248 C184 232 224 192 224 144 V56 Z"
+        fill="#1e3a8a"/>
+  <!-- Inner shield highlight -->
+  <path d="M128 36 L52 68 V144 C52 180 84 212 128 226 C172 212 204 180 204 144 V68 Z"
+        fill="#3b82f6"/>
+  <!-- Stylised "S" -->
+  <text x="128" y="172" font-family="DejaVu Sans, Arial, sans-serif"
+        font-size="128" font-weight="700" fill="#ffffff" text-anchor="middle">S</text>
+</svg>
