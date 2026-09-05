@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+[project]
+name = "shomer-ssr"
+version = "0.0.0"
+description = "Shomer server-side rendered frontend."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Chris", email = "goabonga@pm.me" }]
+keywords = ["shomer", "oauth2", "oidc", "authorization"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: System :: Systems Administration :: Authentication/Directory",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "shomer-lib",
+    "tripack-container[fastapi]>=0.3",
+    "uvicorn[standard]>=0.34",
+]
+
+[project.urls]
+Homepage = "https://github.com/goabonga/shomer"
+Documentation = "https://goabonga.github.io/shomer/"
+Source = "https://github.com/goabonga/shomer"
+Issues = "https://github.com/goabonga/shomer/issues"
+
+[project.scripts]
+shomer-ssr = "shomer_ssr.app:run"
+
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# `packages = [...]` recursively includes every file under the directory,
+# non-.py assets included (templates/*.html, static/*.{js,css,ico}), so no
+# separate force-include block is needed — and adding one makes some
+# installers trip on the duplicate.
+packages = ["src/shomer_ssr"]

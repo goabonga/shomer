@@ -35,12 +35,16 @@ tagged and released on its own.
 | [`shomer-api`](packages/api) | Python | The OpenID Connect / OAuth 2.0 endpoints. |
 | [`shomer-cli`](packages/cli) | Python | The operator command line. |
 | [`shomer-job`](packages/job) | Python | The maintenance worker. |
+| [`shomer-ssr`](packages/ssr) | Python | The server-side rendered frontend. |
 | [`shomer-web`](packages/web) | TypeScript | The React sources `shomer-ssr` serves. |
 
 `shomer-lib` sits at the root: every service names an interface it
 declares and lets the container supply the implementation, so a service
 never mentions a concrete class and swapping one is a change in a single
 place.
+
+`shomer-web` builds into `packages/ssr/src/shomer_ssr/{static,templates}/`,
+so a frontend change ships in the next `shomer-ssr` release.
 
 ## Dependency injection
 
@@ -85,6 +89,7 @@ npm run build --workspace packages/web   # bundle the frontend into the ssr pack
 
 uv run shomer-bdd                        # apply the migrations
 uv run shomer-api                        # http://localhost:8000
+uv run shomer-ssr                        # http://localhost:8080
 uv run shomer config                     # what this environment resolves to
 ```
 

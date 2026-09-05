@@ -24,6 +24,7 @@ shomer-cli = { workspace = true }
 shomer-bdd = { workspace = true }
 shomer-job = { workspace = true }
 shomer-lib = { workspace = true }
+shomer-ssr = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -51,6 +52,7 @@ testpaths = [
     "packages/cli/tests",
     "packages/job/tests",
     "packages/lib/tests",
+    "packages/ssr/tests",
 ]
 # importlib import mode, so two packages may both call their suite
 # `test_app.py`. Under the default mode pytest derives a module name from
@@ -77,6 +79,7 @@ known-first-party = [
     "shomer_cli",
     "shomer_job",
     "shomer_lib",
+    "shomer_ssr",
 ]
 
 [tool.coverage.report]

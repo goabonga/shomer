@@ -36,7 +36,14 @@ changelog and its own release tag, and is published independently.
 | `shomer-api` | Python | The OpenID Connect / OAuth 2.0 endpoints. |
 | `shomer-cli` | Python | The operator command line. |
 | `shomer-job` | Python | The maintenance worker. |
+| `shomer-ssr` | Python | The server-side rendered frontend. |
 | `shomer-web` | TypeScript | The React sources `shomer-ssr` serves. |
+
+`shomer-web` builds into `shomer-ssr`'s `static/` and `templates/`
+directories, so a frontend change ships in the next `shomer-ssr` release —
+the dependency is declared to the release tooling rather than left to
+whoever remembers it. `shomer-bdd` autogenerates against `shomer-lib`'s
+models for the same reason.
 
 ## How the pieces find each other
 

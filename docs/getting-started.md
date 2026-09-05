@@ -23,6 +23,19 @@ uv sync --all-packages   # Python packages + dev tooling
 npm ci                   # TypeScript packages, hoisted at the root
 ```
 
+## Run it
+
+`shomer-ssr` serves assets that `shomer-web` produces, so the frontend has
+to be built at least once before the server has anything to render.
+
+```bash
+npm run build --workspace packages/web
+uv run shomer-ssr
+```
+
+The server listens on <http://localhost:8080>. `GET /healthz` reports the
+running version.
+
 ## Work on the frontend
 
 ```bash
@@ -39,6 +52,10 @@ These are exactly what CI runs; running them locally is the only way to
 find out before the pipeline does.
 
 ```bash
+uv run ruff check packages/ssr
+uv run ruff format --check packages/ssr
+uv run mypy --strict packages/ssr/src
+uv run pytest packages/ssr/tests
 
 npm run lint --workspace packages/web
 npm run format:check --workspace packages/web

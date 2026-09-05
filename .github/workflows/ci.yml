@@ -466,6 +466,68 @@ jobs:
           title: web-build
           body: '`npm run build` → `static/{main.js,main.css}` + `templates/*.html`, uploaded as `web-dist`.'
 
+  # ──────────────────── ssr ────────────────────
+
+  ssr-lint:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'ssr')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/ssr, module: shomer_ssr, check: lint }
+
+  ssr-format:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'ssr')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/ssr, module: shomer_ssr, check: format }
+
+  ssr-typecheck:
+    needs: [detect, headers]
+    if: contains(fromJson(needs.detect.outputs.changed).changed, 'ssr')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/python-check
+        with: { path: packages/ssr, module: shomer_ssr, check: typecheck }
+
+  ssr-test:
+    needs: [ssr-lint, ssr-format, ssr-typecheck, web-build]
+    # Run if ssr changed (its own gates succeeded) OR web changed (the
+    # build succeeded). When only one side moves, the other's needs entry
+    # is `skipped`, and the OR keeps us going. `!failure() && !cancelled()`
+    # replaces the implicit `success()` gate, which would refuse to start
+    # on any skipped dependency.
+    if: >-
+      !failure() && !cancelled() && (
+        needs.ssr-lint.result == 'success' ||
+        needs.web-build.result == 'success'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      # The freshly built assets, not the committed copy: the wheel this
+      # release publishes is built from these bytes.
+      - uses: actions/download-artifact@v5
+        with:
+          name: web-dist
+          path: packages/ssr/src/shomer_ssr/
+        continue-on-error: true
+      - uses: ./.github/actions/python-check
+        with: { path: packages/ssr, module: shomer_ssr, check: test }
+
   # ──────────────────── docs ────────────────────
 
   docs-build:
@@ -525,6 +587,7 @@ jobs:
       - cli-test
       - job-test
       - web-build
+      - ssr-test
       - docs-build
     if: >-
       !failure() && !cancelled() &&
@@ -543,6 +606,8 @@ jobs:
        needs.job-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'web') ||
        needs.web-build.result == 'success') &&
+      (!contains(fromJson(needs.detect.outputs.changed).changed, 'ssr') ||
+       needs.ssr-test.result == 'success') &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'docs') ||
        needs.docs-build.result == 'success')
     runs-on: ubuntu-latest
@@ -811,6 +876,31 @@ jobs:
         with:
           package: shomer-job
           tag: job-v${{ fromJson(needs.release-bump.outputs.bumps)['job'].next_version }}
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
+  release-ssr:
+    needs: [release-bump]
+    if: |
+      !failure() && !cancelled() &&
+      fromJson(needs.release-bump.outputs.bumps)['ssr'].next_version != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/shomer-ssr/
+    permissions:
+      contents: write   # gh release create
+      id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The release commit, so the wheel carries the version that was
+          # just tagged rather than the one that preceded it.
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/publish-pypi
+        with:
+          package: shomer-ssr
+          tag: ssr-v${{ fromJson(needs.release-bump.outputs.bumps)['ssr'].next_version }}
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
   release-web:
