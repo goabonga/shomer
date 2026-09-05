@@ -60,6 +60,7 @@ testpaths = [
     "packages/cli/tests",
     "packages/job/tests",
     "packages/lib/tests",
+    "packages/ssr/tests",
 ]
 # importlib import mode, so two packages may both call their suite
 # `test_app.py`. Under the default mode pytest derives a module name from
