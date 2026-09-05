@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# uv workspace root. It is not a distributable itself — it exists to hold
+# the members, the shared dev tooling and the lockfile every package
+# resolves against.
+
+[project]
+name = "shomer-workspace"
+version = "0.0.0"
+description = "Shomer monorepo — uv workspace root."
+requires-python = ">=3.13"
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
