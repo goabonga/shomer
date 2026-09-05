@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: publish container image
+description: |
+  Push the image this run already built, then sign it and attach its SBOM.
+
+  The image comes from the `<component>-image` artifact rather than being
+  rebuilt: the bytes that were scanned by grype and deployed into the
+  end-to-end cluster are the bytes that get published. A rebuild here
+  would publish something no gate in this run ever looked at.
+
+  Signing is keyless — GitHub's OIDC identity through Sigstore Fulcio,
+  logged in Rekor, no key to store or rotate. Every signature is verified
+  immediately afterwards, pinning both the issuer and the workflow
+  identity: signing without verifying is a gesture, and a signature from
+  some other repository would otherwise only fail in a consumer's cluster.
+
+  REQUIRES `id-token: write` and `packages: write` on the calling job.
+
+inputs:
+  component:
+    required: true
+    description: Component name — api / ssr / job / bdd.
+  version:
+    required: true
+    description: Version to tag. `latest` is published alongside it.
+  owner:
+    required: true
+    description: Lowercase ghcr namespace.
+  token:
+    required: true
+    description: "Token with `packages: write` scope."
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.component }}-image
+        path: /tmp
+    - uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.component }}-sbom
+        path: /tmp
+
+    - uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+
+    - name: Load, tag and push
+      id: push
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+        VERSION: ${{ inputs.version }}
+        OWNER: ${{ inputs.owner }}
+      run: |
+        set -euo pipefail
+        docker load -i "/tmp/${COMPONENT}.tar"
+        TARGET="ghcr.io/${OWNER}/shomer-${COMPONENT}"
+        docker tag "${COMPONENT}:ci" "${TARGET}:${VERSION}"
+        docker tag "${COMPONENT}:ci" "${TARGET}:latest"
+        docker push "${TARGET}:${VERSION}"
+        docker push "${TARGET}:latest"
+        # cosign works on immutable references. A floating tag can be
+        # repointed between the signature and whatever reads it back.
+        DIGEST=$(docker inspect "${TARGET}:${VERSION}" \
+                   --format='{{index .RepoDigests 0}}' | cut -d'@' -f2)
+        echo "ref=${TARGET}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+    - uses: sigstore/cosign-installer@v3
+
+    - name: Sign, attest, and verify both
+      shell: bash
+      env:
+        COSIGN_YES: "true"
+        REF: ${{ steps.push.outputs.ref }}
+        COMPONENT: ${{ inputs.component }}
+      run: |
+        set -euo pipefail
+        cosign sign --yes "$REF"
+        cosign attest --yes \
+          --predicate "/tmp/${COMPONENT}.sbom.spdx.json" \
+          --type spdxjson \
+          "$REF"
+        cosign verify \
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+          --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+          "$REF" > /dev/null
+        cosign verify-attestation \
+          --type spdxjson \
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+          --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+          "$REF" > /dev/null
+        echo "signature and SBOM attestation verified for $REF"

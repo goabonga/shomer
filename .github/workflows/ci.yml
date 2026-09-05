@@ -852,6 +852,57 @@ jobs:
           tag: lib-v${{ fromJson(needs.release-bump.outputs.bumps)['lib'].next_version }}
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
+  release-bdd-image:
+    # First of the three, because the other two point at what it pushes.
+    needs: [release-bump]
+    if: |
+      !failure() && !cancelled() &&
+      fromJson(needs.release-bump.outputs.bumps)['bdd'].next_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # push to ghcr
+      id-token: write   # keyless cosign
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/publish-image
+        with:
+          component: bdd
+          version: ${{ fromJson(needs.release-bump.outputs.bumps)['bdd'].next_version }}
+          owner: ${{ needs.release-bump.outputs.owner }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  release-bdd-pypi:
+    # After the image: this job cuts the GitHub release, and a release
+    # pointing at an image that failed to push is worse than no release.
+    needs: [release-bump, release-bdd-image]
+    if: |
+      !failure() && !cancelled() &&
+      needs.release-bdd-image.result == 'success' &&
+      fromJson(needs.release-bump.outputs.bumps)['bdd'].next_version != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/shomer-bdd/
+    permissions:
+      contents: write   # gh release create
+      id-token: write   # Trusted Publishing (OIDC) — do NOT add a token
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The release commit, so the wheel carries the version that was
+          # just tagged rather than the one that preceded it.
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/publish-pypi
+        with:
+          package: shomer-bdd
+          tag: bdd-v${{ fromJson(needs.release-bump.outputs.bumps)['bdd'].next_version }}
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+
   release-docs:
     # Consume the `docs-site` artifact built earlier in this run with the
     # same bump-previewed version release-bump then committed — no
