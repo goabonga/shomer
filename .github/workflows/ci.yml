@@ -1408,6 +1408,28 @@ jobs:
           title: chart-job-checkov
           body: '`checkov --framework helm` on `packages/job/chart/`.'
 
+  chart-job-verify-policy:
+    # The chart renders an image-verification policy; this proves the
+    # policy is not inert. Kyverno in a throwaway cluster, Enforce on, and
+    # an image the policy matches but whose signature carries someone
+    # else's identity must be rejected — then admitted once the policy is
+    # removed, so the rejection cannot have come from something else.
+    needs: [chart-job-checkov]
+    if: '!failure() && !cancelled() && needs.chart-job-checkov.result == ''success'''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/chart-verify-policy
+        with:
+          chart: packages/job/chart
+          component: job
+      - name: Summary
+        if: always()
+        uses: ./.github/actions/summary
+        with:
+          title: chart-job-verify-policy
+          body: 'kind + Kyverno: the `imageVerification` policy rejects a foreign-signed image, and admits it once removed.'
+
   chart-job-package:
     needs: [chart-job-checkov]
     if: '!failure() && !cancelled() && needs.chart-job-checkov.result == ''success'''
@@ -1494,6 +1516,7 @@ jobs:
       - chart-api-package
       - chart-api-verify-policy
       - chart-job-package
+      - chart-job-verify-policy
       - chart-bdd-package
       - chart-bdd-verify-policy
       - e2e-api
@@ -1518,7 +1541,8 @@ jobs:
        (needs.chart-api-package.result == 'success' &&
         needs.chart-api-verify-policy.result == 'success')) &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-job') ||
-       needs.chart-job-package.result == 'success') &&
+       (needs.chart-job-package.result == 'success' &&
+        needs.chart-job-verify-policy.result == 'success')) &&
       (!contains(fromJson(needs.detect.outputs.changed).changed, 'chart-bdd') ||
        (needs.chart-bdd-package.result == 'success' &&
         needs.chart-bdd-verify-policy.result == 'success')) &&
